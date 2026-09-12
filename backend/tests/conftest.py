@@ -1,6 +1,9 @@
 import os
 import subprocess
 
+# Tests run without auth by default; test_auth flips it back on per-test.
+os.environ["IPAMBOX_ALLOW_INSECURE"] = "true"
+
 import asyncpg
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -55,7 +58,7 @@ async def session(engine, sf):
     async with engine.begin() as conn:
         await conn.execute(
             text(
-                "TRUNCATE scan_jobs, ip_addresses, prefixes, vrfs, sites "
+                "TRUNCATE scan_jobs, ip_addresses, prefixes, vrfs, sites, users "
                 "RESTART IDENTITY CASCADE"
             )
         )

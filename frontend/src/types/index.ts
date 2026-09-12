@@ -119,6 +119,13 @@ export interface SiteNode {
   vrfs: VrfNode[];
 }
 
+export interface AuthStatus {
+  initialized: boolean;
+  authenticated: boolean;
+  allow_insecure: boolean;
+  username: string | null;
+}
+
 export interface ScanEvent {
   scan_id: number;
   status: string;

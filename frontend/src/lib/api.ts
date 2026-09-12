@@ -3,11 +3,19 @@
 // Set NEXT_PUBLIC_API_URL only to point the browser directly at the API.
 const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 
+const AUTH_PAGES = ["/login", "/setup"];
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API}${path}`, {
     ...init,
+    credentials: "include",
     headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
   });
+  if (res.status === 401 && !path.startsWith("/api/v1/auth")) {
+    if (typeof window !== "undefined" && !AUTH_PAGES.includes(window.location.pathname)) {
+      window.location.assign("/login");
+    }
+  }
   if (!res.ok) {
     let detail = res.statusText;
     try {

@@ -18,6 +18,13 @@ class Settings(BaseSettings):
     scan_concurrency: int = 256
     scan_progress_channel_prefix: str = "scan:"
 
+    # Auth settings (env vars are IPAMBOX_*)
+    ipambox_password: str = ""  # pre-provision the admin password
+    ipambox_password_file: str = ""  # path to a file holding the password (wins over above)
+    ipambox_session_hours: int = 168  # one week
+    ipambox_allow_insecure: bool = False  # disable auth entirely (behind a trusted proxy)
+    ipambox_cookie_secure: bool = False  # set True when serving over HTTPS
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

@@ -38,6 +38,11 @@ services:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ipam}:${POSTGRES_PASSWORD:-ipam}@db:5432/${POSTGRES_DB:-ipam}
       REDIS_URL: redis://redis:6379/0
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3010}
+      IPAMBOX_PASSWORD: ${IPAMBOX_PASSWORD:-}
+      IPAMBOX_PASSWORD_FILE: ${IPAMBOX_PASSWORD_FILE:-}
+      IPAMBOX_SESSION_HOURS: ${IPAMBOX_SESSION_HOURS:-168}
+      IPAMBOX_ALLOW_INSECURE: ${IPAMBOX_ALLOW_INSECURE:-false}
+      IPAMBOX_COOKIE_SECURE: ${IPAMBOX_COOKIE_SECURE:-false}
     ports:
       - "${API_PORT:-8001}:8000"
     depends_on:
