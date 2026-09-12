@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import {
   flexRender,
   getCoreRowModel,
@@ -202,6 +202,195 @@ function NewPrefixDialog({
   );
 }
 
+function EditPrefixDialog({
+  prefix,
+  sites,
+  onOpenChange,
+  onSaved,
+}: {
+  prefix: Prefix | null;
+  sites: Site[];
+  onOpenChange: (o: boolean) => void;
+  onSaved: () => void;
+}) {
+  const [form, setForm] = useState({
+    site_id: "",
+    vlan_id: "",
+    vlan_name: "",
+    status: "active",
+    description: "",
+  });
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (prefix) {
+      setForm({
+        site_id: prefix.site_id ? String(prefix.site_id) : "",
+        vlan_id: prefix.vlan_id ? String(prefix.vlan_id) : "",
+        vlan_name: prefix.vlan_name ?? "",
+        status: prefix.status,
+        description: prefix.description ?? "",
+      });
+    }
+  }, [prefix]);
+
+  const submit = async () => {
+    if (!prefix) return;
+    setBusy(true);
+    try {
+      await api.patch(`/api/v1/prefixes/${prefix.id}`, {
+        site_id: form.site_id ? Number(form.site_id) : null,
+        vlan_id: form.vlan_id ? Number(form.vlan_id) : null,
+        vlan_name: form.vlan_name || null,
+        status: form.status,
+        description: form.description || null,
+      });
+      toast.success("Prefix updated");
+      onOpenChange(false);
+      onSaved();
+    } catch (e) {
+      toast.error("Update failed", { description: String(e) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog open={prefix !== null} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            Edit <span className="font-mono">{prefix?.prefix}</span>
+          </DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-3">
+          <div className="grid gap-1.5">
+            <Label>Site</Label>
+            <Select
+              value={form.site_id}
+              onValueChange={(v) => setForm({ ...form, site_id: v })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="None" />
+              </SelectTrigger>
+              <SelectContent>
+                {sites.map((s) => (
+                  <SelectItem key={s.id} value={String(s.id)}>
+                    {s.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-1.5">
+              <Label>VLAN ID</Label>
+              <Input
+                type="number"
+                min={1}
+                max={4094}
+                value={form.vlan_id}
+                onChange={(e) => setForm({ ...form, vlan_id: e.target.value })}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>VLAN name</Label>
+              <Input
+                value={form.vlan_name}
+                onChange={(e) => setForm({ ...form, vlan_name: e.target.value })}
+              />
+            </div>
+          </div>
+          <div className="grid gap-1.5">
+            <Label>Status</Label>
+            <Select
+              value={form.status}
+              onValueChange={(v) => setForm({ ...form, status: v })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {["active", "container", "reserved", "deprecated"].map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {s}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-1.5">
+            <Label>Description</Label>
+            <Input
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button onClick={submit} disabled={busy}>
+            {busy ? "Saving…" : "Save"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DeletePrefixDialog({
+  prefix,
+  onOpenChange,
+  onDeleted,
+}: {
+  prefix: Prefix | null;
+  onOpenChange: (o: boolean) => void;
+  onDeleted: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    if (!prefix) return;
+    setBusy(true);
+    try {
+      await api.del(`/api/v1/prefixes/${prefix.id}`);
+      toast.success(`Deleted ${prefix.prefix}`);
+      onOpenChange(false);
+      onDeleted();
+    } catch (e) {
+      toast.error("Delete failed", { description: String(e) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog open={prefix !== null} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Delete prefix</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          Delete{" "}
+          <span className="font-mono font-medium text-foreground">
+            {prefix?.prefix}
+          </span>
+          ? Its {prefix?.used_ips ?? 0} tracked IP
+          {prefix?.used_ips === 1 ? "" : "s"} will be removed. This cannot be
+          undone.
+        </p>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button variant="destructive" onClick={submit} disabled={busy}>
+            {busy ? "Deleting…" : "Delete"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function PrefixesPage() {
   const router = useRouter();
   const [prefixes, setPrefixes] = useState<Prefix[]>([]);
@@ -210,6 +399,8 @@ export default function PrefixesPage() {
   const [q, setQ] = useState("");
   const [vrfFilter, setVrfFilter] = useState("all");
   const [createOpen, setCreateOpen] = useState(false);
+  const [editing, setEditing] = useState<Prefix | null>(null);
+  const [deleting, setDeleting] = useState<Prefix | null>(null);
 
   const refresh = () => {
     api.get<Prefix[]>("/api/v1/prefixes").then(setPrefixes).catch(() => {});
@@ -284,6 +475,31 @@ export default function PrefixesPage() {
           <span className="text-muted-foreground">{c.getValue<string | null>() ?? ""}</span>
         ),
       },
+      {
+        id: "actions",
+        header: "",
+        cell: (c) => (
+          <div
+            className="flex justify-end gap-1"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setEditing(c.row.original)}
+            >
+              <Pencil className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setDeleting(c.row.original)}
+            >
+              <Trash2 className="h-4 w-4 text-rose-400" />
+            </Button>
+          </div>
+        ),
+      },
     ],
     [vrfName, siteName]
   );
@@ -307,7 +523,7 @@ export default function PrefixesPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Prefixes</h1>
+        <h1 className="text-xl font-semibold">Subnets</h1>
         <Button size="sm" onClick={() => setCreateOpen(true)}>
           <Plus /> New prefix
         </Button>
@@ -364,7 +580,7 @@ export default function PrefixesPage() {
             ))}
             {table.getRowModel().rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
                   No prefixes found.
                 </TableCell>
               </TableRow>
@@ -379,6 +595,17 @@ export default function PrefixesPage() {
         vrfs={vrfs}
         sites={sites}
         onCreated={refresh}
+      />
+      <EditPrefixDialog
+        prefix={editing}
+        sites={sites}
+        onOpenChange={() => setEditing(null)}
+        onSaved={refresh}
+      />
+      <DeletePrefixDialog
+        prefix={deleting}
+        onOpenChange={() => setDeleting(null)}
+        onDeleted={refresh}
       />
     </div>
   );
