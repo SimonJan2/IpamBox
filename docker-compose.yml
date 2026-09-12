@@ -1,0 +1,95 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ipam}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ipam}
+      POSTGRES_DB: ${POSTGRES_DB:-ipam}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      # bound to loopback: also reachable from the host-networked scanner container
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-ipam} -d $${POSTGRES_DB:-ipam}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  api:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ipam}:${POSTGRES_PASSWORD:-ipam}@db:5432/${POSTGRES_DB:-ipam}
+      REDIS_URL: redis://redis:6379/0
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3010}
+    ports:
+      - "${API_PORT:-8001}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  scanner:
+    build: ./backend
+    restart: unless-stopped
+    # host networking gives the worker real L2 access for ARP scanning;
+    # it reaches Postgres/Redis via the loopback-published ports above.
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ipam}:${POSTGRES_PASSWORD:-ipam}@127.0.0.1:5432/${POSTGRES_DB:-ipam}
+      REDIS_URL: redis://127.0.0.1:6379/0
+      SCAN_INTERFACE: ${SCAN_INTERFACE:-}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    command: arq app.worker.worker.WorkerSettings
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        # empty = same-origin via Next rewrite proxy to the api service
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
+    ports:
+      - "${WEB_PORT:-3010}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  redisdata:
