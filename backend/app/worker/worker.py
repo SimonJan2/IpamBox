@@ -9,6 +9,7 @@ from sqlalchemy import select
 from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.core.redis import get_redis, redis_settings_from_url
+from app.core.security import set_actor
 from app.models.ip_address import IPAddress
 from app.models.prefix import Prefix, PrefixStatus
 from app.models.scan_job import ScanJob, ScanStatus
@@ -72,6 +73,7 @@ async def _resolve_prefix(session, cidr: str, vrf_id: int, prefix_id: int | None
 
 async def run_scan(ctx: dict, scan_id: int) -> dict:
     """ARQ job: execute a scan and reconcile results."""
+    set_actor("scanner")
     started = datetime.utcnow()
     progress_lock = asyncio.Lock()
 

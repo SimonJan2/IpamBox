@@ -119,6 +119,23 @@ export interface SiteNode {
   vrfs: VrfNode[];
 }
 
+export interface ChangeField {
+  field: string;
+  before: unknown;
+  after: unknown;
+}
+
+export interface ChangeLogEntry {
+  id: number;
+  ts: string;
+  actor: string;
+  action: "create" | "update" | "delete";
+  object_type: string;
+  object_id: number | null;
+  object_repr: string;
+  changes: ChangeField[];
+}
+
 export interface AuthStatus {
   initialized: boolean;
   authenticated: boolean;

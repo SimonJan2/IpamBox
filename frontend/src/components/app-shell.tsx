@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import {
   Building2,
   FolderTree,
+  History,
   Inbox,
   LayoutDashboard,
   LogOut,
@@ -29,6 +30,7 @@ const NAV = [
   { href: "/tree", label: "Hierarchy", icon: FolderTree },
   { href: "/discovery", label: "Discovery Inbox", icon: Inbox },
   { href: "/scans", label: "Scans", icon: ScanLine },
+  { href: "/changelog", label: "Changelog", icon: History },
 ];
 
 const AUTH_ROUTES = ["/login", "/setup"];

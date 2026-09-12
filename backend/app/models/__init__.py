@@ -1,4 +1,5 @@
 from app.models.base import Base
+from app.models.change_log import ChangeLog
 from app.models.ip_address import IPAddress, IPStatus
 from app.models.prefix import Prefix, PrefixStatus
 from app.models.scan_job import ScanJob, ScanStatus
@@ -17,4 +18,5 @@ __all__ = [
     "ScanJob",
     "ScanStatus",
     "User",
+    "ChangeLog",
 ]

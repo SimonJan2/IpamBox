@@ -5,7 +5,8 @@ import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
-import type { IpAddress, IpStatus } from "@/types";
+import { timeAgo } from "@/lib/utils";
+import type { ChangeLogEntry, IpAddress, IpStatus } from "@/types";
 import { IpStatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
@@ -49,6 +50,7 @@ export function IpDrawer({
     notes: "",
   });
   const [busy, setBusy] = useState(false);
+  const [history, setHistory] = useState<ChangeLogEntry[]>([]);
 
   useEffect(() => {
     setForm({
@@ -57,6 +59,16 @@ export function IpDrawer({
       status: addr?.status ?? "active",
       notes: addr?.notes ?? "",
     });
+    if (open && addr) {
+      api
+        .get<ChangeLogEntry[]>(
+          `/api/v1/changelog?object_type=IPAddress&object_id=${addr.id}&limit=20`
+        )
+        .then(setHistory)
+        .catch(() => setHistory([]));
+    } else {
+      setHistory([]);
+    }
   }, [addr, open]);
 
   const save = async () => {
@@ -181,6 +193,40 @@ export function IpDrawer({
               </Button>
             )}
           </div>
+
+          {history.length > 0 && (
+            <div className="border-t pt-3">
+              <div className="mb-2 text-xs font-medium text-muted-foreground">
+                History
+              </div>
+              <div className="space-y-1.5 text-xs text-muted-foreground">
+                {history.map((h) => (
+                  <div key={h.id} className="flex items-baseline gap-2">
+                    <span
+                      className={
+                        h.action === "create"
+                          ? "text-emerald-400"
+                          : h.action === "delete"
+                            ? "text-rose-400"
+                            : "text-amber-400"
+                      }
+                    >
+                      {h.action}
+                    </span>
+                    <span className="flex-1 truncate">
+                      {h.action === "update"
+                        ? h.changes
+                            .map((c) => c.field)
+                            .slice(0, 3)
+                            .join(", ")
+                        : h.actor}
+                    </span>
+                    <span className="shrink-0">{timeAgo(h.ts)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </SheetContent>
     </Sheet>

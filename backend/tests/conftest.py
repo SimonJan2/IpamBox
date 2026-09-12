@@ -58,8 +58,8 @@ async def session(engine, sf):
     async with engine.begin() as conn:
         await conn.execute(
             text(
-                "TRUNCATE scan_jobs, ip_addresses, prefixes, vrfs, sites, users "
-                "RESTART IDENTITY CASCADE"
+                "TRUNCATE scan_jobs, ip_addresses, prefixes, vrfs, sites, users, "
+                "change_log RESTART IDENTITY CASCADE"
             )
         )
         await conn.execute(
