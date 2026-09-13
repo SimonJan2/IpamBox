@@ -130,6 +130,61 @@ async def test_address_role_nat_and_bulk(client):
     assert rows == []
 
 
+async def test_prefix_move_vrf(client):
+    g = await _vrf(client)
+    v2 = (
+        await client.post("/api/v1/vrfs", json={"name": "DMZ"})
+    ).json()["id"]
+
+    p = await _prefix(client, "10.96.0.0/24")
+    await client.post(
+        "/api/v1/addresses",
+        json={"address": "10.96.0.5", "prefix_id": p["id"], "status": "active"},
+    )
+
+    # move to the DMZ vrf — the address follows
+    r = await client.patch(f"/api/v1/prefixes/{p['id']}", json={"vrf_id": v2})
+    assert r.status_code == 200, r.text
+    assert r.json()["vrf_id"] == v2
+    rows = (await client.get("/api/v1/addresses", params={"prefix_id": p["id"]})).json()
+    assert rows[0]["vrf_id"] == v2
+
+    # same CIDR can now exist in Global again (no conflict there anymore)
+    r = await client.post("/api/v1/prefixes", json={"prefix": "10.96.0.0/24", "vrf_id": g})
+    assert r.status_code == 201, r.text
+
+    # moving it back now collides with the copy in Global
+    r = await client.patch(f"/api/v1/prefixes/{p['id']}", json={"vrf_id": g})
+    assert r.status_code == 409
+
+    # nonexistent VRF
+    r = await client.patch(f"/api/v1/prefixes/{p['id']}", json={"vrf_id": 9999})
+    assert r.status_code == 404
+
+
+async def test_container_move_with_children_rejected(client):
+    g = await _vrf(client)
+    v2 = (await client.post("/api/v1/vrfs", json={"name": "Staging"})).json()["id"]
+
+    r = await client.post(
+        "/api/v1/prefixes",
+        json={"prefix": "10.97.0.0/16", "vrf_id": g, "status": "container"},
+    )
+    assert r.status_code == 201, r.text
+    parent = r.json()
+    child = await _prefix(client, "10.97.1.0/24")
+
+    r = await client.patch(f"/api/v1/prefixes/{parent['id']}", json={"vrf_id": v2})
+    assert r.status_code == 409, r.text
+    assert "child prefixes" in r.json()["detail"]
+
+    # a childless container moves freely
+    r = await client.delete(f"/api/v1/prefixes/{child['id']}")
+    assert r.status_code == 204
+    r = await client.patch(f"/api/v1/prefixes/{parent['id']}", json={"vrf_id": v2})
+    assert r.status_code == 200, r.text
+
+
 async def test_csv_export_import(client):
     p = await _prefix(client, "10.95.0.0/24")
     await client.post(

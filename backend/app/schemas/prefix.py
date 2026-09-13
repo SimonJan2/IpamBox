@@ -26,6 +26,7 @@ class PrefixCreate(BaseModel):
 
 
 class PrefixUpdate(BaseModel):
+    vrf_id: int | None = None
     site_id: int | None = None
     vlan_id: int | None = None
     status: PrefixStatus | None = None

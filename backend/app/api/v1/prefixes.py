@@ -167,17 +167,63 @@ async def update_prefix(prefix_id: int, body: PrefixUpdate, session: AsyncSessio
     if prefix is None:
         raise HTTPException(404, f"Prefix {prefix_id} not found")
     data = body.model_dump(exclude_unset=True)
-    if data.get("vlan_id") is not None:
-        try:
+    new_vrf = data.get("vrf_id")
+    moving_vrf = new_vrf is not None and new_vrf != prefix.vrf_id
+    net = prefix_math.to_network(prefix.prefix)
+    try:
+        if data.get("vlan_id") is not None:
             await get_or_404(session, VLAN, data["vlan_id"])
-        except IPAMError as e:
-            raise HTTPException(e.status_code, str(e))
+        if moving_vrf:
+            await get_or_404(session, VRF, new_vrf)
+            if prefix.status == PrefixStatus.CONTAINER:
+                # Children of a container live in its VRF — refuse to strand them.
+                siblings = (
+                    await session.execute(
+                        select(Prefix).where(
+                            Prefix.vrf_id == prefix.vrf_id, Prefix.id != prefix.id
+                        )
+                    )
+                ).scalars().all()
+                children = [
+                    s for s in siblings
+                    if (sn := prefix_math.to_network(s.prefix)).version == net.version
+                    and sn.subnet_of(net)
+                ]
+                if children:
+                    raise HTTPException(
+                        409,
+                        f"container has child prefixes in this VRF "
+                        f"({', '.join(str(s.prefix) for s in children[:5])}) — "
+                        "move or delete them first",
+                    )
+            else:
+                conflict = await check_overlap(session, net, new_vrf)
+                if conflict is not None:
+                    raise HTTPException(
+                        409,
+                        f"{net} overlaps existing prefix {conflict.prefix} "
+                        f"(id={conflict.id}) in the target VRF",
+                    )
+    except IPAMError as e:
+        raise HTTPException(e.status_code, str(e))
     for field, value in data.items():
         setattr(prefix, field, value)
+    if moving_vrf:
+        # Addresses carry their own vrf_id (UNIQUE(vrf_id, address)) — cascade.
+        for addr in (
+            await session.execute(
+                select(IPAddress).where(IPAddress.prefix_id == prefix.id)
+            )
+        ).scalars():
+            addr.vrf_id = new_vrf
     try:
         await session.commit()
-    except IntegrityError:
+    except IntegrityError as e:
         await session.rollback()
+        if "uq_ip_addresses_vrf_address" in str(e):
+            raise HTTPException(409, "an address already exists in the target VRF")
+        if "excl_prefixes_no_overlap" in str(e):
+            raise HTTPException(409, f"{net} overlaps an existing prefix in the target VRF")
         raise HTTPException(400, "invalid prefix data")
     await session.refresh(prefix)
     return await _with_stats(session, prefix)

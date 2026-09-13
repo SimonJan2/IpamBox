@@ -206,18 +206,21 @@ function NewPrefixDialog({
 
 function EditPrefixDialog({
   prefix,
+  vrfs,
   sites,
   vlans,
   onOpenChange,
   onSaved,
 }: {
   prefix: Prefix | null;
+  vrfs: Vrf[];
   sites: Site[];
   vlans: Vlan[];
   onOpenChange: (o: boolean) => void;
   onSaved: () => void;
 }) {
   const [form, setForm] = useState({
+    vrf_id: "",
     site_id: "none",
     vlan_id: "none",
     status: "active",
@@ -228,6 +231,7 @@ function EditPrefixDialog({
   useEffect(() => {
     if (prefix) {
       setForm({
+        vrf_id: String(prefix.vrf_id),
         site_id: prefix.site_id ? String(prefix.site_id) : "none",
         vlan_id: prefix.vlan_id ? String(prefix.vlan_id) : "none",
         status: prefix.status,
@@ -241,6 +245,7 @@ function EditPrefixDialog({
     setBusy(true);
     try {
       await api.patch(`/api/v1/prefixes/${prefix.id}`, {
+        vrf_id: Number(form.vrf_id),
         site_id: form.site_id === "none" ? null : Number(form.site_id),
         vlan_id: form.vlan_id === "none" ? null : Number(form.vlan_id),
         status: form.status,
@@ -265,23 +270,44 @@ function EditPrefixDialog({
           </DialogTitle>
         </DialogHeader>
         <div className="grid gap-3">
-          <div className="grid gap-1.5">
-            <Label>Site</Label>
-            <Select
-              value={form.site_id}
-              onValueChange={(v) => setForm({ ...form, site_id: v })}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="None" />
-              </SelectTrigger>
-              <SelectContent>
-                {sites.map((s) => (
-                  <SelectItem key={s.id} value={String(s.id)}>
-                    {s.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-1.5">
+              <Label>VRF</Label>
+              <Select
+                value={form.vrf_id}
+                onValueChange={(v) => setForm({ ...form, vrf_id: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select VRF" />
+                </SelectTrigger>
+                <SelectContent>
+                  {vrfs.map((v) => (
+                    <SelectItem key={v.id} value={String(v.id)}>
+                      {v.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Site</Label>
+              <Select
+                value={form.site_id}
+                onValueChange={(v) => setForm({ ...form, site_id: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {sites.map((s) => (
+                    <SelectItem key={s.id} value={String(s.id)}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
@@ -638,6 +664,7 @@ export default function PrefixesPage() {
       />
       <EditPrefixDialog
         prefix={editing}
+        vrfs={vrfs}
         sites={sites}
         vlans={vlans}
         onOpenChange={() => setEditing(null)}
