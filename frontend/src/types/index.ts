@@ -224,3 +224,31 @@ export interface ScanConfig {
   detected_cidr: string | null;
   tcp_ports: number[];
 }
+
+export interface BackupFileInfo {
+  name: string;
+  size: number;
+  created_at: string;
+}
+
+export interface BackupFilesOut {
+  files: BackupFileInfo[];
+  interval_minutes: number;
+  keep: number;
+}
+
+export interface BackupPreview {
+  format: string;
+  format_version: number;
+  app_version: string | null;
+  alembic_revision: string | null;
+  created_at: string | null;
+  tables: Record<string, number>;
+  warnings: string[];
+}
+
+export interface RestoreReport {
+  restored: Record<string, number>;
+  warnings: string[];
+  backup_created_at: string | null;
+}

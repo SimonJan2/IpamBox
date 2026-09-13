@@ -258,16 +258,39 @@ async def run_scheduled_scans(ctx: dict) -> dict:
     return {"enqueued": enqueued}
 
 
-def _cron_jobs() -> list:
-    interval = settings.scan_interval_minutes
-    if interval <= 0:
-        return []
-    if interval < 60:
-        return [cron(run_scheduled_scans, minute=set(range(0, 60, interval)))]
-    hours = max(1, interval // 60)
+async def run_scheduled_backup(ctx: dict) -> dict:
+    """Cron entry point: write a full snapshot into BACKUP_DIR, prune old ones."""
+    from app.services import backup as backup_svc
+
+    async with SessionLocal() as session:
+        payload = await backup_svc.build_backup(session)
+    path = backup_svc.write_backup_file(payload)
+    pruned = backup_svc.prune_backups(settings.backup_keep)
+    log.info("scheduled backup written: %s (pruned %d)", path.name, pruned)
+    return {"file": path.name, "pruned": pruned}
+
+
+def _periodic(func, minutes: int):
+    """Map 'every N minutes' onto an arq cron spec; None disables the job."""
+    if minutes <= 0:
+        return None
+    if minutes < 60:
+        return cron(func, minute=set(range(0, 60, minutes)))
+    hours = max(1, minutes // 60)
     if hours < 24:
-        return [cron(run_scheduled_scans, hour=set(range(0, 24, hours)), minute=0)]
-    return [cron(run_scheduled_scans, hour=0, minute=0)]  # daily fallback
+        return cron(func, hour=set(range(0, 24, hours)), minute=0)
+    return cron(func, hour=0, minute=0)  # daily fallback
+
+
+def _cron_jobs() -> list:
+    return [
+        job
+        for job in (
+            _periodic(run_scheduled_scans, settings.scan_interval_minutes),
+            _periodic(run_scheduled_backup, settings.backup_interval_minutes),
+        )
+        if job is not None
+    ]
 
 
 async def startup(ctx: dict):
@@ -289,7 +312,7 @@ async def startup(ctx: dict):
 
 
 class WorkerSettings:
-    functions = [run_scan]
+    functions = [run_scan, run_scheduled_backup]
     cron_jobs = _cron_jobs()
     on_startup = startup
     redis_settings = redis_settings_from_url(settings.redis_url)

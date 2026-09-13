@@ -67,6 +67,11 @@ Scapy raw-socket scanning · Next.js 15 dark-mode UI
   Session-cookie login with 5-strike IP lockout.
 - **Ops endpoints**: `GET /healthz`, `GET /readyz` (checks DB + Redis),
   `GET /metrics` (Prometheus text format with object counts).
+- **Backup & restore**: download a full snapshot (every table except the
+  login account) as a single `.json.gz` from **Settings**, and restore it
+  on any IpamBox server — even a fresh install. Restores are atomic,
+  preserve IDs, and keep you logged in. Optional scheduled snapshots to a
+  docker volume via `BACKUP_INTERVAL_MINUTES`.
 - **Everything containerized**: one `docker compose up` gives you the
   full stack; Alembic migrations run automatically on API start.
 
@@ -136,6 +141,9 @@ annotated list. Highlights:
 | `IPAMBOX_SESSION_HOURS` | session lifetime | `168` |
 | `IPAMBOX_ALLOW_INSECURE` | disable auth — only behind a trusted proxy | `false` |
 | `IPAMBOX_COOKIE_SECURE` | `Secure` cookie flag — set when serving HTTPS | `false` |
+| `BACKUP_DIR` | where scheduled snapshots are written (docker volume) | `/backups` |
+| `BACKUP_INTERVAL_MINUTES` | recurring backup interval; `0` = manual only | `0` |
+| `BACKUP_KEEP` | how many scheduled files to retain | `14` |
 
 > **Secrets**: prefer `IPAMBOX_PASSWORD_FILE` (e.g. a Docker secret) over
 > `IPAMBOX_PASSWORD` so the value never sits in your env/compose file.
@@ -152,6 +160,7 @@ annotated list. Highlights:
 | `/scans` | Trigger/schedule/cancel scans, live progress |
 | `/changelog` | Global audit trail |
 | `/tree` | Site → VRF → prefix hierarchy view |
+| `/settings` | Backup download, scheduled snapshots, restore |
 
 ## Operations
 
@@ -160,7 +169,18 @@ annotated list. Highlights:
 | `GET /healthz` | liveness — process up |
 | `GET /readyz` | readiness — checks DB + Redis connectivity |
 | `GET /metrics` | Prometheus text: object counts, scan status, version info |
+| `GET /api/v1/backup` | download a full backup (`*.json.gz`) |
+| `GET /api/v1/backup/files` | list scheduled snapshots in `BACKUP_DIR` |
+| `POST /api/v1/backup/restore` | restore an uploaded backup (`?dry_run=1` previews) |
 | `GET /docs` | interactive OpenAPI (Swagger) |
+
+**Restoring to a fresh server**: bring the stack up, create the admin
+account at `/setup`, log in, then upload the backup under **Settings →
+Restore**. All data tables are replaced inside one transaction with their
+original IDs; the `users` table (and your session) are never touched.
+Backups record the Alembic schema revision — a file from a newer IpamBox
+release is refused rather than half-applied. See **Backup & Restore**
+below for the full rundown.
 
 Example Prometheus scrape config:
 
@@ -170,6 +190,77 @@ scrape_configs:
     metrics_path: /metrics
     static_configs: [{ targets: ["host:8001"] }]
 ```
+
+## Backup & Restore
+
+A backup is a **single portable file** (`ipambox-backup-<ts>.json.gz`)
+containing the whole database state — sites, VRFs, VLAN groups + VLANs,
+prefixes, IP ranges, addresses, tags + assignments, the full changelog and
+scan history. The `users` table is deliberately excluded: the admin
+account always belongs to the server you're restoring *on*.
+
+### Take a backup
+
+- **UI**: **Settings → Backup → Download backup**.
+- **API**: `curl -b cookies.txt -OJ http://localhost:8001/api/v1/backup`
+- **Scheduled**: set `BACKUP_INTERVAL_MINUTES` (e.g. `1440` for daily) and
+  the worker writes timestamped snapshots into the `backupdata` docker
+  volume (`BACKUP_DIR`), keeping the newest `BACKUP_KEEP` files. They show
+  up under **Settings → Scheduled backups** for download.
+  > The volume lives and dies with the host — copy files off-server
+  > (download them, or back up the volume) for real disaster recovery.
+
+### Restore
+
+**Settings → Restore**: pick a `.json.gz` (plain `.json` works too) →
+check the preview (created-at, app + schema version, per-table row counts,
+warnings) → type `RESTORE` → done. The page reloads into the restored
+state; you stay logged in.
+
+```bash
+# API equivalent — validate first, then apply
+curl -b cookies.txt -X POST "http://localhost:8001/api/v1/backup/restore?dry_run=1" \
+  --data-binary @ipambox-backup-20260913-150000.json.gz \
+  -H 'content-type: application/gzip'
+curl -b cookies.txt -X POST "http://localhost:8001/api/v1/backup/restore" \
+  --data-binary @ipambox-backup-20260913-150000.json.gz \
+  -H 'content-type: application/gzip'
+```
+
+What restore guarantees:
+
+- **Atomic** — everything happens in one transaction; any failure rolls
+  back and nothing changes.
+- **ID-preserving** — rows come back with their original primary keys, so
+  tags, changelog entries, NAT-inside links and every FK stay valid.
+- **Schema-checked** — a backup from a *newer* IpamBox (unknown Alembic
+  revision) is refused; older-schema files restore fine (new columns get
+  their defaults, unknown ones are skipped with a warning).
+- **Sane scan state** — jobs that were `queued`/`running` when the backup
+  was taken are marked `failed` (they can't resume on the new server).
+- **Fresh-install friendly** — the migration-seeded `Global` VRF is
+  replaced by the backup's copy, not duplicated.
+
+Avoid restoring while a scan is running — wait for it to finish or cancel
+it first.
+
+### Backup file format
+
+```json
+{
+  "format": "ipambox-backup",
+  "format_version": 1,
+  "app_version": "0.2.0",
+  "alembic_revision": "0008_scanner_depth",
+  "created_at": "2026-09-13T15:07:11",
+  "tables": { "sites": [ { "id": 1, "name": "HQ", ... } ], "...": [] }
+}
+```
+
+**For developers**: which tables are backed up lives in
+`BACKUP_TABLES` in `backend/app/services/backup.py` — one registry entry
+per table, ordered by FK dependency. New columns are picked up
+automatically; a new table needs one line (a test fails if you forget it).
 
 ## Development
 

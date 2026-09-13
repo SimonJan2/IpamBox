@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.v1 import (
     addresses,
+    backup,
     changelog,
     dashboard,
     discovery,
@@ -15,6 +16,7 @@ from app.api.v1 import (
 )
 
 api_router = APIRouter()
+api_router.include_router(backup.router)
 api_router.include_router(sites.router)
 api_router.include_router(vrfs.router)
 api_router.include_router(prefixes.router)
