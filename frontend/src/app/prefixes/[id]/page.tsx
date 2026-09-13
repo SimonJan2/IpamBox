@@ -566,6 +566,8 @@ function AddressTable({
           <TableHead>Hostname</TableHead>
           <TableHead>MAC</TableHead>
           <TableHead>Vendor</TableHead>
+          <TableHead>Type</TableHead>
+          <TableHead>Ports</TableHead>
           <TableHead>Last seen</TableHead>
         </TableRow>
       </TableHeader>
@@ -611,6 +613,18 @@ function AddressTable({
               <TableCell>{a.hostname ?? "—"}</TableCell>
               <TableCell className="font-mono text-xs">{a.mac_address ?? "—"}</TableCell>
               <TableCell className="text-muted-foreground">{a.vendor ?? "—"}</TableCell>
+              <TableCell>
+                {a.device_type ? (
+                  <Badge variant="secondary" className="capitalize">
+                    {a.device_type}
+                  </Badge>
+                ) : (
+                  "—"
+                )}
+              </TableCell>
+              <TableCell className="font-mono text-xs text-muted-foreground">
+                {a.open_ports?.length ? a.open_ports.join(" ") : "—"}
+              </TableCell>
               <TableCell className="text-muted-foreground">{timeAgo(a.last_seen)}</TableCell>
             </TableRow>
           );

@@ -160,6 +160,13 @@ export function IpDrawer({
           {addr && (
             <div className="rounded-md border p-3 text-sm text-muted-foreground space-y-1">
               {addr.vendor && <div>vendor: {addr.vendor}</div>}
+              {addr.device_type && <div>type: {addr.device_type}</div>}
+              {!!addr.open_ports?.length && (
+                <div>
+                  open ports:{" "}
+                  <span className="font-mono text-xs">{addr.open_ports.join("  ")}</span>
+                </div>
+              )}
               {addr.last_seen && (
                 <div>last seen: {new Date(addr.last_seen).toLocaleString()}</div>
               )}

@@ -41,6 +41,8 @@ async def reconcile(
                     mac_address=h.mac,
                     vendor=h.vendor,
                     hostname=h.hostname,
+                    open_ports=h.open_ports or None,
+                    device_type=h.device_type,
                     status=IPStatus.DISCOVERED,
                     last_seen=now,
                 )
@@ -54,6 +56,10 @@ async def reconcile(
                 row.vendor = h.vendor
             if h.hostname and not row.hostname:
                 row.hostname = h.hostname
+            # latest probe result is authoritative for ports/type
+            row.open_ports = h.open_ports or None
+            if h.device_type:
+                row.device_type = h.device_type
             # OFFLINE -> ACTIVE when seen again; DISCOVERED stays pending
             # review; RESERVED/DHCP are intentional and never clobbered.
             if row.status == IPStatus.OFFLINE:

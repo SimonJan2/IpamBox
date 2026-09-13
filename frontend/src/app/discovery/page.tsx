@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { timeAgo } from "@/lib/utils";
 import type { IpAddress, Prefix } from "@/types";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -120,6 +121,8 @@ export default function DiscoveryPage() {
                 <TableHead>Hostname</TableHead>
                 <TableHead>MAC</TableHead>
                 <TableHead>Vendor</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Ports</TableHead>
                 <TableHead>Last seen</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -145,6 +148,18 @@ export default function DiscoveryPage() {
                   <TableCell>{a.hostname ?? "—"}</TableCell>
                   <TableCell className="font-mono text-xs">{a.mac_address ?? "—"}</TableCell>
                   <TableCell className="text-muted-foreground">{a.vendor ?? "—"}</TableCell>
+                  <TableCell>
+                    {a.device_type ? (
+                      <Badge variant="secondary" className="capitalize">
+                        {a.device_type}
+                      </Badge>
+                    ) : (
+                      "—"
+                    )}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">
+                    {a.open_ports?.length ? a.open_ports.join(" ") : "—"}
+                  </TableCell>
                   <TableCell className="text-muted-foreground">{timeAgo(a.last_seen)}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
@@ -163,7 +178,7 @@ export default function DiscoveryPage() {
               ))}
               {items.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
+                  <TableCell colSpan={10} className="py-10 text-center text-muted-foreground">
                     Inbox zero — nothing pending review.
                   </TableCell>
                 </TableRow>

@@ -1,8 +1,8 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import Enum, ForeignKey, Index, Numeric, String, Text, UniqueConstraint, func
-from sqlalchemy.dialects.postgresql import INET
+from sqlalchemy import Enum, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy.dialects.postgresql import ARRAY, INET
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -62,6 +62,10 @@ class IPAddress(Base):
     nat_inside_id: Mapped[int | None] = mapped_column(
         ForeignKey("ip_addresses.id", ondelete="SET NULL"), index=True
     )
+    # Populated by the scanner: TCP ports that answered, and a best-guess
+    # device classification derived from ports + vendor + hostname.
+    open_ports: Mapped[list[int] | None] = mapped_column(ARRAY(Integer))
+    device_type: Mapped[str | None] = mapped_column(String(32))
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())

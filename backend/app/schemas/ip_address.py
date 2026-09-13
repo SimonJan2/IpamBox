@@ -74,6 +74,8 @@ class IPAddressOut(BaseModel):
     status: IPStatus
     role: IPRole | None
     nat_inside_id: int | None
+    open_ports: list[int] | None
+    device_type: str | None
     last_seen: datetime | None
     notes: str | None
     created_at: datetime

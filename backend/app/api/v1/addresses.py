@@ -36,13 +36,16 @@ async def export_addresses(
         "addresses.csv",
         [
             "address", "prefix_id", "vrf_id", "hostname", "mac_address",
-            "vendor", "status", "role", "nat_inside_id", "last_seen", "notes",
+            "vendor", "status", "role", "nat_inside_id", "device_type",
+            "open_ports", "last_seen", "notes",
         ],
         [
             [
                 str(a.address), a.prefix_id, a.vrf_id, a.hostname or "",
                 a.mac_address or "", a.vendor or "", a.status.value,
                 a.role.value if a.role else "", a.nat_inside_id or "",
+                a.device_type or "",
+                " ".join(str(p) for p in (a.open_ports or [])),
                 a.last_seen.isoformat() if a.last_seen else "", a.notes or "",
             ]
             for a in rows

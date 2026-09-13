@@ -1,6 +1,6 @@
 export type PrefixStatus = "container" | "active" | "reserved" | "deprecated";
 export type IpStatus = "active" | "reserved" | "dhcp" | "discovered" | "offline";
-export type ScanStatus = "queued" | "running" | "completed" | "failed";
+export type ScanStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 export type IpRole = "vip" | "vrrp" | "hsrp" | "glbp" | "carp" | "secondary";
 export type RangeRole = "dhcp" | "pool" | "reserved";
 export type VlanStatus = "active" | "reserved" | "deprecated";
@@ -106,6 +106,8 @@ export interface IpAddress {
   status: IpStatus;
   role: IpRole | null;
   nat_inside_id: number | null;
+  open_ports: number[] | null;
+  device_type: string | null;
   last_seen: string | null;
   notes: string | null;
   created_at: string;
@@ -209,5 +211,15 @@ export interface ScanEvent {
   cidr?: string;
   hosts_discovered?: number;
   hosts_new?: number;
+  eta_seconds?: number | null;
   error?: string | null;
+}
+
+export interface ScanConfig {
+  networks: string[];
+  exclude_networks: string[];
+  only_configured: boolean;
+  interval_minutes: number;
+  detected_cidr: string | null;
+  tcp_ports: number[];
 }
