@@ -1,0 +1,1 @@
+{"nodes": [], "edges": [], "hyperedges": [{"id": "lan_scan_pipeline", "label": "LAN scan pipeline (compose worker + Scapy + documented flow + reconciliation)", "nodes": ["compose_scanner", "req_scapy"], "relation": "participate_in", "confidence": "INFERRED", "confidence_score": 0.85, "source_file": "README.md"}]}
