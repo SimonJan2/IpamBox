@@ -35,8 +35,9 @@ async def _prepare_test_db():
     finally:
         await conn.close()
 
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     env = dict(os.environ, DATABASE_URL=test_url())
-    subprocess.run(["alembic", "upgrade", "head"], check=True, env=env, cwd="/app")
+    subprocess.run(["alembic", "upgrade", "head"], check=True, env=env, cwd=backend_dir)
     yield
 
 
