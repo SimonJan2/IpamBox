@@ -6,8 +6,9 @@ import { toast } from "sonner";
 
 import { api } from "@/lib/api";
 import { timeAgo } from "@/lib/utils";
-import type { ChangeLogEntry, IpAddress, IpRole, IpStatus } from "@/types";
+import type { ChangeLogEntry, IpAddress, IpRole, IpStatus, Tag } from "@/types";
 import { IpStatusBadge } from "@/components/status-badge";
+import { TagChip, TagPicker } from "@/components/tag-picker";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,6 +37,9 @@ export function IpDrawer({
   addr,
   prefixId,
   onSaved,
+  allTags = [],
+  assigned = [],
+  onTagsChanged,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
@@ -43,6 +47,9 @@ export function IpDrawer({
   addr: IpAddress | null;
   prefixId: number;
   onSaved: () => void;
+  allTags?: Tag[];
+  assigned?: Tag[];
+  onTagsChanged?: () => void;
 }) {
   const [form, setForm] = useState({
     hostname: "",
@@ -172,6 +179,27 @@ export function IpDrawer({
               )}
             </div>
           )}
+          <div className="grid gap-1.5">
+            <Label>Tags</Label>
+            {addr ? (
+              <div className="flex flex-wrap items-center gap-1">
+                {assigned.map((t) => (
+                  <TagChip key={t.id} tag={t} />
+                ))}
+                <TagPicker
+                  objectType="IPAddress"
+                  objectId={addr.id}
+                  allTags={allTags}
+                  assigned={assigned}
+                  onChanged={() => onTagsChanged?.()}
+                />
+              </div>
+            ) : (
+              <span className="text-sm text-muted-foreground">
+                Reserve this address to add tags
+              </span>
+            )}
+          </div>
           <div className="grid gap-1.5">
             <Label>Hostname</Label>
             <Input

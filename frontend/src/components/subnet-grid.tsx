@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
 import { cn, intToIp, ipToInt, timeAgo } from "@/lib/utils";
-import type { AddressPage, IpAddress, IpRange } from "@/types";
+import type { AddressPage, IpAddress, IpRange, Tag } from "@/types";
+import { TagChip } from "@/components/tag-picker";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 const CELL = 40;
@@ -31,10 +32,18 @@ export function SubnetGrid({
   page,
   ranges = [],
   onSelect,
+  tags,
+  matchIds = null,
+  highlight,
+  focusInt = null,
 }: {
   page: AddressPage;
   ranges?: IpRange[];
   onSelect: (ip: string, addr: IpAddress | null) => void;
+  tags?: Map<number, Tag[]>;
+  matchIds?: Set<number> | null;
+  highlight?: Map<number, string>;
+  focusInt?: number | null;
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -66,6 +75,14 @@ export function SubnetGrid({
     overscan: 8,
   });
 
+  useEffect(() => {
+    if (focusInt == null) return;
+    const row = Math.floor((focusInt - base) / COLS);
+    if (row >= 0 && row < rows) {
+      virtualizer.scrollToIndex(row, { align: "center" });
+    }
+  }, [focusInt, base, rows, virtualizer]);
+
   function cellState(intIp: number): CellState {
     const addr = byInt.get(intIp);
     if (addr) return { kind: "used", addr };
@@ -94,6 +111,16 @@ export function SubnetGrid({
               const ip = intToIp(intIp);
               const st = cellState(intIp);
               const last = ip.split(".")[3];
+              const cellTags =
+                st.kind === "used" ? (tags?.get(st.addr.id) ?? []) : [];
+              const matched =
+                st.kind === "used" &&
+                matchIds != null &&
+                matchIds.has(st.addr.id);
+              const dimmed = matchIds != null && !matched;
+              const hl = matched
+                ? (highlight?.get(st.addr.id) ?? "#38bdf8")
+                : null;
               const cell = (
                 <button
                   key={col}
@@ -101,12 +128,28 @@ export function SubnetGrid({
                     onSelect(ip, st.kind === "used" ? st.addr : null)
                   }
                   className={cn(
-                    "flex items-center justify-center rounded text-[10px] font-mono transition-colors",
-                    st.kind === "used" ? stateClass[st.addr.status] : stateClass[st.kind]
+                    "relative flex items-center justify-center rounded text-[10px] font-mono transition-colors",
+                    st.kind === "used" ? stateClass[st.addr.status] : stateClass[st.kind],
+                    dimmed && "opacity-25"
                   )}
-                  style={{ width: CELL, height: CELL }}
+                  style={{
+                    width: CELL,
+                    height: CELL,
+                    ...(hl ? { boxShadow: `inset 0 0 0 2px ${hl}` } : {}),
+                  }}
                 >
                   {last}
+                  {cellTags.length > 0 && (
+                    <span className="absolute bottom-0.5 right-0.5 flex gap-0.5">
+                      {cellTags.slice(0, 3).map((t) => (
+                        <i
+                          key={t.id}
+                          className="h-1 w-1 rounded-full"
+                          style={{ background: t.color }}
+                        />
+                      ))}
+                    </span>
+                  )}
                 </button>
               );
               return (
@@ -124,6 +167,13 @@ export function SubnetGrid({
                           {" · "}seen {timeAgo(st.addr.last_seen)}
                         </div>
                         {st.addr.notes && <div>notes: {st.addr.notes}</div>}
+                        {cellTags.length > 0 && (
+                          <div className="flex flex-wrap gap-1 pt-1">
+                            {cellTags.map((t) => (
+                              <TagChip key={t.id} tag={t} />
+                            ))}
+                          </div>
+                        )}
                       </div>
                     ) : st.kind === "boundary" ? (
                       <div className="text-muted-foreground">
