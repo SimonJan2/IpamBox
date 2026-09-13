@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,6 +10,7 @@ from app.schemas.vlan import (
     VLANCreate,
     VLANGroupCreate,
     VLANGroupOut,
+    VLANGroupUpdate,
     VLANOut,
     VLANUpdate,
 )
@@ -20,11 +21,17 @@ router = APIRouter(tags=["vlans"])
 
 @router.get("/vlan-groups", response_model=list[VLANGroupOut])
 async def list_vlan_groups(session: AsyncSession = Depends(get_session)):
-    return (
-        (await session.execute(select(VLANGroup).order_by(VLANGroup.name)))
-        .scalars()
-        .all()
+    stmt = (
+        select(VLANGroup, func.count(VLAN.id).label("vlan_count"))
+        .outerjoin(VLAN, VLAN.group_id == VLANGroup.id)
+        .group_by(VLANGroup.id)
+        .order_by(VLANGroup.name)
     )
+    out = []
+    for group, count in (await session.execute(stmt)).all():
+        group.vlan_count = count
+        out.append(group)
+    return out
 
 
 @router.post("/vlan-groups", response_model=VLANGroupOut, status_code=201)
@@ -39,6 +46,28 @@ async def create_vlan_group(
         await session.rollback()
         raise HTTPException(409, "vlan group already exists")
     await session.refresh(g)
+    return g
+
+
+@router.patch("/vlan-groups/{group_id}", response_model=VLANGroupOut)
+async def update_vlan_group(
+    group_id: int, body: VLANGroupUpdate, session: AsyncSession = Depends(get_session)
+):
+    try:
+        g = await get_or_404(session, VLANGroup, group_id)
+    except IPAMError as e:
+        raise HTTPException(e.status_code, str(e))
+    for field, value in body.model_dump(exclude_unset=True).items():
+        setattr(g, field, value)
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(409, "vlan group already exists")
+    await session.refresh(g)
+    g.vlan_count = await session.scalar(
+        select(func.count(VLAN.id)).where(VLAN.group_id == g.id)
+    )
     return g
 
 

@@ -25,6 +25,7 @@ export interface VlanGroup {
   id: number;
   name: string;
   description: string | null;
+  vlan_count: number;
   created_at: string;
 }
 

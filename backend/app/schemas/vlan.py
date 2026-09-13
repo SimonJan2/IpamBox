@@ -10,12 +10,18 @@ class VLANGroupCreate(BaseModel):
     description: str | None = None
 
 
+class VLANGroupUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = None
+
+
 class VLANGroupOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     name: str
     description: str | None
+    vlan_count: int = 0
     created_at: datetime
 
 
