@@ -1,8 +1,8 @@
 # IpamBox
 
 **IP Address Management with a built-in LAN scanner** — a self-hosted,
-containerized IPAM that models your network like NetBox and discovers it
-like LAN-Orangutan.
+containerized IPAM that keeps your documented network and your real
+network in sync.
 
 FastAPI · async SQLAlchemy 2.0 · PostgreSQL 16 · Redis/ARQ worker ·
 Scapy raw-socket scanning · Next.js 15 dark-mode UI
@@ -14,15 +14,13 @@ Scapy raw-socket scanning · Next.js 15 dark-mode UI
 
 ## What it does
 
-IpamBox combines two jobs in one box:
-
-1. **IPAM** — document your sites, VRFs, prefixes, VLANs, IP ranges and
-   addresses with strict consistency rules enforced by the database, not
-   by convention.
-2. **Discovery** — a worker that ARP/ICMP/TCP-scans your LAN on demand or
-   on a schedule, fingerprints hosts (vendor, open ports, device type) and
-   reconciles them against your IPAM so reality and documentation stay
-   in sync.
+1. **Document** — model sites, VRFs, prefixes, VLANs, IP ranges and
+   addresses with consistency rules enforced by the database itself,
+   not by convention.
+2. **Discover** — a worker ARP/ICMP/TCP-scans your LAN on demand or on
+   a schedule, fingerprints hosts (vendor, open ports, device type) and
+   reconciles what it finds against your IPAM — so drift between the
+   spreadsheet and reality shows up as data, not surprises.
 
 ## Features
 
@@ -35,7 +33,7 @@ IpamBox combines two jobs in one box:
 - **Atomic allocation**: "next available IP" uses `SELECT … FOR UPDATE`
   + `UNIQUE(vrf_id, address)`; defined IP ranges are excluded
   automatically.
-- **NetBox-style objects**: VLAN groups + VLANs, IP ranges
+- **Rich object model**: VLAN groups + VLANs, IP ranges
   (dhcp/pool/reserved), IP roles (vip/vrrp/hsrp/glbp/carp/secondary),
   NAT-inside links, colored tags on sites/VRFs/prefixes/addresses.
 - **Bulk operations**: select rows → set status/role, tag, delete.
@@ -204,12 +202,7 @@ docker compose up -d        # alembic upgrade head runs on api start
 - See [SECURITY.md](SECURITY.md) for the threat model, deployment
   hardening and how to report vulnerabilities.
 
-## Acknowledgements
-
-- Data model and UX ideas: [NetBox](https://github.com/netbox-community/netbox)
-- Discovery flow and first-run auth idea:
-  [LAN-Orangutan](https://github.com/291-Group/LAN-Orangutan)
-
 ## License
 
-[MIT](LICENSE) © SimonJan2
+[MIT](LICENSE) © SimonJan2 — with a nod to NetBox and LAN-Orangutan for
+proving what good looks like.
