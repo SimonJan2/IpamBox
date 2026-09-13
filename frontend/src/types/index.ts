@@ -252,3 +252,63 @@ export interface RestoreReport {
   warnings: string[];
   backup_created_at: string | null;
 }
+
+export type SettingSource = "db" | "env" | "default";
+
+export interface LanInfo {
+  iface: string | null;
+  cidr: string | null;
+  source: "worker" | "local" | null;
+}
+
+export interface SystemInfo {
+  app_version: string;
+  alembic_head: string | null;
+  lan: LanInfo;
+}
+
+export interface SettingsValues {
+  scan_networks: string[];
+  scan_exclude_networks: string[];
+  scan_only_configured: boolean;
+  scan_interval_minutes: number;
+  scan_min_interval_seconds: number;
+  scan_tcp_ports: number[];
+  scan_interface: string;
+  scan_icmp_timeout: number;
+  scan_tcp_timeout: number;
+  scan_concurrency: number;
+  backup_interval_minutes: number;
+  backup_keep: number;
+  ipambox_session_hours: number;
+}
+
+export interface SettingsOut {
+  values: SettingsValues;
+  sources: Partial<Record<keyof SettingsValues, SettingSource>>;
+  env: {
+    database_url: string;
+    redis_url: string;
+    cors_origins: string[];
+    ipambox_allow_insecure: boolean;
+    ipambox_cookie_secure: boolean;
+    ipambox_password_set: boolean;
+    backup_dir: string;
+  };
+  system: SystemInfo;
+}
+
+export interface UserOut {
+  id: number;
+  username: string;
+  created_at: string;
+}
+
+export interface SessionOut {
+  id: string;
+  created_at: string | null;
+  ip: string | null;
+  ua: string | null;
+  expires_in: number | null;
+  current: boolean;
+}

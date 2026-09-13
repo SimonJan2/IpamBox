@@ -54,7 +54,9 @@ Scapy raw-socket scanning · Next.js 15 dark-mode UI
   workstation).
 - **Scheduled scans** via `SCAN_INTERVAL_MINUTES`; multi-network
   targeting via `SCAN_NETWORKS` / `SCAN_EXCLUDE_NETWORKS` /
-  `SCAN_ONLY_CONFIGURED`.
+  `SCAN_ONLY_CONFIGURED`. All scanner settings are also editable at
+  runtime from **Settings → Scanning** — changes apply to the worker
+  within a minute, no restart needed.
 - Cancellable jobs, SSE live progress with ETA, per-CIDR rate limiting.
 - **Reconciliation**: new hosts land as `discovered` in the Discovery
   Inbox (bulk confirm/delete), missing `active` hosts go `offline`,
@@ -68,10 +70,16 @@ Scapy raw-socket scanning · Next.js 15 dark-mode UI
 - **Ops endpoints**: `GET /healthz`, `GET /readyz` (checks DB + Redis),
   `GET /metrics` (Prometheus text format with object counts).
 - **Backup & restore**: download a full snapshot (every table except the
-  login account) as a single `.json.gz` from **Settings**, and restore it
+  login accounts) as a single `.json.gz` from **Settings**, and restore it
   on any IpamBox server — even a fresh install. Restores are atomic,
   preserve IDs, and keep you logged in. Optional scheduled snapshots to a
   docker volume via `BACKUP_INTERVAL_MINUTES`.
+- **Settings area**: sidebar-organized sections under `/settings` —
+  system overview, runtime scanner config, backup schedule, user/session
+  administration, appearance (dark/light theme, density), and
+  data-maintenance tools. Runtime-editable options are stored in the
+  database and fall back to `.env` values; schedule changes apply without
+  a restart.
 - **Everything containerized**: one `docker compose up` gives you the
   full stack; Alembic migrations run automatically on API start.
 
@@ -123,27 +131,30 @@ curl -b cookies.txt -X POST http://localhost:8001/api/v1/scans/<id>/cancel
 
 ## Configuration
 
-All settings live in `.env` — see [`.env.example`](.env.example) for the
-annotated list. Highlights:
+Settings follow a **hybrid model**: `.env` provides the defaults (see
+[`.env.example`](.env.example) for the annotated list), and the
+operational ones marked ✎ below can be overridden at runtime from
+**Settings** in the UI — overrides persist in the `app_settings` table,
+apply without a restart, and can be reset back to the env value per key.
 
 | Variable | Purpose | Default |
 |---|---|---|
 | `API_PORT` / `WEB_PORT` | host ports for api/web | `8001` / `3010` |
 | `POSTGRES_*` | database credentials | `ipam` / `ipam` / `ipam` |
-| `SCAN_INTERFACE` | pin the scan interface (empty = default-route iface) | — |
-| `SCAN_NETWORKS` | comma-separated CIDRs to scan (empty = auto-detect) | — |
-| `SCAN_EXCLUDE_NETWORKS` | CIDRs that may never be scanned | — |
-| `SCAN_ONLY_CONFIGURED` | refuse scans outside `SCAN_NETWORKS` | `false` |
-| `SCAN_INTERVAL_MINUTES` | recurring scans; `0` = manual only | `0` |
-| `SCAN_MIN_INTERVAL_SECONDS` | per-CIDR manual-scan rate limit | `15` |
-| `SCAN_TCP_PORTS` | ports probed per host | `22,80,443,445,8080` |
+| `SCAN_INTERFACE` ✎ | pin the scan interface (empty = default-route iface) | — |
+| `SCAN_NETWORKS` ✎ | comma-separated CIDRs to scan (empty = auto-detect) | — |
+| `SCAN_EXCLUDE_NETWORKS` ✎ | CIDRs that may never be scanned | — |
+| `SCAN_ONLY_CONFIGURED` ✎ | refuse scans outside `SCAN_NETWORKS` | `false` |
+| `SCAN_INTERVAL_MINUTES` ✎ | recurring scans; `0` = manual only | `0` |
+| `SCAN_MIN_INTERVAL_SECONDS` ✎ | per-CIDR manual-scan rate limit | `15` |
+| `SCAN_TCP_PORTS` ✎ | ports probed per host | `22,80,443,445,8080` |
 | `IPAMBOX_PASSWORD[_FILE]` | pre-provision the admin password | — |
-| `IPAMBOX_SESSION_HOURS` | session lifetime | `168` |
+| `IPAMBOX_SESSION_HOURS` ✎ | session lifetime | `168` |
 | `IPAMBOX_ALLOW_INSECURE` | disable auth — only behind a trusted proxy | `false` |
 | `IPAMBOX_COOKIE_SECURE` | `Secure` cookie flag — set when serving HTTPS | `false` |
 | `BACKUP_DIR` | where scheduled snapshots are written (docker volume) | `/backups` |
-| `BACKUP_INTERVAL_MINUTES` | recurring backup interval; `0` = manual only | `0` |
-| `BACKUP_KEEP` | how many scheduled files to retain | `14` |
+| `BACKUP_INTERVAL_MINUTES` ✎ | recurring backup interval; `0` = manual only | `0` |
+| `BACKUP_KEEP` ✎ | how many scheduled files to retain | `14` |
 
 > **Secrets**: prefer `IPAMBOX_PASSWORD_FILE` (e.g. a Docker secret) over
 > `IPAMBOX_PASSWORD` so the value never sits in your env/compose file.
@@ -160,7 +171,18 @@ annotated list. Highlights:
 | `/scans` | Trigger/schedule/cancel scans, live progress |
 | `/changelog` | Global audit trail |
 | `/tree` | Site → VRF → prefix hierarchy view |
-| `/settings` | Backup download, scheduled snapshots, restore |
+| `/settings` | System overview, runtime config, backups, accounts, preferences, maintenance |
+
+The Settings area has its own sub-navigation:
+
+| Route | What |
+|---|---|
+| `/settings` | General — version, schema rev, DB/Redis health, detected LAN |
+| `/settings/scanning` | Networks, excludes, ports, intervals — runtime-editable |
+| `/settings/backup` | Snapshots, schedule + retention, restore |
+| `/settings/security` | Change password, user management, active sessions |
+| `/settings/appearance` | Theme (dark/light/system), density, page size |
+| `/settings/data` | Purge scans/changelog/discovery, CSV exports, factory reset |
 
 ## Operations
 
@@ -172,6 +194,12 @@ annotated list. Highlights:
 | `GET /api/v1/backup` | download a full backup (`*.json.gz`) |
 | `GET /api/v1/backup/files` | list scheduled snapshots in `BACKUP_DIR` |
 | `POST /api/v1/backup/restore` | restore an uploaded backup (`?dry_run=1` previews) |
+| `GET/PATCH /api/v1/settings` | read/patch runtime settings — patch `{"key": null}` resets a key to its env value |
+| `GET/POST /api/v1/users` | list/create user accounts |
+| `PATCH/DELETE /api/v1/users/{id}` | update/delete users; sessions die with the user |
+| `POST /api/v1/auth/change-password` | change the current account's password |
+| `GET/DELETE /api/v1/auth/sessions` | list/revoke your active sessions |
+| `POST /api/v1/maintenance/*` | purge scans/changelog/discovery, factory reset |
 | `GET /docs` | interactive OpenAPI (Swagger) |
 
 **Restoring to a fresh server**: bring the stack up, create the admin
@@ -195,8 +223,9 @@ scrape_configs:
 
 A backup is a **single portable file** (`ipambox-backup-<ts>.json.gz`)
 containing the whole database state — sites, VRFs, VLAN groups + VLANs,
-prefixes, IP ranges, addresses, tags + assignments, the full changelog and
-scan history. The `users` table is deliberately excluded: the admin
+prefixes, IP ranges, addresses, tags + assignments, runtime settings, the
+full changelog and scan history. The `users` table is deliberately
+excluded: the admin
 account always belongs to the server you're restoring *on*.
 
 ### Take a backup
@@ -251,7 +280,7 @@ it first.
   "format": "ipambox-backup",
   "format_version": 1,
   "app_version": "0.2.0",
-  "alembic_revision": "0008_scanner_depth",
+  "alembic_revision": "0009_app_settings",
   "created_at": "2026-09-13T15:07:11",
   "tables": { "sites": [ { "id": 1, "name": "HQ", ... } ], "...": [] }
 }
@@ -270,7 +299,7 @@ docker compose exec api alembic upgrade head   # apply migrations manually
 ```
 
 - Migrations run automatically when `api` starts; the chain is
-  `0001` → `0008`.
+  `0001` → `0009`.
 - The `scanner` service has its **own image** — after changing backend
   code run `docker compose build api scanner` (or just `build`), not
   `build api` alone.

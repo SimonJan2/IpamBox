@@ -18,13 +18,24 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (!res.ok) {
     let detail = res.statusText;
+    let fields: Record<string, string> | undefined;
     try {
       const body = await res.json();
-      detail = body.detail ?? JSON.stringify(body);
+      if (body.detail && typeof body.detail === "object") {
+        // per-field validation errors, e.g. {"scan_networks": "invalid CIDR"}
+        fields = body.detail as Record<string, string>;
+        detail = Object.entries(fields)
+          .map(([k, v]) => `${k}: ${v}`)
+          .join("; ");
+      } else {
+        detail = body.detail ?? JSON.stringify(body);
+      }
     } catch {
       /* keep statusText */
     }
-    throw new Error(`${res.status}: ${detail}`);
+    const err = new Error(`${res.status}: ${detail}`);
+    (err as Error & { fields?: Record<string, string> }).fields = fields;
+    throw err;
   }
   if (res.status === 204) return undefined as T;
   return res.json();

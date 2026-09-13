@@ -1,321 +1,162 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Download, FileArchive, RotateCcw, Upload } from "lucide-react";
-import { toast } from "sonner";
+import { useEffect, useState } from "react";
+import { Activity, Info, Link2, Server } from "lucide-react";
 
 import { api } from "@/lib/api";
-import type { BackupFilesOut, BackupPreview, RestoreReport } from "@/types";
+import type { DashboardStats, SettingsOut } from "@/types";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 
-function fmtSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-}
-
-function fmtTs(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  return isNaN(d.getTime()) ? iso : d.toLocaleString();
-}
-
-async function downloadUrl(path: string, fallbackName: string) {
-  const res = await fetch(path, { credentials: "include" });
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`);
-  const blob = await res.blob();
-  const cd = res.headers.get("content-disposition") ?? "";
-  const name = cd.match(/filename="?([^";]+)"?/)?.[1] ?? fallbackName;
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = name;
-  a.click();
-  URL.revokeObjectURL(url);
+function Row({ k, v, mono = true }: { k: string; v: React.ReactNode; mono?: boolean }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 py-1">
+      <span className="shrink-0 text-sm text-muted-foreground">{k}</span>
+      <span className={`truncate text-right text-sm ${mono ? "font-mono text-xs" : ""}`}>
+        {v}
+      </span>
+    </div>
+  );
 }
 
 export default function SettingsPage() {
-  const [files, setFiles] = useState<BackupFilesOut | null>(null);
-  const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<BackupPreview | null>(null);
-  const [report, setReport] = useState<RestoreReport | null>(null);
-  const [confirmText, setConfirmText] = useState("");
-  const [busy, setBusy] = useState(false);
-  const fileInput = useRef<HTMLInputElement>(null);
+  const [settings, setSettings] = useState<SettingsOut | null>(null);
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [ready, setReady] = useState<"ok" | "degraded" | null>(null);
 
-  const refreshFiles = useCallback(() => {
-    api.get<BackupFilesOut>("/api/v1/backup/files").then(setFiles).catch(() => {});
+  useEffect(() => {
+    api
+      .get<SettingsOut>("/api/v1/settings")
+      .then((o) => {
+        setSettings(o);
+        setReady("ok");
+      })
+      .catch(() => setReady("degraded"));
+    api.get<DashboardStats>("/api/v1/dashboard/stats").then(setStats).catch(() => {});
   }, []);
 
-  useEffect(refreshFiles, [refreshFiles]);
-
-  const downloadFresh = async () => {
-    try {
-      await downloadUrl("/api/v1/backup", "ipambox-backup.json.gz");
-      toast.success("Backup downloaded");
-    } catch (e) {
-      toast.error("Backup failed", { description: String(e) });
-    }
-  };
-
-  const downloadFile = async (name: string) => {
-    try {
-      await downloadUrl(`/api/v1/backup/files/${encodeURIComponent(name)}`, name);
-    } catch (e) {
-      toast.error("Download failed", { description: String(e) });
-    }
-  };
-
-  const pickFile = async (f: File | null) => {
-    setFile(f);
-    setPreview(null);
-    setReport(null);
-    setConfirmText("");
-    if (!f) return;
-    try {
-      const p = await api.upload<BackupPreview>(
-        `/api/v1/backup/restore?dry_run=1&name=${encodeURIComponent(f.name)}`,
-        f
-      );
-      setPreview(p);
-    } catch (e) {
-      setFile(null);
-      if (fileInput.current) fileInput.current.value = "";
-      toast.error("Invalid backup file", { description: String(e) });
-    }
-  };
-
-  const doRestore = async () => {
-    if (!file) return;
-    setBusy(true);
-    try {
-      const r = await api.upload<RestoreReport>(
-        `/api/v1/backup/restore?name=${encodeURIComponent(file.name)}`,
-        file
-      );
-      setReport(r);
-      toast.success("Restore complete", {
-        description: "Reloading to pick up restored data…",
-      });
-      setTimeout(() => window.location.reload(), 1500);
-    } catch (e) {
-      toast.error("Restore failed — nothing was changed", {
-        description: String(e),
-      });
-    } finally {
-      setBusy(false);
-    }
-  };
+  const lan = settings?.system.lan;
 
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold">Settings</h1>
+        <h1 className="text-xl font-semibold">General</h1>
         <p className="text-sm text-muted-foreground">
-          Backup &amp; restore the entire IpamBox database. The login account is
-          never included in backups.
+          System information and environment configuration. Values marked
+          <Badge variant="outline" className="mx-1 text-[10px] font-normal text-muted-foreground">
+            default
+          </Badge>
+          or
+          <Badge variant="outline" className="mx-1 text-[10px] font-normal border-sky-500/40 text-sky-400">
+            .env
+          </Badge>
+          come from the environment — edit <code>.env</code> and restart to
+          change them.
         </p>
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <Download className="h-4 w-4" /> Backup
+            <Info className="h-4 w-4" /> System
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-muted-foreground">
-            Download a full snapshot — sites, VRFs, VLANs, prefixes, ranges,
-            addresses, tags, changelog and scan history — as a single
-            <code className="mx-1">.json.gz</code> file you can restore on this
-            or any other IpamBox server.
-          </p>
-          <Button size="sm" onClick={downloadFresh}>
-            <Download /> Download backup
-          </Button>
+        <CardContent>
+          <Row k="IpamBox version" v={settings?.system.app_version ?? "…"} />
+          <Row k="Schema revision" v={settings?.system.alembic_head ?? "…"} />
+          <Row
+            k="Detected LAN"
+            v={
+              lan?.cidr
+                ? `${lan.cidr}${lan.iface ? ` on ${lan.iface}` : ""}${lan.source === "local" ? " (api container)" : ""}`
+                : "detecting…"
+            }
+          />
+          <Row
+            k="API status"
+            v={
+              ready === "ok" ? (
+                <span className="text-emerald-400">reachable</span>
+              ) : ready === "degraded" ? (
+                <span className="text-rose-400">error</span>
+              ) : (
+                "…"
+              )
+            }
+            mono={false}
+          />
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <FileArchive className="h-4 w-4" /> Scheduled backups
+            <Activity className="h-4 w-4" /> Inventory
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-muted-foreground">
-            {files && files.interval_minutes > 0 ? (
-              <>
-                Automatic snapshots every {files.interval_minutes} minute
-                {files.interval_minutes === 1 ? "" : "s"}, keeping the newest{" "}
-                {files.keep}. Stored in the <code>backupdata</code> docker
-                volume — copy them off the host for real disaster recovery.
-              </>
-            ) : (
-              <>
-                Disabled — set <code>BACKUP_INTERVAL_MINUTES</code> in
-                <code className="mx-1">.env</code> to have the worker write
-                snapshots automatically.
-              </>
-            )}
-          </p>
-          {files && files.files.length > 0 && (
-            <div className="rounded-lg border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>File</TableHead>
-                    <TableHead className="w-28">Size</TableHead>
-                    <TableHead className="w-48">Created</TableHead>
-                    <TableHead className="w-24 text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {files.files.map((f) => (
-                    <TableRow key={f.name}>
-                      <TableCell className="font-mono text-xs">
-                        {f.name}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {fmtSize(f.size)}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {fmtTs(f.created_at)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => downloadFile(f.name)}
-                        >
-                          <Download className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
+        <CardContent className="grid grid-cols-2 gap-x-8 sm:grid-cols-3">
+          <Row k="Sites" v={stats?.sites_total ?? "…"} />
+          <Row k="VRFs" v={stats?.vrfs_total ?? "…"} />
+          <Row k="Prefixes" v={stats?.prefixes_total ?? "…"} />
+          <Row k="Addresses" v={stats?.ips_total ?? "…"} />
+          <Row k="Discovered" v={stats?.devices_discovered ?? "…"} />
+          <Row k="Scans run" v={stats?.scans_total ?? "…"} />
         </CardContent>
       </Card>
 
-      <Card className="border-rose-500/30">
+      <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base text-rose-400">
-            <RotateCcw className="h-4 w-4" /> Restore
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Server className="h-4 w-4" /> Environment
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            Replaces <b>all</b> data with the contents of the backup file —
-            current sites, VRFs, prefixes, addresses and history are wiped.
-            Your login account and session are kept. The operation is atomic:
-            if anything fails, nothing changes.
+        <CardContent>
+          <p className="mb-2 text-xs text-muted-foreground">
+            Read-only — these come from <code>.env</code> / compose and need a
+            container restart to change.
           </p>
+          <Row k="Database" v={settings?.env.database_url ?? "…"} />
+          <Row k="Redis" v={settings?.env.redis_url ?? "…"} />
+          <Row
+            k="CORS origins"
+            v={settings?.env.cors_origins.join(", ") || "—"}
+          />
+          <Row k="Backup dir" v={settings?.env.backup_dir ?? "…"} />
+          <Row
+            k="Auth disabled"
+            v={settings ? String(settings.env.ipambox_allow_insecure) : "…"}
+          />
+          <Row
+            k="Secure cookie"
+            v={settings ? String(settings.env.ipambox_cookie_secure) : "…"}
+          />
+          <Row
+            k="Password provisioned"
+            v={settings ? String(settings.env.ipambox_password_set) : "…"}
+          />
+        </CardContent>
+      </Card>
 
-          <div className="grid gap-1.5">
-            <Label>Backup file</Label>
-            <Input
-              ref={fileInput}
-              type="file"
-              accept=".gz,.json,application/gzip,application/json"
-              onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
-            />
-          </div>
-
-          {preview && !report && (
-            <div className="space-y-3 rounded-lg border p-4">
-              <div className="flex flex-wrap gap-2 text-xs">
-                <Badge variant="outline">
-                  created {fmtTs(preview.created_at)}
-                </Badge>
-                {preview.app_version && (
-                  <Badge variant="outline">v{preview.app_version}</Badge>
-                )}
-                {preview.alembic_revision && (
-                  <Badge variant="outline">
-                    schema {preview.alembic_revision}
-                  </Badge>
-                )}
-              </div>
-              <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-3">
-                {Object.entries(preview.tables).map(([t, n]) => (
-                  <div key={t} className="flex justify-between">
-                    <span className="text-muted-foreground">{t}</span>
-                    <span className="font-mono">{n}</span>
-                  </div>
-                ))}
-              </div>
-              {preview.warnings.length > 0 && (
-                <ul className="list-disc pl-5 text-xs text-amber-400">
-                  {preview.warnings.map((w) => (
-                    <li key={w}>{w}</li>
-                  ))}
-                </ul>
-              )}
-              <div className="grid gap-1.5">
-                <Label>
-                  Type <span className="font-mono text-rose-400">RESTORE</span>{" "}
-                  to confirm
-                </Label>
-                <Input
-                  value={confirmText}
-                  onChange={(e) => setConfirmText(e.target.value)}
-                  placeholder="RESTORE"
-                  autoComplete="off"
-                />
-              </div>
-              <Button
-                variant="destructive"
-                size="sm"
-                disabled={confirmText !== "RESTORE" || busy}
-                onClick={doRestore}
-              >
-                <Upload /> {busy ? "Restoring…" : "Restore now"}
-              </Button>
-            </div>
-          )}
-
-          {report && (
-            <div className="space-y-2 rounded-lg border border-emerald-500/30 p-4">
-              <p className="text-sm text-emerald-400">
-                Restored backup from {fmtTs(report.backup_created_at)}:
-              </p>
-              <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-3">
-                {Object.entries(report.restored).map(([t, n]) => (
-                  <div key={t} className="flex justify-between">
-                    <span className="text-muted-foreground">{t}</span>
-                    <span className="font-mono">{n}</span>
-                  </div>
-                ))}
-              </div>
-              {report.warnings.length > 0 && (
-                <ul className="list-disc pl-5 text-xs text-amber-400">
-                  {report.warnings.map((w) => (
-                    <li key={w}>{w}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Link2 className="h-4 w-4" /> Operations endpoints
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-1 text-sm text-muted-foreground">
+          <p className="mb-2 text-xs">
+            Served by the API container (host port <code>API_PORT</code>,
+            default 8001) — not through the web proxy.
+          </p>
+          <Row k="Liveness" v="GET /healthz" />
+          <Row k="Readiness (db + redis)" v="GET /readyz" />
+          <Row k="Prometheus metrics" v="GET /metrics" />
+          <Row k="OpenAPI docs" v="GET /docs" />
         </CardContent>
       </Card>
     </div>

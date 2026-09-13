@@ -13,6 +13,7 @@ from app.core.redis import get_arq_pool, get_redis
 from app.models.scan_job import ScanJob, ScanStatus
 from app.models.vrf import VRF
 from app.schemas.scan import ScanConfigOut, ScanCreate, ScanJobOut
+from app.services import runtime_settings
 from app.services.ipam import IPAMError, get_or_404
 from app.worker.scanner import detect_local_cidr
 from app.worker.worker import cancel_key
@@ -24,14 +25,14 @@ _TERMINAL = (ScanStatus.COMPLETED, ScanStatus.FAILED, ScanStatus.CANCELLED)
 _LIVE = (ScanStatus.QUEUED, ScanStatus.RUNNING)
 
 
-def _check_cidr_allowed(net) -> None:
-    for x in settings.scan_exclude_network_list:
+def _check_cidr_allowed(net, eff: dict) -> None:
+    for x in eff["scan_exclude_networks"]:
         xn = ipaddress.ip_network(x, strict=False)
         if net.subnet_of(xn) or net == xn or xn.subnet_of(net):
             raise HTTPException(422, f"{net} overlaps excluded network {xn}")
-    if settings.scan_only_configured:
+    if eff["scan_only_configured"]:
         allowed = [
-            ipaddress.ip_network(n, strict=False) for n in settings.scan_network_list
+            ipaddress.ip_network(n, strict=False) for n in eff["scan_networks"]
         ]
         if not any(net.subnet_of(a) or net == a for a in allowed):
             raise HTTPException(422, f"{net} is not one of the configured scan networks")
@@ -49,25 +50,30 @@ async def list_scans(
 
 
 @router.get("/config", response_model=ScanConfigOut)
-async def scan_config():
-    """Scanner configuration surfaced to the UI."""
+async def scan_config(session: AsyncSession = Depends(get_session)):
+    """Effective scanner configuration surfaced to the UI."""
+    from app.api.v1.settings import _lan_info
+
+    eff = await runtime_settings.get_effective(session)
+    lan = await _lan_info()
     return ScanConfigOut(
-        networks=settings.scan_network_list,
-        exclude_networks=settings.scan_exclude_network_list,
-        only_configured=settings.scan_only_configured,
-        interval_minutes=settings.scan_interval_minutes,
-        detected_cidr=detect_local_cidr(settings.scan_interface),
-        tcp_ports=settings.tcp_ping_ports,
+        networks=eff.values["scan_networks"],
+        exclude_networks=eff.values["scan_exclude_networks"],
+        only_configured=eff.values["scan_only_configured"],
+        interval_minutes=eff.values["scan_interval_minutes"],
+        detected_cidr=lan.cidr,
+        tcp_ports=eff.values["scan_tcp_ports"],
     )
 
 
 @router.post("", response_model=ScanJobOut, status_code=201)
 async def create_scan(body: ScanCreate, session: AsyncSession = Depends(get_session)):
+    eff = await runtime_settings.get_effective(session)
     if body.cidr:
-        _check_cidr_allowed(ipaddress.ip_network(body.cidr, strict=False))
-    elif settings.scan_only_configured and settings.scan_network_list:
+        _check_cidr_allowed(ipaddress.ip_network(body.cidr, strict=False), eff.values)
+    elif eff.values["scan_only_configured"] and eff.values["scan_networks"]:
         raise HTTPException(
-            422, "SCAN_ONLY_CONFIGURED is set — pick a configured network"
+            422, "only configured networks may be scanned — pick one of them"
         )
 
     # single-scanner rate limit: one live job at a time + cooldown per CIDR
@@ -79,7 +85,9 @@ async def create_scan(body: ScanCreate, session: AsyncSession = Depends(get_sess
     if live:
         raise HTTPException(429, "a scan is already queued or running")
     if body.cidr:
-        cutoff = datetime.utcnow() - timedelta(seconds=settings.scan_min_interval_seconds)
+        cutoff = datetime.utcnow() - timedelta(
+            seconds=eff.values["scan_min_interval_seconds"]
+        )
         recent = (
             await session.execute(
                 select(func.count(ScanJob.id)).where(
@@ -90,7 +98,7 @@ async def create_scan(body: ScanCreate, session: AsyncSession = Depends(get_sess
         if recent:
             raise HTTPException(
                 429,
-                f"{body.cidr} was scanned <{settings.scan_min_interval_seconds}s ago — slow down",
+                f"{body.cidr} was scanned <{eff.values['scan_min_interval_seconds']}s ago — slow down",
             )
 
     vrf_id = body.vrf_id

@@ -6,16 +6,22 @@ from app.api.v1 import (
     changelog,
     dashboard,
     discovery,
+    maintenance,
     prefixes,
     ranges,
     scans,
+    settings,
     sites,
     tags,
+    users,
     vlans,
     vrfs,
 )
 
 api_router = APIRouter()
+api_router.include_router(settings.router)
+api_router.include_router(users.router)
+api_router.include_router(maintenance.router)
 api_router.include_router(backup.router)
 api_router.include_router(sites.router)
 api_router.include_router(vrfs.router)

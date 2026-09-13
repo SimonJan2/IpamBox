@@ -1,3 +1,4 @@
+from app.models.app_setting import AppSetting
 from app.models.base import Base
 from app.models.change_log import ChangeLog
 from app.models.ip_address import IPAddress, IPRole, IPStatus
@@ -12,6 +13,7 @@ from app.models.vrf import VRF
 
 __all__ = [
     "Base",
+    "AppSetting",
     "Site",
     "VRF",
     "Prefix",

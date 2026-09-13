@@ -9,16 +9,21 @@ from app.core.security import (
     SESSION_COOKIE,
     clear_login_failures,
     create_session,
+    destroy_other_sessions,
     destroy_session,
+    destroy_session_by_suffix,
     env_password,
     get_session_user_id,
     hash_password,
     is_locked_out,
+    list_sessions,
     record_login_failure,
     verify_password,
 )
 from app.models.user import User
 from app.schemas.auth import AuthStatus, LoginBody, SetupBody
+from app.schemas.settings import ChangePasswordBody, SessionOut
+from app.services import runtime_settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -44,17 +49,30 @@ async def ensure_env_password_user(session: AsyncSession) -> None:
     await session.commit()
 
 
-def _set_session_cookie(response: Response, token: str) -> None:
-    settings = get_settings()
+def _set_session_cookie(response: Response, token: str, hours: int) -> None:
     response.set_cookie(
         SESSION_COOKIE,
         token,
-        max_age=settings.ipambox_session_hours * 3600,
+        max_age=hours * 3600,
         httponly=True,
         samesite="lax",
-        secure=settings.ipambox_cookie_secure,
+        secure=get_settings().ipambox_cookie_secure,
         path="/",
     )
+
+
+async def _login_session(
+    session: AsyncSession, request: Request, response: Response, user_id: int
+) -> None:
+    """Create a Redis session + cookie honoring the effective session TTL."""
+    eff = await runtime_settings.get_effective(session)
+    token = await create_session(
+        user_id,
+        ttl_hours=eff.values["ipambox_session_hours"],
+        ip=request.client.host if request.client else "",
+        ua=request.headers.get("user-agent", ""),
+    )
+    _set_session_cookie(response, token, eff.values["ipambox_session_hours"])
 
 
 @router.get("/status", response_model=AuthStatus)
@@ -75,7 +93,10 @@ async def auth_status(request: Request, session: AsyncSession = Depends(get_sess
 
 @router.post("/setup", status_code=201)
 async def setup(
-    body: SetupBody, response: Response, session: AsyncSession = Depends(get_session)
+    body: SetupBody,
+    request: Request,
+    response: Response,
+    session: AsyncSession = Depends(get_session),
 ):
     """First-run password creation. Refused once any user exists."""
     await ensure_env_password_user(session)
@@ -87,8 +108,7 @@ async def setup(
     session.add(user)
     await session.commit()
     await session.refresh(user)
-    token = await create_session(user.id)
-    _set_session_cookie(response, token)
+    await _login_session(session, request, response, user.id)
     return {"ok": True, "username": user.username}
 
 
@@ -113,8 +133,7 @@ async def login(
             raise HTTPException(429, "too many failed attempts — try again later")
         raise HTTPException(401, "invalid credentials")
     await clear_login_failures(ip)
-    token = await create_session(user.id)
-    _set_session_cookie(response, token)
+    await _login_session(session, request, response, user.id)
     return {"ok": True, "username": user.username}
 
 
@@ -130,3 +149,61 @@ async def logout(request: Request, response: Response):
 @router.get("/me")
 async def me(user: User | None = Depends(require_auth)):
     return {"username": user.username if user else None}
+
+
+@router.post("/change-password")
+async def change_password(
+    body: ChangePasswordBody,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    user: User | None = Depends(require_auth),
+):
+    if user is None:
+        raise HTTPException(400, "auth is disabled — nothing to change")
+    if not verify_password(body.current_password, user.password_hash):
+        raise HTTPException(403, "current password is incorrect")
+    if not 8 <= len(body.new_password) <= 256:
+        raise HTTPException(422, "new password must be 8-256 characters")
+    user.password_hash = hash_password(body.new_password)
+    await session.commit()
+    revoked = 0
+    if body.logout_others:
+        token = request.cookies.get(SESSION_COOKIE)
+        revoked = await destroy_other_sessions(user.id, token)
+    return {"ok": True, "revoked_sessions": revoked}
+
+
+@router.get("/sessions", response_model=list[SessionOut])
+async def sessions(
+    request: Request, user: User | None = Depends(require_auth)
+):
+    if user is None:
+        return []
+    return await list_sessions(user.id, request.cookies.get(SESSION_COOKIE))
+
+
+@router.delete("/sessions/{session_id}", status_code=204)
+async def revoke_session(
+    session_id: str,
+    request: Request,
+    user: User | None = Depends(require_auth),
+):
+    if user is None:
+        raise HTTPException(400, "auth is disabled")
+    current = request.cookies.get(SESSION_COOKIE)
+    if current and current.endswith(session_id):
+        raise HTTPException(409, "cannot revoke the current session — log out instead")
+    if not await destroy_session_by_suffix(user.id, session_id):
+        raise HTTPException(404, "session not found")
+
+
+@router.post("/sessions/revoke-others")
+async def revoke_other_sessions(
+    request: Request, user: User | None = Depends(require_auth)
+):
+    if user is None:
+        raise HTTPException(400, "auth is disabled")
+    removed = await destroy_other_sessions(
+        user.id, request.cookies.get(SESSION_COOKIE)
+    )
+    return {"ok": True, "revoked_sessions": removed}

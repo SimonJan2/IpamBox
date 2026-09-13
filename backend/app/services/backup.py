@@ -36,6 +36,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.models.app_setting import AppSetting
 from app.models.base import Base
 from app.models.change_log import ChangeLog
 from app.models.ip_address import IPAddress
@@ -96,6 +97,7 @@ BACKUP_TABLES: tuple[BackupTable, ...] = (
     BackupTable("tag_assignments", TagAssignment),
     BackupTable("scan_jobs", ScanJob, sanitize=_fail_inflight_scans),
     BackupTable("change_log", ChangeLog),
+    BackupTable("app_settings", AppSetting),
 )
 
 
@@ -168,7 +170,13 @@ async def build_backup(session: AsyncSession) -> bytes:
     tables: dict[str, list[dict]] = {}
     for spec in BACKUP_TABLES:
         rows = (
-            (await session.execute(select(spec.model).order_by(spec.model.id)))
+            (
+                await session.execute(
+                    select(spec.model).order_by(
+                        *inspect(spec.model).mapper.primary_key
+                    )
+                )
+            )
             .scalars()
             .all()
         )
@@ -271,6 +279,10 @@ def _truncate_sql() -> str:
     return f"TRUNCATE {names} RESTART IDENTITY CASCADE"
 
 
+def _has_serial_id(spec: BackupTable) -> bool:
+    return "id" in spec.model.__table__.columns
+
+
 def _resync_sequence_sql(table: str) -> str:
     # serial/identity PKs: jump the sequence past the restored max(id) so the
     # next insert can't collide. No-op when the table has no sequence.
@@ -333,7 +345,10 @@ async def restore_backup(
             )
 
         for spec in BACKUP_TABLES:
-            await session.execute(text(_resync_sequence_sql(spec.name)), {"t": spec.name})
+            if _has_serial_id(spec):
+                await session.execute(
+                    text(_resync_sequence_sql(spec.name)), {"t": spec.name}
+                )
 
         await session.execute(
             ChangeLog.__table__.insert(),
@@ -403,6 +418,17 @@ def read_backup_file(name: str) -> bytes | None:
         return None
     path = backup_dir() / name
     return path.read_bytes() if path.is_file() else None
+
+
+def delete_backup_file(name: str) -> bool:
+    """Delete a scheduled backup by file name (path-traversal safe)."""
+    if Path(name).name != name or not name.endswith(".json.gz"):
+        return False
+    path = backup_dir() / name
+    if not path.is_file():
+        return False
+    path.unlink()
+    return True
 
 
 def prune_backups(keep: int) -> int:
