@@ -13,12 +13,14 @@ from sqlalchemy import event, inspect
 from sqlalchemy.orm import Session as SyncSession
 
 from app.core.security import get_actor
+from app.models.app_setting import AppSetting
 from app.models.change_log import ChangeLog
 from app.models.ip_address import IPAddress
 from app.models.ip_range import IPRange
 from app.models.prefix import Prefix
 from app.models.site import Site
 from app.models.tag import Tag, TagAssignment
+from app.models.user import User
 from app.models.vlan import VLAN, VLANGroup
 from app.models.vrf import VRF
 
@@ -32,6 +34,8 @@ AUDITED_MODELS: tuple = (
     TagAssignment,
     VLAN,
     VLANGroup,
+    AppSetting,
+    User,
 )
 # churn-only columns that produce noise, never signal
 SKIP_FIELDS = {"updated_at", "last_seen", "password_hash"}
@@ -42,6 +46,8 @@ _REPR_ATTRS = ("name", "prefix", "address", "cidr", "username")
 def _ser(v):
     if v is None or isinstance(v, (str, int, float, bool)):
         return v
+    if isinstance(v, (dict, list)):
+        return v  # JSONB-native values (e.g. AppSetting.value)
     if isinstance(v, enum.Enum):
         return v.value
     if isinstance(v, datetime):

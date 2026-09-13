@@ -15,9 +15,14 @@ from app.models.ip_address import IPAddress
 from app.models.prefix import Prefix, PrefixStatus
 from app.models.scan_job import ScanJob, ScanStatus
 from app.models.vrf import VRF
-from app.services import prefix_math
+from app.services import prefix_math, runtime_settings
 from app.worker.reconcile import reconcile
-from app.worker.scanner import ScanCancelled, detect_local_cidr, scan_cidr
+from app.worker.scanner import (
+    ScanCancelled,
+    detect_interface,
+    detect_local_cidr,
+    scan_cidr,
+)
 
 log = logging.getLogger("ipambox.scanner")
 settings = get_settings()
@@ -105,6 +110,8 @@ async def run_scan(ctx: dict, scan_id: int) -> dict:
         if job.status == ScanStatus.CANCELLED:
             return {"cancelled": True}
 
+        eff = await runtime_settings.get_effective(session)
+
         async def progress(phase: str, pct: float):
             # serialized: concurrent enrich tasks must not commit at once
             async with progress_lock:
@@ -125,7 +132,7 @@ async def run_scan(ctx: dict, scan_id: int) -> dict:
                     log.warning("progress publish failed", exc_info=True)
 
         try:
-            cidr = job.cidr or detect_local_cidr(settings.scan_interface)
+            cidr = job.cidr or detect_local_cidr(eff.values["scan_interface"])
             if not cidr:
                 raise RuntimeError("could not auto-detect local network CIDR")
             job.cidr = cidr
@@ -145,11 +152,11 @@ async def run_scan(ctx: dict, scan_id: int) -> dict:
 
             hosts = await scan_cidr(
                 cidr,
-                iface=settings.scan_interface,
-                tcp_ports=settings.tcp_ping_ports,
-                icmp_timeout=settings.scan_icmp_timeout,
-                tcp_timeout=settings.scan_tcp_timeout,
-                concurrency=settings.scan_concurrency,
+                iface=eff.values["scan_interface"],
+                tcp_ports=eff.values["scan_tcp_ports"],
+                icmp_timeout=eff.values["scan_icmp_timeout"],
+                tcp_timeout=eff.values["scan_tcp_timeout"],
+                concurrency=eff.values["scan_concurrency"],
                 on_progress=progress,
                 should_stop=_cancelled,
             )
@@ -207,20 +214,22 @@ async def run_scan(ctx: dict, scan_id: int) -> dict:
 
 
 async def run_scheduled_scans(ctx: dict) -> dict:
-    """Cron entry point: enqueue a scan for every configured network.
+    """Enqueue a scan for every configured network (effective settings).
 
-    Networks: SCAN_NETWORKS env (or the auto-detected LAN CIDR when unset and
-    SCAN_ONLY_CONFIGURED is off). Skips a CIDR that already has a
+    Targets: DB/env scan_networks (or the auto-detected LAN CIDR when unset
+    and only_configured is off). Skips a CIDR that already has a
     queued/running job, and never scans excluded networks.
     """
     set_actor("scheduler")
+    async with SessionLocal() as session:
+        eff = await runtime_settings.get_effective(session)
     excluded = [
         ipaddress.ip_network(n, strict=False)
-        for n in settings.scan_exclude_network_list
+        for n in eff.values["scan_exclude_networks"]
     ]
-    targets = list(settings.scan_network_list)
-    if not targets and not settings.scan_only_configured:
-        detected = detect_local_cidr(settings.scan_interface)
+    targets = list(eff.values["scan_networks"])
+    if not targets and not eff.values["scan_only_configured"]:
+        detected = detect_local_cidr(eff.values["scan_interface"])
         if detected:
             targets = [detected]
 
@@ -259,38 +268,76 @@ async def run_scheduled_scans(ctx: dict) -> dict:
 
 
 async def run_scheduled_backup(ctx: dict) -> dict:
-    """Cron entry point: write a full snapshot into BACKUP_DIR, prune old ones."""
+    """Write a full snapshot into BACKUP_DIR, prune old ones."""
     from app.services import backup as backup_svc
 
     async with SessionLocal() as session:
+        eff = await runtime_settings.get_effective(session)
         payload = await backup_svc.build_backup(session)
     path = backup_svc.write_backup_file(payload)
-    pruned = backup_svc.prune_backups(settings.backup_keep)
+    pruned = backup_svc.prune_backups(eff.values["backup_keep"])
     log.info("scheduled backup written: %s (pruned %d)", path.name, pruned)
     return {"file": path.name, "pruned": pruned}
 
 
-def _periodic(func, minutes: int):
-    """Map 'every N minutes' onto an arq cron spec; None disables the job."""
-    if minutes <= 0:
-        return None
-    if minutes < 60:
-        return cron(func, minute=set(range(0, 60, minutes)))
-    hours = max(1, minutes // 60)
-    if hours < 24:
-        return cron(func, hour=set(range(0, 24, hours)), minute=0)
-    return cron(func, hour=0, minute=0)  # daily fallback
+def _due(last_iso: str | None, interval_minutes: int, now: datetime) -> bool:
+    if interval_minutes <= 0:
+        return False
+    if not last_iso:
+        return True
+    try:
+        last = datetime.fromisoformat(last_iso)
+    except ValueError:
+        return True
+    return (now - last).total_seconds() >= interval_minutes * 60
 
 
-def _cron_jobs() -> list:
-    return [
-        job
-        for job in (
-            _periodic(run_scheduled_scans, settings.scan_interval_minutes),
-            _periodic(run_scheduled_backup, settings.backup_interval_minutes),
-        )
-        if job is not None
-    ]
+async def scheduler_tick(ctx: dict) -> dict:
+    """Runs every minute: fires scheduled scans/backups whose configured
+    interval has elapsed. DB-backed intervals apply without a worker restart.
+
+    Also refreshes the worker's view of the LAN (iface + CIDR, host-networked)
+    into Redis so the API/UI can display the real detected network. Last-run
+    stamps live in Redis (not app_settings — they'd spam the changelog).
+    """
+    set_actor("scheduler")
+    ran: list[str] = []
+    now = datetime.utcnow()
+
+    async with SessionLocal() as session:
+        eff = await runtime_settings.get_effective(session)
+
+    r = get_redis()
+    try:
+        try:
+            iface = eff.values["scan_interface"]
+            lan = {"iface": detect_interface(iface), "cidr": detect_local_cidr(iface)}
+            await r.set("ipam:sys:lan", json.dumps(lan))
+        except Exception:
+            log.warning("lan detection publish failed", exc_info=True)
+
+        if _due(
+            await r.get("ipam:sched:last_scan_at"),
+            eff.values["scan_interval_minutes"],
+            now,
+        ):
+            await r.set("ipam:sched:last_scan_at", now.isoformat())
+            ran.append("scans")
+        if _due(
+            await r.get("ipam:sched:last_backup_at"),
+            eff.values["backup_interval_minutes"],
+            now,
+        ):
+            await r.set("ipam:sched:last_backup_at", now.isoformat())
+            ran.append("backups")
+    finally:
+        await r.aclose()
+
+    if "scans" in ran:
+        await run_scheduled_scans(ctx)
+    if "backups" in ran:
+        await run_scheduled_backup(ctx)
+    return {"ran": ran}
 
 
 async def startup(ctx: dict):
@@ -313,7 +360,7 @@ async def startup(ctx: dict):
 
 class WorkerSettings:
     functions = [run_scan, run_scheduled_backup]
-    cron_jobs = _cron_jobs()
+    cron_jobs = [cron(scheduler_tick, minute=set(range(60)))]
     on_startup = startup
     redis_settings = redis_settings_from_url(settings.redis_url)
     max_jobs = 4

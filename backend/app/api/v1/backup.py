@@ -14,6 +14,7 @@ from app.schemas.backup import (
     RestoreReport,
 )
 from app.services import backup as svc
+from app.services import runtime_settings
 from app.services.backup import BackupError, backup_filename
 
 router = APIRouter(prefix="/backup", tags=["backup"])
@@ -36,12 +37,13 @@ async def download_backup(session: AsyncSession = Depends(get_session)):
 
 
 @router.get("/files", response_model=BackupFilesOut)
-async def list_scheduled_backups():
+async def list_scheduled_backups(session: AsyncSession = Depends(get_session)):
     """Scheduled snapshot files written by the worker into BACKUP_DIR."""
+    eff = await runtime_settings.get_effective(session)
     return BackupFilesOut(
         files=[BackupFileInfo(**f) for f in svc.list_backup_files()],
-        interval_minutes=settings.backup_interval_minutes,
-        keep=settings.backup_keep,
+        interval_minutes=eff.values["backup_interval_minutes"],
+        keep=eff.values["backup_keep"],
     )
 
 
@@ -55,6 +57,12 @@ async def download_scheduled_backup(name: str):
         media_type="application/gzip",
         headers={"Content-Disposition": f'attachment; filename="{name}"'},
     )
+
+
+@router.delete("/files/{name}", status_code=204)
+async def delete_scheduled_backup(name: str):
+    if not svc.delete_backup_file(name):
+        raise HTTPException(404, "backup file not found")
 
 
 @router.post("/restore")

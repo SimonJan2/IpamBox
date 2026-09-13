@@ -23,6 +23,26 @@
     --ring: 160 84% 39%;
     --radius: 0.5rem;
   }
+
+  :root[data-theme="light"] {
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 99%;
+    --card-foreground: 240 10% 3.9%;
+    --primary: 160 84% 30%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 240 4.8% 93%;
+    --accent-foreground: 240 5.9% 10%;
+    --destructive: 0 72% 45%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5.9% 88%;
+    --input: 240 5.9% 85%;
+    --ring: 160 84% 30%;
+  }
 }
 
 @layer base {
@@ -42,6 +62,18 @@
 ::-webkit-scrollbar-thumb {
   @apply bg-zinc-700 rounded-full;
 }
+:root[data-theme="light"] ::-webkit-scrollbar-thumb {
+  @apply bg-zinc-300;
+}
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* Table density pref — attribute+element selector outranks the p-3/h-10
+   utility classes on cells, no !important needed. */
+[data-density="compact"] td,
+[data-density="compact"] th {
+  padding-top: 0.3rem;
+  padding-bottom: 0.3rem;
+  height: auto;
 }
