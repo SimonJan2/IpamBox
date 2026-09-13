@@ -34,6 +34,12 @@ export const api = {
   get: <T>(path: string) => req<T>(path),
   post: <T>(path: string, body?: unknown) =>
     req<T>(path, { method: "POST", body: JSON.stringify(body ?? {}) }),
+  postRaw: <T>(path: string, body: BodyInit, contentType = "text/csv") =>
+    req<T>(path, {
+      method: "POST",
+      body,
+      headers: { "content-type": contentType },
+    }),
   patch: <T>(path: string, body: unknown) =>
     req<T>(path, { method: "PATCH", body: JSON.stringify(body) }),
   del: (path: string) => req<void>(path, { method: "DELETE" }),

@@ -29,19 +29,24 @@ def reserves_boundaries(net: Network) -> bool:
     return net.version == 4 and net.prefixlen <= 30
 
 
-def lowest_free(net: Network, taken: set[int]) -> int | None:
-    """Lowest usable address integer not in `taken`; None when exhausted."""
+def lowest_free(
+    net: Network,
+    taken: set[int],
+    excluded_ranges: tuple[tuple[int, int], ...] = (),
+) -> int | None:
+    """Lowest usable address integer not in `taken` or any excluded range."""
     lo, hi = usable_bounds(net)
+    # Merge taken singles and excluded ranges into sorted (start, end) blocks.
+    blocks = sorted([(t, t) for t in taken] + list(excluded_ranges))
     candidate = lo
-    # Walk the sorted taken set so we skip long allocated runs quickly.
-    for t in sorted(taken):
-        if t < lo:
+    for s, e in blocks:
+        if e < candidate:
             continue
-        if t > hi:
+        if s > hi:
             break
-        if t == candidate:
-            candidate = t + 1
-        elif t > candidate:
+        if s <= candidate <= e:
+            candidate = e + 1
+        elif s > candidate:
             break
     return candidate if candidate <= hi else None
 

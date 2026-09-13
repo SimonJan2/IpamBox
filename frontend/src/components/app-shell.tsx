@@ -13,7 +13,9 @@ import {
   Network,
   Radar,
   ScanLine,
+  Tags,
   Waypoints,
+  Zap,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -26,10 +28,12 @@ const NAV = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/sites", label: "Sites", icon: Building2 },
   { href: "/vrfs", label: "VRFs", icon: Waypoints },
+  { href: "/vlans", label: "VLANs", icon: Zap },
   { href: "/prefixes", label: "Subnets", icon: Network },
   { href: "/tree", label: "Hierarchy", icon: FolderTree },
   { href: "/discovery", label: "Discovery Inbox", icon: Inbox },
   { href: "/scans", label: "Scans", icon: ScanLine },
+  { href: "/tags", label: "Tags", icon: Tags },
   { href: "/changelog", label: "Changelog", icon: History },
 ];
 

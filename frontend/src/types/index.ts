@@ -1,6 +1,56 @@
 export type PrefixStatus = "container" | "active" | "reserved" | "deprecated";
 export type IpStatus = "active" | "reserved" | "dhcp" | "discovered" | "offline";
 export type ScanStatus = "queued" | "running" | "completed" | "failed";
+export type IpRole = "vip" | "vrrp" | "hsrp" | "glbp" | "carp" | "secondary";
+export type RangeRole = "dhcp" | "pool" | "reserved";
+export type VlanStatus = "active" | "reserved" | "deprecated";
+
+export interface Tag {
+  id: number;
+  name: string;
+  slug: string;
+  color: string;
+  description: string | null;
+  created_at: string;
+}
+
+export interface TagAssignment {
+  id: number;
+  tag_id: number;
+  object_type: string;
+  object_id: number;
+}
+
+export interface VlanGroup {
+  id: number;
+  name: string;
+  description: string | null;
+  created_at: string;
+}
+
+export interface Vlan {
+  id: number;
+  vid: number;
+  name: string;
+  group_id: number | null;
+  site_id: number | null;
+  status: VlanStatus;
+  description: string | null;
+  created_at: string;
+}
+
+export interface IpRange {
+  id: number;
+  prefix_id: number;
+  vrf_id: number;
+  start_address: string;
+  start_int: number;
+  end_address: string;
+  end_int: number;
+  role: RangeRole;
+  description: string | null;
+  created_at: string;
+}
 
 export interface Site {
   id: number;
@@ -19,13 +69,19 @@ export interface Vrf {
   created_at: string;
 }
 
+export interface VlanRef {
+  id: number;
+  vid: number;
+  name: string;
+}
+
 export interface Prefix {
   id: number;
   prefix: string;
   vrf_id: number;
   site_id: number | null;
   vlan_id: number | null;
-  vlan_name: string | null;
+  vlan: VlanRef | null;
   status: PrefixStatus;
   description: string | null;
   created_at: string;
@@ -48,6 +104,8 @@ export interface IpAddress {
   vendor: string | null;
   hostname: string | null;
   status: IpStatus;
+  role: IpRole | null;
+  nat_inside_id: number | null;
   last_seen: string | null;
   notes: string | null;
   created_at: string;

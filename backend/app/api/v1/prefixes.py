@@ -1,14 +1,18 @@
 import ipaddress
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.db import get_session
 from app.models.ip_address import IPAddress
 from app.models.prefix import Prefix, PrefixStatus
 from app.models.site import Site
+from app.models.tag import TagAssignment
+from app.models.vlan import VLAN
 from app.models.vrf import VRF
 from app.schemas.ip_address import IPAddressOut, IPAddressPage
 from app.schemas.prefix import (
@@ -20,6 +24,7 @@ from app.schemas.prefix import (
     PrefixUpdate,
 )
 from app.services import prefix_math
+from app.services.csv_export import csv_response
 from app.services.ipam import (
     IPAMError,
     build_tree,
@@ -42,21 +47,56 @@ async def prefix_tree(session: AsyncSession = Depends(get_session)):
     return await build_tree(session)
 
 
+@router.get("/export.csv")
+async def export_prefixes(session: AsyncSession = Depends(get_session)):
+    rows = (
+        await session.execute(
+            select(Prefix).options(selectinload(Prefix.vlan), selectinload(Prefix.vrf))
+        )
+    ).scalars().all()
+    return csv_response(
+        "prefixes.csv",
+        ["prefix", "vrf", "site_id", "vlan", "status", "description", "created_at"],
+        [
+            [
+                str(p.prefix),
+                p.vrf.name,
+                p.site_id,
+                f"{p.vlan.vid} {p.vlan.name}" if p.vlan else "",
+                p.status.value,
+                p.description or "",
+                p.created_at.isoformat() if p.created_at else "",
+            ]
+            for p in rows
+        ],
+    )
+
+
 @router.get("", response_model=list[PrefixOut])
 async def list_prefixes(
     vrf_id: int | None = None,
     site_id: int | None = None,
     status: PrefixStatus | None = None,
+    tag_id: int | None = None,
     q: str | None = Query(default=None, description="substring match on CIDR"),
     session: AsyncSession = Depends(get_session),
 ):
-    q_stmt = select(Prefix).order_by(Prefix.prefix)
+    q_stmt = select(Prefix).options(selectinload(Prefix.vlan)).order_by(Prefix.prefix)
     if vrf_id is not None:
         q_stmt = q_stmt.where(Prefix.vrf_id == vrf_id)
     if site_id is not None:
         q_stmt = q_stmt.where(Prefix.site_id == site_id)
     if status is not None:
         q_stmt = q_stmt.where(Prefix.status == status)
+    if tag_id is not None:
+        q_stmt = q_stmt.where(
+            Prefix.id.in_(
+                select(TagAssignment.object_id).where(
+                    TagAssignment.object_type == "Prefix",
+                    TagAssignment.tag_id == tag_id,
+                )
+            )
+        )
     rows = (await session.execute(q_stmt)).scalars().all()
     if q:
         rows = [p for p in rows if q.lower() in str(p.prefix)]
@@ -72,6 +112,8 @@ async def create_prefix(body: PrefixCreate, session: AsyncSession = Depends(get_
         await get_or_404(session, VRF, body.vrf_id)
         if body.site_id is not None:
             await get_or_404(session, Site, body.site_id)
+        if body.vlan_id is not None:
+            await get_or_404(session, VLAN, body.vlan_id)
     except IPAMError as e:
         raise HTTPException(e.status_code, str(e))
 
@@ -96,26 +138,41 @@ async def create_prefix(body: PrefixCreate, session: AsyncSession = Depends(get_
         if "excl_prefixes_no_overlap" in str(e):
             raise HTTPException(409, f"{net} overlaps an existing prefix in this VRF")
         raise HTTPException(400, "invalid prefix data")
-    await session.refresh(prefix)
-    return await _with_stats(session, prefix)
+    return await get_prefix(prefix.id, session)
 
 
 @router.get("/{prefix_id}", response_model=PrefixOut)
 async def get_prefix(prefix_id: int, session: AsyncSession = Depends(get_session)):
-    try:
-        prefix = await get_or_404(session, Prefix, prefix_id)
-    except IPAMError as e:
-        raise HTTPException(e.status_code, str(e))
+    prefix = (
+        await session.execute(
+            select(Prefix)
+            .options(selectinload(Prefix.vlan))
+            .where(Prefix.id == prefix_id)
+        )
+    ).scalar_one_or_none()
+    if prefix is None:
+        raise HTTPException(404, f"Prefix {prefix_id} not found")
     return await _with_stats(session, prefix)
 
 
 @router.patch("/{prefix_id}", response_model=PrefixOut)
 async def update_prefix(prefix_id: int, body: PrefixUpdate, session: AsyncSession = Depends(get_session)):
-    try:
-        prefix = await get_or_404(session, Prefix, prefix_id)
-    except IPAMError as e:
-        raise HTTPException(e.status_code, str(e))
-    for field, value in body.model_dump(exclude_unset=True).items():
+    prefix = (
+        await session.execute(
+            select(Prefix)
+            .options(selectinload(Prefix.vlan))
+            .where(Prefix.id == prefix_id)
+        )
+    ).scalar_one_or_none()
+    if prefix is None:
+        raise HTTPException(404, f"Prefix {prefix_id} not found")
+    data = body.model_dump(exclude_unset=True)
+    if data.get("vlan_id") is not None:
+        try:
+            await get_or_404(session, VLAN, data["vlan_id"])
+        except IPAMError as e:
+            raise HTTPException(e.status_code, str(e))
+    for field, value in data.items():
         setattr(prefix, field, value)
     try:
         await session.commit()

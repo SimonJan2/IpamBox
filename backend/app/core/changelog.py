@@ -15,11 +15,24 @@ from sqlalchemy.orm import Session as SyncSession
 from app.core.security import get_actor
 from app.models.change_log import ChangeLog
 from app.models.ip_address import IPAddress
+from app.models.ip_range import IPRange
 from app.models.prefix import Prefix
 from app.models.site import Site
+from app.models.tag import Tag, TagAssignment
+from app.models.vlan import VLAN, VLANGroup
 from app.models.vrf import VRF
 
-AUDITED_MODELS: tuple = (Site, VRF, Prefix, IPAddress)
+AUDITED_MODELS: tuple = (
+    Site,
+    VRF,
+    Prefix,
+    IPAddress,
+    IPRange,
+    Tag,
+    TagAssignment,
+    VLAN,
+    VLANGroup,
+)
 # churn-only columns that produce noise, never signal
 SKIP_FIELDS = {"updated_at", "last_seen", "password_hash"}
 _SPECS_KEY = "_changelog_specs"
@@ -39,6 +52,9 @@ def _ser(v):
 
 
 def _repr(obj) -> str:
+    custom = getattr(obj, "__changelog_repr__", None)
+    if custom is not None:
+        return custom()
     for attr in _REPR_ATTRS:
         v = getattr(obj, attr, None)
         if v:

@@ -3,8 +3,10 @@ from collections.abc import Iterable
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.ip_address import IPAddress, IPStatus
+from app.models.ip_range import IPRange
 from app.models.prefix import Prefix, PrefixStatus
 from app.models.site import Site
 from app.models.vrf import VRF
@@ -94,7 +96,16 @@ async def reserve_next_available(
     )
     taken = {int(v) for v in rows.scalars()}
 
-    free_int = prefix_math.lowest_free(net, taken)
+    # Defined IP ranges (DHCP pools, reserved blocks) are hands-off for the
+    # allocator — they are managed outside IpamBox.
+    range_rows = await session.execute(
+        select(IPRange.start_int, IPRange.end_int).where(
+            IPRange.prefix_id == prefix_id
+        )
+    )
+    excluded = tuple((int(s), int(e)) for s, e in range_rows.all())
+
+    free_int = prefix_math.lowest_free(net, taken, excluded)
     if free_int is None:
         raise ConflictError(f"prefix {net} exhausted")
 
@@ -118,7 +129,9 @@ async def build_tree(session: AsyncSession) -> list[dict]:
     """Site -> VRF -> nested prefix containment tree."""
     sites = (await session.execute(select(Site).order_by(Site.name))).scalars().all()
     vrfs = (await session.execute(select(VRF).order_by(VRF.name))).scalars().all()
-    prefixes = (await session.execute(select(Prefix))).scalars().all()
+    prefixes = (
+        await session.execute(select(Prefix).options(selectinload(Prefix.vlan)))
+    ).scalars().all()
 
     def prefix_node(p: Prefix, siblings: list[Prefix], nets: dict[int, object]) -> dict:
         net = nets[p.id]
@@ -144,7 +157,7 @@ async def build_tree(session: AsyncSession) -> list[dict]:
             "prefix": str(net),
             "status": p.status.value,
             "vlan_id": p.vlan_id,
-            "vlan_name": p.vlan_name,
+            "vlan_name": p.vlan.name if p.vlan else None,
             "description": p.description,
             "children": children,
         }

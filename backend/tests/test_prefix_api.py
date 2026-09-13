@@ -46,11 +46,15 @@ async def test_prefix_stats_fields(client):
     assert body["utilization_pct"] == 0.0
 
 
-async def test_invalid_vlan_rejected(client):
+async def test_unknown_vlan_rejected(client):
     vrf_id = await _global_vrf_id(client)
     r = await client.post(
         "/api/v1/prefixes", json={"prefix": "10.60.0.0/24", "vrf_id": vrf_id, "vlan_id": 5000}
     )
+    assert r.status_code == 404
+
+    # and an out-of-range VID is rejected when creating the VLAN itself
+    r = await client.post("/api/v1/vlans", json={"vid": 5000, "name": "bad"})
     assert r.status_code == 422
 
 

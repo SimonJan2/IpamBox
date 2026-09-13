@@ -16,6 +16,15 @@ class IPStatus(str, enum.Enum):
     OFFLINE = "offline"
 
 
+class IPRole(str, enum.Enum):
+    VIP = "vip"
+    VRRP = "vrrp"
+    HSRP = "hsrp"
+    GLBP = "glbp"
+    CARP = "carp"
+    SECONDARY = "secondary"
+
+
 class IPAddress(Base):
     __tablename__ = "ip_addresses"
 
@@ -41,6 +50,18 @@ class IPAddress(Base):
         index=True,
     )
     last_seen: Mapped[datetime | None] = mapped_column()
+    role: Mapped[IPRole | None] = mapped_column(
+        Enum(
+            IPRole,
+            name="ip_role",
+            native_enum=True,
+            values_callable=lambda e: [m.value for m in e],
+        ),
+        nullable=True,
+    )
+    nat_inside_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ip_addresses.id", ondelete="SET NULL"), index=True
+    )
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())

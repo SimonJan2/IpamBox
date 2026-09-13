@@ -4,7 +4,7 @@ import { useMemo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
 import { cn, intToIp, ipToInt, timeAgo } from "@/lib/utils";
-import type { AddressPage, IpAddress } from "@/types";
+import type { AddressPage, IpAddress, IpRange } from "@/types";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 const CELL = 40;
@@ -13,11 +13,13 @@ const COLS = 16;
 export type CellState =
   | { kind: "free" }
   | { kind: "boundary" }
+  | { kind: "range"; range: IpRange }
   | { kind: "used"; addr: IpAddress };
 
 const stateClass: Record<string, string> = {
   free: "bg-zinc-800/40 hover:bg-zinc-700/60 text-zinc-600",
   boundary: "bg-zinc-800 text-zinc-600 [background:repeating-linear-gradient(45deg,transparent,transparent_4px,rgba(255,255,255,0.03)_4px,rgba(255,255,255,0.03)_8px)]",
+  range: "bg-sky-900/40 text-sky-400/70 hover:bg-sky-800/50 border border-sky-700/40 border-dashed",
   active: "bg-emerald-500/25 text-emerald-300 hover:bg-emerald-500/40 border border-emerald-500/30",
   reserved: "bg-amber-500/20 text-amber-300 hover:bg-amber-500/35 border border-amber-500/30",
   dhcp: "bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/35 border border-cyan-500/30",
@@ -27,9 +29,11 @@ const stateClass: Record<string, string> = {
 
 export function SubnetGrid({
   page,
+  ranges = [],
   onSelect,
 }: {
   page: AddressPage;
+  ranges?: IpRange[];
   onSelect: (ip: string, addr: IpAddress | null) => void;
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
@@ -50,6 +54,11 @@ export function SubnetGrid({
   const lastBound = page.usable_last ? ipToInt(page.usable_last) : null;
   const rows = Math.ceil(total / COLS);
 
+  const rangeSpans = useMemo(
+    () => ranges.map((r) => ({ ...r, s: Number(r.start_int), e: Number(r.end_int) })),
+    [ranges]
+  );
+
   const virtualizer = useVirtualizer({
     count: rows,
     getScrollElement: () => parentRef.current,
@@ -61,6 +70,8 @@ export function SubnetGrid({
     const addr = byInt.get(intIp);
     if (addr) return { kind: "used", addr };
     if (intIp === firstBound || intIp === lastBound) return { kind: "boundary" };
+    const range = rangeSpans.find((r) => intIp >= r.s && intIp <= r.e);
+    if (range) return { kind: "range", range };
     return { kind: "free" };
   }
 
@@ -117,6 +128,19 @@ export function SubnetGrid({
                     ) : st.kind === "boundary" ? (
                       <div className="text-muted-foreground">
                         network/broadcast — not usable for hosts
+                      </div>
+                    ) : st.kind === "range" ? (
+                      <div className="text-muted-foreground">
+                        <div>
+                          in range{" "}
+                          <span className="font-mono text-sky-300">
+                            {st.range.start_address}–{st.range.end_address}
+                          </span>
+                        </div>
+                        <div>
+                          role: {st.range.role}
+                          {st.range.description ? ` · ${st.range.description}` : ""}
+                        </div>
                       </div>
                     ) : (
                       <div className="text-muted-foreground">free — click to reserve</div>

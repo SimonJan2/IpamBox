@@ -12,8 +12,7 @@ class PrefixCreate(BaseModel):
     prefix: str
     vrf_id: int
     site_id: int | None = None
-    vlan_id: int | None = Field(default=None, ge=1, le=4094)
-    vlan_name: str | None = Field(default=None, max_length=255)
+    vlan_id: int | None = None
     status: PrefixStatus = PrefixStatus.ACTIVE
     description: str | None = None
 
@@ -28,10 +27,17 @@ class PrefixCreate(BaseModel):
 
 class PrefixUpdate(BaseModel):
     site_id: int | None = None
-    vlan_id: int | None = Field(default=None, ge=1, le=4094)
-    vlan_name: str | None = Field(default=None, max_length=255)
+    vlan_id: int | None = None
     status: PrefixStatus | None = None
     description: str | None = None
+
+
+class VlanRefOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    vid: int
+    name: str
 
 
 class PrefixOut(BaseModel):
@@ -42,7 +48,7 @@ class PrefixOut(BaseModel):
     vrf_id: int
     site_id: int | None
     vlan_id: int | None
-    vlan_name: str | None
+    vlan: VlanRefOut | None = None
     status: PrefixStatus
     description: str | None
     created_at: datetime
