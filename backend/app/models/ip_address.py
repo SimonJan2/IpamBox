@@ -1,8 +1,8 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import Enum, ForeignKey, Index, Numeric, String, Text, UniqueConstraint, func
-from sqlalchemy.dialects.postgresql import INET
+from sqlalchemy import Enum, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy.dialects.postgresql import ARRAY, INET
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -14,6 +14,15 @@ class IPStatus(str, enum.Enum):
     DHCP = "dhcp"
     DISCOVERED = "discovered"
     OFFLINE = "offline"
+
+
+class IPRole(str, enum.Enum):
+    VIP = "vip"
+    VRRP = "vrrp"
+    HSRP = "hsrp"
+    GLBP = "glbp"
+    CARP = "carp"
+    SECONDARY = "secondary"
 
 
 class IPAddress(Base):
@@ -41,6 +50,22 @@ class IPAddress(Base):
         index=True,
     )
     last_seen: Mapped[datetime | None] = mapped_column()
+    role: Mapped[IPRole | None] = mapped_column(
+        Enum(
+            IPRole,
+            name="ip_role",
+            native_enum=True,
+            values_callable=lambda e: [m.value for m in e],
+        ),
+        nullable=True,
+    )
+    nat_inside_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ip_addresses.id", ondelete="SET NULL"), index=True
+    )
+    # Populated by the scanner: TCP ports that answered, and a best-guess
+    # device classification derived from ports + vendor + hostname.
+    open_ports: Mapped[list[int] | None] = mapped_column(ARRAY(Integer))
+    device_type: Mapped[str | None] = mapped_column(String(32))
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())

@@ -40,3 +40,12 @@ class ScanJobOut(BaseModel):
     finished_at: datetime | None
     duration_seconds: float | None
     created_at: datetime
+
+
+class ScanConfigOut(BaseModel):
+    networks: list[str]
+    exclude_networks: list[str]
+    only_configured: bool
+    interval_minutes: int
+    detected_cidr: str | None
+    tcp_ports: list[int]

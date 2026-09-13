@@ -1,6 +1,9 @@
 import os
 import subprocess
 
+# Tests run without auth by default; test_auth flips it back on per-test.
+os.environ["IPAMBOX_ALLOW_INSECURE"] = "true"
+
 import asyncpg
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -32,8 +35,9 @@ async def _prepare_test_db():
     finally:
         await conn.close()
 
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     env = dict(os.environ, DATABASE_URL=test_url())
-    subprocess.run(["alembic", "upgrade", "head"], check=True, env=env, cwd="/app")
+    subprocess.run(["alembic", "upgrade", "head"], check=True, env=env, cwd=backend_dir)
     yield
 
 
@@ -55,8 +59,9 @@ async def session(engine, sf):
     async with engine.begin() as conn:
         await conn.execute(
             text(
-                "TRUNCATE scan_jobs, ip_addresses, prefixes, vrfs, sites "
-                "RESTART IDENTITY CASCADE"
+                "TRUNCATE scan_jobs, ip_addresses, ip_ranges, prefixes, vrfs, "
+                "sites, users, change_log, tag_assignments, tags, vlans, "
+                "vlan_groups RESTART IDENTITY CASCADE"
             )
         )
         await conn.execute(

@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, Enum, ForeignKey, String, Text, func
+from sqlalchemy import Enum, ForeignKey, Text, func
 from sqlalchemy.dialects.postgresql import CIDR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -22,8 +22,7 @@ class Prefix(Base):
     prefix: Mapped[str] = mapped_column(CIDR, nullable=False)
     vrf_id: Mapped[int] = mapped_column(ForeignKey("vrfs.id", ondelete="CASCADE"), index=True)
     site_id: Mapped[int | None] = mapped_column(ForeignKey("sites.id", ondelete="SET NULL"), index=True)
-    vlan_id: Mapped[int | None] = mapped_column()
-    vlan_name: Mapped[str | None] = mapped_column(String(255))
+    vlan_id: Mapped[int | None] = mapped_column(ForeignKey("vlans.id", ondelete="SET NULL"), index=True)
     status: Mapped[PrefixStatus] = mapped_column(
         Enum(
             PrefixStatus,
@@ -39,12 +38,12 @@ class Prefix(Base):
 
     vrf: Mapped["VRF"] = relationship(back_populates="prefixes")  # noqa: F821
     site: Mapped["Site | None"] = relationship(back_populates="prefixes")  # noqa: F821
+    vlan: Mapped["VLAN | None"] = relationship(back_populates="prefixes")  # noqa: F821
     addresses: Mapped[list["IPAddress"]] = relationship(  # noqa: F821
         back_populates="prefix", cascade="all, delete-orphan"
     )
 
     __table_args__ = (
-        CheckConstraint("vlan_id IS NULL OR (vlan_id BETWEEN 1 AND 4094)", name="ck_prefixes_vlan_range"),
         # Per-VRF uniqueness + no-overlap is enforced by a GiST exclusion
         # constraint created in the initial migration (requires btree_gist).
     )

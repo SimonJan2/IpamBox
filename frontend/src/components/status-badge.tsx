@@ -16,11 +16,12 @@ const prefixVariant: Record<PrefixStatus, "secondary" | "default" | "amber" | "z
   deprecated: "zinc",
 };
 
-const scanVariant: Record<ScanStatus, "secondary" | "cyan" | "default" | "red"> = {
+const scanVariant: Record<ScanStatus, "secondary" | "cyan" | "default" | "red" | "zinc"> = {
   queued: "secondary",
   running: "cyan",
   completed: "default",
   failed: "red",
+  cancelled: "zinc",
 };
 
 export const IpStatusBadge = ({ s }: { s: IpStatus }) => (

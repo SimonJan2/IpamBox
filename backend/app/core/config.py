@@ -17,6 +17,19 @@ class Settings(BaseSettings):
     scan_tcp_timeout: float = 0.6
     scan_concurrency: int = 256
     scan_progress_channel_prefix: str = "scan:"
+    # Multi-network scanning (comma-separated CIDRs)
+    scan_networks: str = ""            # extra/explicit networks to scan
+    scan_exclude_networks: str = ""    # never scan these (even if asked)
+    scan_only_configured: bool = False # refuse scans outside scan_networks
+    scan_interval_minutes: int = 0     # >0 -> scheduled recurring scans
+    scan_min_interval_seconds: int = 15  # rate-limit manual scans per CIDR
+
+    # Auth settings (env vars are IPAMBOX_*)
+    ipambox_password: str = ""  # pre-provision the admin password
+    ipambox_password_file: str = ""  # path to a file holding the password (wins over above)
+    ipambox_session_hours: int = 168  # one week
+    ipambox_allow_insecure: bool = False  # disable auth entirely (behind a trusted proxy)
+    ipambox_cookie_secure: bool = False  # set True when serving over HTTPS
 
     @property
     def cors_origin_list(self) -> list[str]:
@@ -25,6 +38,14 @@ class Settings(BaseSettings):
     @property
     def tcp_ping_ports(self) -> list[int]:
         return [int(p) for p in self.scan_tcp_ports.split(",") if p.strip()]
+
+    @property
+    def scan_network_list(self) -> list[str]:
+        return [n.strip() for n in self.scan_networks.split(",") if n.strip()]
+
+    @property
+    def scan_exclude_network_list(self) -> list[str]:
+        return [n.strip() for n in self.scan_exclude_networks.split(",") if n.strip()]
 
     @property
     def sync_database_url(self) -> str:

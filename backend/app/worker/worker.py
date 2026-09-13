@@ -4,21 +4,29 @@ import json
 import logging
 from datetime import datetime
 
+from arq import cron
 from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.core.db import SessionLocal
-from app.core.redis import get_redis, redis_settings_from_url
+from app.core.redis import get_arq_pool, get_redis, redis_settings_from_url
+from app.core.security import set_actor
 from app.models.ip_address import IPAddress
 from app.models.prefix import Prefix, PrefixStatus
 from app.models.scan_job import ScanJob, ScanStatus
 from app.models.vrf import VRF
 from app.services import prefix_math
 from app.worker.reconcile import reconcile
-from app.worker.scanner import detect_local_cidr, scan_cidr
+from app.worker.scanner import ScanCancelled, detect_local_cidr, scan_cidr
 
 log = logging.getLogger("ipambox.scanner")
 settings = get_settings()
+
+CANCEL_KEY_TTL = 3600  # seconds
+
+
+def cancel_key(scan_id: int) -> str:
+    return f"{settings.scan_progress_channel_prefix}cancel:{scan_id}"
 
 
 async def _publish(scan_id: int, payload: dict):
@@ -70,15 +78,32 @@ async def _resolve_prefix(session, cidr: str, vrf_id: int, prefix_id: int | None
     return row
 
 
+def _eta_seconds(started: datetime, progress_pct: float) -> float | None:
+    if progress_pct <= 0:
+        return None
+    elapsed = (datetime.utcnow() - started).total_seconds()
+    return round(elapsed * (100.0 - progress_pct) / progress_pct, 1)
+
+
 async def run_scan(ctx: dict, scan_id: int) -> dict:
     """ARQ job: execute a scan and reconcile results."""
+    set_actor("scanner")
     started = datetime.utcnow()
     progress_lock = asyncio.Lock()
+
+    async def _cancelled() -> bool:
+        r = get_redis()
+        try:
+            return bool(await r.get(cancel_key(scan_id)))
+        finally:
+            await r.aclose()
 
     async with SessionLocal() as session:
         job = await session.get(ScanJob, scan_id)
         if job is None:
             return {"error": f"scan {scan_id} not found"}
+        if job.status == ScanStatus.CANCELLED:
+            return {"cancelled": True}
 
         async def progress(phase: str, pct: float):
             # serialized: concurrent enrich tasks must not commit at once
@@ -93,6 +118,7 @@ async def run_scan(ctx: dict, scan_id: int) -> dict:
                             "phase": phase,
                             "progress": job.progress,
                             "status": "running",
+                            "eta_seconds": _eta_seconds(started, job.progress),
                         },
                     )
                 except Exception:
@@ -125,6 +151,7 @@ async def run_scan(ctx: dict, scan_id: int) -> dict:
                 tcp_timeout=settings.scan_tcp_timeout,
                 concurrency=settings.scan_concurrency,
                 on_progress=progress,
+                should_stop=_cancelled,
             )
 
             discovered, new = await reconcile(session, prefix.id, vrf_id, hosts)
@@ -147,18 +174,100 @@ async def run_scan(ctx: dict, scan_id: int) -> dict:
                 },
             )
             return {"hosts": discovered, "new": new}
-        except Exception as e:
-            log.exception("scan %s failed", scan_id)
-            job.status = ScanStatus.FAILED
-            job.error = str(e)[:2000]
+        except ScanCancelled:
+            job.status = ScanStatus.CANCELLED
             job.finished_at = datetime.utcnow()
             job.duration_seconds = round((job.finished_at - started).total_seconds(), 2)
             await session.commit()
             await _publish(
                 scan_id,
-                {"scan_id": scan_id, "phase": "error", "status": "failed", "error": job.error},
+                {"scan_id": scan_id, "phase": "cancelled", "status": "cancelled"},
             )
-            return {"error": job.error}
+            return {"cancelled": True}
+        except Exception as e:
+            log.exception("scan %s failed", scan_id)
+            # the session may be inside a failed transaction — reset it before
+            # recording the failure
+            await session.rollback()
+            err = str(e)[:2000]
+            job = await session.get(ScanJob, scan_id)
+            if job is not None:
+                job.status = ScanStatus.FAILED
+                job.error = err
+                job.finished_at = datetime.utcnow()
+                job.duration_seconds = round(
+                    (job.finished_at - started).total_seconds(), 2
+                )
+                await session.commit()
+            await _publish(
+                scan_id,
+                {"scan_id": scan_id, "phase": "error", "status": "failed", "error": err},
+            )
+            return {"error": err}
+
+
+async def run_scheduled_scans(ctx: dict) -> dict:
+    """Cron entry point: enqueue a scan for every configured network.
+
+    Networks: SCAN_NETWORKS env (or the auto-detected LAN CIDR when unset and
+    SCAN_ONLY_CONFIGURED is off). Skips a CIDR that already has a
+    queued/running job, and never scans excluded networks.
+    """
+    set_actor("scheduler")
+    excluded = [
+        ipaddress.ip_network(n, strict=False)
+        for n in settings.scan_exclude_network_list
+    ]
+    targets = list(settings.scan_network_list)
+    if not targets and not settings.scan_only_configured:
+        detected = detect_local_cidr(settings.scan_interface)
+        if detected:
+            targets = [detected]
+
+    enqueued: list[str] = []
+    async with SessionLocal() as session:
+        pool = await get_arq_pool()
+        try:
+            for cidr in targets:
+                net = ipaddress.ip_network(cidr, strict=False)
+                if any(net.subnet_of(x) or net == x for x in excluded):
+                    log.info("scheduled scan skipped (excluded): %s", net)
+                    continue
+                live = (
+                    await session.execute(
+                        select(ScanJob.id).where(
+                            ScanJob.cidr == str(net),
+                            ScanJob.status.in_(
+                                [ScanStatus.QUEUED, ScanStatus.RUNNING]
+                            ),
+                        )
+                    )
+                ).first()
+                if live:
+                    continue
+                job = ScanJob(cidr=str(net))
+                session.add(job)
+                await session.flush()
+                await pool.enqueue_job("run_scan", job.id)
+                enqueued.append(str(net))
+            await session.commit()
+        finally:
+            await pool.close()
+    if enqueued:
+        log.info("scheduled scans enqueued: %s", enqueued)
+    return {"enqueued": enqueued}
+
+
+def _cron_jobs() -> list:
+    interval = settings.scan_interval_minutes
+    if interval <= 0:
+        return []
+    if interval < 60:
+        return [cron(run_scheduled_scans, minute=set(range(0, 60, interval)))]
+    hours = max(1, interval // 60)
+    if hours < 24:
+        return [cron(run_scheduled_scans, hour=set(range(0, 24, hours)), minute=0)]
+    return [cron(run_scheduled_scans, hour=0, minute=0)]  # daily fallback
 
 
 async def startup(ctx: dict):
@@ -181,6 +290,7 @@ async def startup(ctx: dict):
 
 class WorkerSettings:
     functions = [run_scan]
+    cron_jobs = _cron_jobs()
     on_startup = startup
     redis_settings = redis_settings_from_url(settings.redis_url)
     max_jobs = 4

@@ -5,7 +5,8 @@ import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
-import type { IpAddress, IpStatus } from "@/types";
+import { timeAgo } from "@/lib/utils";
+import type { ChangeLogEntry, IpAddress, IpRole, IpStatus } from "@/types";
 import { IpStatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
@@ -26,6 +27,7 @@ import {
 } from "@/components/ui/sheet";
 
 const STATUSES: IpStatus[] = ["active", "reserved", "dhcp", "discovered", "offline"];
+const ROLES: (IpRole | "none")[] = ["none", "vip", "vrrp", "hsrp", "glbp", "carp", "secondary"];
 
 export function IpDrawer({
   open,
@@ -46,37 +48,71 @@ export function IpDrawer({
     hostname: "",
     mac_address: "",
     status: "active" as IpStatus,
+    role: "none" as IpRole | "none",
+    nat_inside: "",
     notes: "",
   });
   const [busy, setBusy] = useState(false);
+  const [history, setHistory] = useState<ChangeLogEntry[]>([]);
+  const [natOptions, setNatOptions] = useState<IpAddress[]>([]);
 
   useEffect(() => {
     setForm({
       hostname: addr?.hostname ?? "",
       mac_address: addr?.mac_address ?? "",
       status: addr?.status ?? "active",
+      role: addr?.role ?? "none",
+      nat_inside: "",
       notes: addr?.notes ?? "",
     });
+    if (addr?.nat_inside_id) {
+      api
+        .get<IpAddress>(`/api/v1/addresses/${addr.nat_inside_id}`)
+        .then((a) => setForm((f) => ({ ...f, nat_inside: a.address })))
+        .catch(() => {});
+    }
+    api
+      .get<IpAddress[]>(`/api/v1/addresses?prefix_id=${prefixId}&limit=2000`)
+      .then(setNatOptions)
+      .catch(() => setNatOptions([]));
+    if (open && addr) {
+      api
+        .get<ChangeLogEntry[]>(
+          `/api/v1/changelog?object_type=IPAddress&object_id=${addr.id}&limit=20`
+        )
+        .then(setHistory)
+        .catch(() => setHistory([]));
+    } else {
+      setHistory([]);
+    }
   }, [addr, open]);
 
   const save = async () => {
     setBusy(true);
     try {
+      const natId = form.nat_inside
+        ? natOptions.find((a) => a.address === form.nat_inside)?.id
+        : null;
+      if (form.nat_inside && natId == null) {
+        toast.error("NAT inside address not found in this prefix");
+        setBusy(false);
+        return;
+      }
+      const body = {
+        hostname: form.hostname || null,
+        mac_address: form.mac_address || null,
+        status: form.status,
+        role: form.role === "none" ? null : form.role,
+        nat_inside_id: natId,
+        notes: form.notes || null,
+      };
       if (addr) {
-        await api.patch(`/api/v1/addresses/${addr.id}`, {
-          hostname: form.hostname || null,
-          mac_address: form.mac_address || null,
-          status: form.status,
-          notes: form.notes || null,
-        });
+        await api.patch(`/api/v1/addresses/${addr.id}`, body);
       } else {
         await api.post("/api/v1/addresses", {
           address: ip,
           prefix_id: prefixId,
-          hostname: form.hostname || null,
-          mac_address: form.mac_address || null,
-          status: form.status,
-          notes: form.notes || null,
+          ...body,
         });
       }
       toast.success(addr ? "Address updated" : "Address reserved");
@@ -124,6 +160,13 @@ export function IpDrawer({
           {addr && (
             <div className="rounded-md border p-3 text-sm text-muted-foreground space-y-1">
               {addr.vendor && <div>vendor: {addr.vendor}</div>}
+              {addr.device_type && <div>type: {addr.device_type}</div>}
+              {!!addr.open_ports?.length && (
+                <div>
+                  open ports:{" "}
+                  <span className="font-mono text-xs">{addr.open_ports.join("  ")}</span>
+                </div>
+              )}
               {addr.last_seen && (
                 <div>last seen: {new Date(addr.last_seen).toLocaleString()}</div>
               )}
@@ -146,23 +189,60 @@ export function IpDrawer({
               className="font-mono"
             />
           </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-1.5">
+              <Label>Status</Label>
+              <Select
+                value={form.status}
+                onValueChange={(v) => setForm({ ...form, status: v as IpStatus })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {STATUSES.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {s}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Role</Label>
+              <Select
+                value={form.role}
+                onValueChange={(v) => setForm({ ...form, role: v as IpRole | "none" })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ROLES.map((r) => (
+                    <SelectItem key={r} value={r}>
+                      {r}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
           <div className="grid gap-1.5">
-            <Label>Status</Label>
-            <Select
-              value={form.status}
-              onValueChange={(v) => setForm({ ...form, status: v as IpStatus })}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {STATUSES.map((s) => (
-                  <SelectItem key={s} value={s}>
-                    {s}
-                  </SelectItem>
+            <Label>NAT inside address</Label>
+            <Input
+              value={form.nat_inside}
+              onChange={(e) => setForm({ ...form, nat_inside: e.target.value })}
+              placeholder="e.g. 10.0.0.5 (must exist in this prefix)"
+              className="font-mono"
+              list="nat-candidates"
+            />
+            <datalist id="nat-candidates">
+              {natOptions
+                .filter((a) => a.id !== addr?.id)
+                .map((a) => (
+                  <option key={a.id} value={a.address} />
                 ))}
-              </SelectContent>
-            </Select>
+            </datalist>
           </div>
           <div className="grid gap-1.5">
             <Label>Notes</Label>
@@ -181,6 +261,40 @@ export function IpDrawer({
               </Button>
             )}
           </div>
+
+          {history.length > 0 && (
+            <div className="border-t pt-3">
+              <div className="mb-2 text-xs font-medium text-muted-foreground">
+                History
+              </div>
+              <div className="space-y-1.5 text-xs text-muted-foreground">
+                {history.map((h) => (
+                  <div key={h.id} className="flex items-baseline gap-2">
+                    <span
+                      className={
+                        h.action === "create"
+                          ? "text-emerald-400"
+                          : h.action === "delete"
+                            ? "text-rose-400"
+                            : "text-amber-400"
+                      }
+                    >
+                      {h.action}
+                    </span>
+                    <span className="flex-1 truncate">
+                      {h.action === "update"
+                        ? h.changes
+                            .map((c) => c.field)
+                            .slice(0, 3)
+                            .join(", ")
+                        : h.actor}
+                    </span>
+                    <span className="shrink-0">{timeAgo(h.ts)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </SheetContent>
     </Sheet>

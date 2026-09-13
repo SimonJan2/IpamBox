@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Download, Pencil, Plus, Trash2 } from "lucide-react";
 import {
   flexRender,
   getCoreRowModel,
@@ -13,8 +13,9 @@ import {
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
-import type { Prefix, Site, Vrf } from "@/types";
+import type { Prefix, Site, Vlan, Vrf } from "@/types";
 import { PrefixStatusBadge } from "@/components/status-badge";
+import { TagChip, TagPicker, useTags } from "@/components/tag-picker";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -53,20 +54,21 @@ function NewPrefixDialog({
   onOpenChange,
   vrfs,
   sites,
+  vlans,
   onCreated,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   vrfs: Vrf[];
   sites: Site[];
+  vlans: Vlan[];
   onCreated: () => void;
 }) {
   const [form, setForm] = useState({
     prefix: "",
     vrf_id: "",
-    site_id: "",
-    vlan_id: "",
-    vlan_name: "",
+    site_id: "none",
+    vlan_id: "none",
     status: "active",
     description: "",
   });
@@ -78,9 +80,8 @@ function NewPrefixDialog({
       await api.post("/api/v1/prefixes", {
         prefix: form.prefix,
         vrf_id: Number(form.vrf_id),
-        site_id: form.site_id ? Number(form.site_id) : null,
-        vlan_id: form.vlan_id ? Number(form.vlan_id) : null,
-        vlan_name: form.vlan_name || null,
+        site_id: form.site_id === "none" ? null : Number(form.site_id),
+        vlan_id: form.vlan_id === "none" ? null : Number(form.vlan_id),
         status: form.status,
         description: form.description || null,
       });
@@ -138,6 +139,7 @@ function NewPrefixDialog({
                   <SelectValue placeholder="None" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
                   {sites.map((s) => (
                     <SelectItem key={s.id} value={String(s.id)}>
                       {s.name}
@@ -147,24 +149,24 @@ function NewPrefixDialog({
               </Select>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-1.5">
-              <Label>VLAN ID</Label>
-              <Input
-                type="number"
-                min={1}
-                max={4094}
-                value={form.vlan_id}
-                onChange={(e) => setForm({ ...form, vlan_id: e.target.value })}
-              />
-            </div>
-            <div className="grid gap-1.5">
-              <Label>VLAN name</Label>
-              <Input
-                value={form.vlan_name}
-                onChange={(e) => setForm({ ...form, vlan_name: e.target.value })}
-              />
-            </div>
+          <div className="grid gap-1.5">
+            <Label>VLAN</Label>
+            <Select
+              value={form.vlan_id}
+              onValueChange={(v) => setForm({ ...form, vlan_id: v })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="None" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None</SelectItem>
+                {vlans.map((v) => (
+                  <SelectItem key={v.id} value={String(v.id)}>
+                    {v.vid} · {v.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="grid gap-1.5">
             <Label>Status</Label>
@@ -205,18 +207,19 @@ function NewPrefixDialog({
 function EditPrefixDialog({
   prefix,
   sites,
+  vlans,
   onOpenChange,
   onSaved,
 }: {
   prefix: Prefix | null;
   sites: Site[];
+  vlans: Vlan[];
   onOpenChange: (o: boolean) => void;
   onSaved: () => void;
 }) {
   const [form, setForm] = useState({
-    site_id: "",
-    vlan_id: "",
-    vlan_name: "",
+    site_id: "none",
+    vlan_id: "none",
     status: "active",
     description: "",
   });
@@ -225,9 +228,8 @@ function EditPrefixDialog({
   useEffect(() => {
     if (prefix) {
       setForm({
-        site_id: prefix.site_id ? String(prefix.site_id) : "",
-        vlan_id: prefix.vlan_id ? String(prefix.vlan_id) : "",
-        vlan_name: prefix.vlan_name ?? "",
+        site_id: prefix.site_id ? String(prefix.site_id) : "none",
+        vlan_id: prefix.vlan_id ? String(prefix.vlan_id) : "none",
         status: prefix.status,
         description: prefix.description ?? "",
       });
@@ -239,9 +241,8 @@ function EditPrefixDialog({
     setBusy(true);
     try {
       await api.patch(`/api/v1/prefixes/${prefix.id}`, {
-        site_id: form.site_id ? Number(form.site_id) : null,
-        vlan_id: form.vlan_id ? Number(form.vlan_id) : null,
-        vlan_name: form.vlan_name || null,
+        site_id: form.site_id === "none" ? null : Number(form.site_id),
+        vlan_id: form.vlan_id === "none" ? null : Number(form.vlan_id),
         status: form.status,
         description: form.description || null,
       });
@@ -284,40 +285,42 @@ function EditPrefixDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
-              <Label>VLAN ID</Label>
-              <Input
-                type="number"
-                min={1}
-                max={4094}
+              <Label>VLAN</Label>
+              <Select
                 value={form.vlan_id}
-                onChange={(e) => setForm({ ...form, vlan_id: e.target.value })}
-              />
+                onValueChange={(v) => setForm({ ...form, vlan_id: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {vlans.map((v) => (
+                    <SelectItem key={v.id} value={String(v.id)}>
+                      {v.vid} · {v.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid gap-1.5">
-              <Label>VLAN name</Label>
-              <Input
-                value={form.vlan_name}
-                onChange={(e) => setForm({ ...form, vlan_name: e.target.value })}
-              />
+              <Label>Status</Label>
+              <Select
+                value={form.status}
+                onValueChange={(v) => setForm({ ...form, status: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {["active", "container", "reserved", "deprecated"].map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {s}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-          </div>
-          <div className="grid gap-1.5">
-            <Label>Status</Label>
-            <Select
-              value={form.status}
-              onValueChange={(v) => setForm({ ...form, status: v })}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {["active", "container", "reserved", "deprecated"].map((s) => (
-                  <SelectItem key={s} value={s}>
-                    {s}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </div>
           <div className="grid gap-1.5">
             <Label>Description</Label>
@@ -396,16 +399,20 @@ export default function PrefixesPage() {
   const [prefixes, setPrefixes] = useState<Prefix[]>([]);
   const [vrfs, setVrfs] = useState<Vrf[]>([]);
   const [sites, setSites] = useState<Site[]>([]);
+  const [vlans, setVlans] = useState<Vlan[]>([]);
   const [q, setQ] = useState("");
   const [vrfFilter, setVrfFilter] = useState("all");
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<Prefix | null>(null);
   const [deleting, setDeleting] = useState<Prefix | null>(null);
+  const { tags, byObject: prefixTags, refresh: refreshTags } = useTags("Prefix");
 
   const refresh = () => {
     api.get<Prefix[]>("/api/v1/prefixes").then(setPrefixes).catch(() => {});
     api.get<Vrf[]>("/api/v1/vrfs").then(setVrfs).catch(() => {});
     api.get<Site[]>("/api/v1/sites").then(setSites).catch(() => {});
+    api.get<Vlan[]>("/api/v1/vlans").then(setVlans).catch(() => {});
+    refreshTags();
   };
   useEffect(refresh, []);
 
@@ -440,8 +447,33 @@ export default function PrefixesPage() {
         accessorKey: "vlan_id",
         header: "VLAN",
         cell: (c) => {
-          const id = c.getValue<number | null>();
-          return id ? `VLAN ${id}` : "—";
+          const v = c.row.original.vlan;
+          return v ? `${v.vid} · ${v.name}` : "—";
+        },
+      },
+      {
+        id: "tags",
+        header: "Tags",
+        cell: (c) => {
+          const p = c.row.original;
+          const assigned = prefixTags.get(p.id) ?? [];
+          return (
+            <div
+              className="flex items-center gap-1"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {assigned.map((t) => (
+                <TagChip key={t.id} tag={t} />
+              ))}
+              <TagPicker
+                objectType="Prefix"
+                objectId={p.id}
+                allTags={tags}
+                assigned={assigned}
+                onChanged={refreshTags}
+              />
+            </div>
+          );
         },
       },
       {
@@ -501,7 +533,7 @@ export default function PrefixesPage() {
         ),
       },
     ],
-    [vrfName, siteName]
+    [vrfName, siteName, tags, prefixTags, refreshTags]
   );
 
   const filtered = useMemo(
@@ -524,9 +556,16 @@ export default function PrefixesPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Subnets</h1>
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
-          <Plus /> New prefix
-        </Button>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" asChild>
+            <a href="/api/v1/prefixes/export.csv" download>
+              <Download /> CSV
+            </a>
+          </Button>
+          <Button size="sm" onClick={() => setCreateOpen(true)}>
+            <Plus /> New prefix
+          </Button>
+        </div>
       </div>
 
       <div className="flex gap-3">
@@ -580,7 +619,7 @@ export default function PrefixesPage() {
             ))}
             {table.getRowModel().rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={9} className="py-10 text-center text-muted-foreground">
                   No prefixes found.
                 </TableCell>
               </TableRow>
@@ -594,11 +633,13 @@ export default function PrefixesPage() {
         onOpenChange={setCreateOpen}
         vrfs={vrfs}
         sites={sites}
+        vlans={vlans}
         onCreated={refresh}
       />
       <EditPrefixDialog
         prefix={editing}
         sites={sites}
+        vlans={vlans}
         onOpenChange={() => setEditing(null)}
         onSaved={refresh}
       />

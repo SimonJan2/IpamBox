@@ -4,7 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.models.ip_address import IPStatus
+from app.models.ip_address import IPRole, IPStatus
 from app.schemas.common import ip_display
 
 _MAC_RE = re.compile(r"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
@@ -26,6 +26,8 @@ class IPAddressCreate(BaseModel):
     hostname: str | None = Field(default=None, max_length=255)
     vendor: str | None = Field(default=None, max_length=255)
     status: IPStatus = IPStatus.ACTIVE
+    role: IPRole | None = None
+    nat_inside_id: int | None = None
     notes: str | None = None
 
     @field_validator("address")
@@ -47,6 +49,8 @@ class IPAddressUpdate(BaseModel):
     hostname: str | None = Field(default=None, max_length=255)
     vendor: str | None = Field(default=None, max_length=255)
     status: IPStatus | None = None
+    role: IPRole | None = None
+    nat_inside_id: int | None = None
     notes: str | None = None
     prefix_id: int | None = None
 
@@ -68,6 +72,10 @@ class IPAddressOut(BaseModel):
     vendor: str | None
     hostname: str | None
     status: IPStatus
+    role: IPRole | None
+    nat_inside_id: int | None
+    open_ports: list[int] | None
+    device_type: str | None
     last_seen: datetime | None
     notes: str | None
     created_at: datetime

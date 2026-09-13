@@ -1,8 +1,10 @@
+import ipaddress
 import json
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -10,13 +12,29 @@ from app.core.db import SessionLocal, get_session
 from app.core.redis import get_arq_pool, get_redis
 from app.models.scan_job import ScanJob, ScanStatus
 from app.models.vrf import VRF
-from app.schemas.scan import ScanCreate, ScanJobOut
+from app.schemas.scan import ScanConfigOut, ScanCreate, ScanJobOut
 from app.services.ipam import IPAMError, get_or_404
+from app.worker.scanner import detect_local_cidr
+from app.worker.worker import cancel_key
 
 router = APIRouter(prefix="/scans", tags=["scans"])
 settings = get_settings()
 
-_TERMINAL = (ScanStatus.COMPLETED, ScanStatus.FAILED)
+_TERMINAL = (ScanStatus.COMPLETED, ScanStatus.FAILED, ScanStatus.CANCELLED)
+_LIVE = (ScanStatus.QUEUED, ScanStatus.RUNNING)
+
+
+def _check_cidr_allowed(net) -> None:
+    for x in settings.scan_exclude_network_list:
+        xn = ipaddress.ip_network(x, strict=False)
+        if net.subnet_of(xn) or net == xn or xn.subnet_of(net):
+            raise HTTPException(422, f"{net} overlaps excluded network {xn}")
+    if settings.scan_only_configured:
+        allowed = [
+            ipaddress.ip_network(n, strict=False) for n in settings.scan_network_list
+        ]
+        if not any(net.subnet_of(a) or net == a for a in allowed):
+            raise HTTPException(422, f"{net} is not one of the configured scan networks")
 
 
 @router.get("", response_model=list[ScanJobOut])
@@ -30,8 +48,51 @@ async def list_scans(
     ).scalars().all()
 
 
+@router.get("/config", response_model=ScanConfigOut)
+async def scan_config():
+    """Scanner configuration surfaced to the UI."""
+    return ScanConfigOut(
+        networks=settings.scan_network_list,
+        exclude_networks=settings.scan_exclude_network_list,
+        only_configured=settings.scan_only_configured,
+        interval_minutes=settings.scan_interval_minutes,
+        detected_cidr=detect_local_cidr(settings.scan_interface),
+        tcp_ports=settings.tcp_ping_ports,
+    )
+
+
 @router.post("", response_model=ScanJobOut, status_code=201)
 async def create_scan(body: ScanCreate, session: AsyncSession = Depends(get_session)):
+    if body.cidr:
+        _check_cidr_allowed(ipaddress.ip_network(body.cidr, strict=False))
+    elif settings.scan_only_configured and settings.scan_network_list:
+        raise HTTPException(
+            422, "SCAN_ONLY_CONFIGURED is set — pick a configured network"
+        )
+
+    # single-scanner rate limit: one live job at a time + cooldown per CIDR
+    live = (
+        await session.execute(
+            select(func.count(ScanJob.id)).where(ScanJob.status.in_(_LIVE))
+        )
+    ).scalar_one()
+    if live:
+        raise HTTPException(429, "a scan is already queued or running")
+    if body.cidr:
+        cutoff = datetime.utcnow() - timedelta(seconds=settings.scan_min_interval_seconds)
+        recent = (
+            await session.execute(
+                select(func.count(ScanJob.id)).where(
+                    ScanJob.cidr == body.cidr, ScanJob.created_at >= cutoff
+                )
+            )
+        ).scalar_one()
+        if recent:
+            raise HTTPException(
+                429,
+                f"{body.cidr} was scanned <{settings.scan_min_interval_seconds}s ago — slow down",
+            )
+
     vrf_id = body.vrf_id
     if vrf_id is None:
         vrf_id = (
@@ -58,6 +119,30 @@ async def create_scan(body: ScanCreate, session: AsyncSession = Depends(get_sess
     return job
 
 
+@router.post("/{scan_id}/cancel", response_model=ScanJobOut)
+async def cancel_scan(scan_id: int, session: AsyncSession = Depends(get_session)):
+    job = await session.get(ScanJob, scan_id)
+    if job is None:
+        raise HTTPException(404, "scan not found")
+    if job.status in _TERMINAL:
+        raise HTTPException(409, f"scan already {job.status.value}")
+    # flag for the worker + mark immediately so queued jobs never start
+    r = get_redis()
+    try:
+        await r.set(cancel_key(scan_id), "1", ex=3600)
+    finally:
+        await r.aclose()
+    job.status = ScanStatus.CANCELLED
+    job.finished_at = datetime.utcnow()
+    if job.started_at:
+        job.duration_seconds = round(
+            (job.finished_at - job.started_at).total_seconds(), 2
+        )
+    await session.commit()
+    await session.refresh(job)
+    return job
+
+
 @router.get("/{scan_id}", response_model=ScanJobOut)
 async def get_scan(scan_id: int, session: AsyncSession = Depends(get_session)):
     job = await session.get(ScanJob, scan_id)
@@ -67,6 +152,10 @@ async def get_scan(scan_id: int, session: AsyncSession = Depends(get_session)):
 
 
 def _job_payload(job: ScanJob) -> dict:
+    eta = None
+    if job.status == ScanStatus.RUNNING and job.started_at and job.progress > 0:
+        elapsed = (datetime.utcnow() - job.started_at).total_seconds()
+        eta = round(elapsed * (100 - job.progress) / job.progress, 1)
     return {
         "scan_id": job.id,
         "status": job.status.value,
@@ -75,6 +164,7 @@ def _job_payload(job: ScanJob) -> dict:
         "cidr": job.cidr,
         "hosts_discovered": job.hosts_discovered,
         "hosts_new": job.hosts_new,
+        "eta_seconds": eta,
         "error": job.error,
     }
 
@@ -105,7 +195,9 @@ async def stream_scan(scan_id: int):
                 if msg is not None:
                     yield f"data: {msg['data']}\n\n"
                     try:
-                        if json.loads(msg["data"]).get("status") in ("completed", "failed"):
+                        if json.loads(msg["data"]).get("status") in (
+                            "completed", "failed", "cancelled",
+                        ):
                             return
                     except (ValueError, AttributeError):
                         pass
