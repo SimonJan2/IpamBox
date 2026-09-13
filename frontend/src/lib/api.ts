@@ -40,6 +40,13 @@ export const api = {
       body,
       headers: { "content-type": contentType },
     }),
+  // Raw file body (a File is a Blob/BodyInit) — used by backup restore.
+  upload: <T>(path: string, file: File) =>
+    req<T>(path, {
+      method: "POST",
+      body: file,
+      headers: { "content-type": "application/gzip" },
+    }),
   patch: <T>(path: string, body: unknown) =>
     req<T>(path, { method: "PATCH", body: JSON.stringify(body) }),
   del: (path: string) => req<void>(path, { method: "DELETE" }),

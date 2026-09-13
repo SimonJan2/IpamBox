@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     scan_interval_minutes: int = 0     # >0 -> scheduled recurring scans
     scan_min_interval_seconds: int = 15  # rate-limit manual scans per CIDR
 
+    # Backup settings — scheduled snapshots are written by the worker into
+    # backup_dir (a mounted volume); keep bounds how many files are retained.
+    backup_dir: str = "/backups"
+    backup_interval_minutes: int = 0   # >0 -> recurring backups on the worker
+    backup_keep: int = 14              # scheduled files retained on disk
+
     # Auth settings (env vars are IPAMBOX_*)
     ipambox_password: str = ""  # pre-provision the admin password
     ipambox_password_file: str = ""  # path to a file holding the password (wins over above)

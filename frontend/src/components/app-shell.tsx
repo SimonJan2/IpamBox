@@ -13,6 +13,7 @@ import {
   Network,
   Radar,
   ScanLine,
+  Settings,
   Tags,
   Waypoints,
   Zap,
@@ -35,6 +36,7 @@ const NAV = [
   { href: "/scans", label: "Scans", icon: ScanLine },
   { href: "/tags", label: "Tags", icon: Tags },
   { href: "/changelog", label: "Changelog", icon: History },
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 const AUTH_ROUTES = ["/login", "/setup"];
