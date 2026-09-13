@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useCallback, useEffect, useRef, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -23,6 +23,7 @@ import type {
   Prefix,
   Tag,
 } from "@/types";
+import { AddressFilterPanel } from "@/components/address-filter-panel";
 import { IpDrawer } from "@/components/ip-drawer";
 import { IpStatusBadge, PrefixStatusBadge } from "@/components/status-badge";
 import { SubnetGrid } from "@/components/subnet-grid";
@@ -76,6 +77,13 @@ const IP_STATUSES: IpStatus[] = [
 ];
 const IP_ROLES: IpRole[] = ["vip", "vrrp", "hsrp", "glbp", "carp", "secondary"];
 const RANGE_ROLES = ["dhcp", "pool", "reserved"];
+
+function toggleIn<T>(set: Set<T>, v: T): Set<T> {
+  const next = new Set(set);
+  if (next.has(v)) next.delete(v);
+  else next.add(v);
+  return next;
+}
 
 function RangeDialog({
   open,
@@ -190,6 +198,11 @@ export default function PrefixDetailPage({
   const [drawer, setDrawer] = useState<{ ip: string; addr: IpAddress | null } | null>(null);
   const [rangeOpen, setRangeOpen] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [search, setSearch] = useState("");
+  const [statusSel, setStatusSel] = useState<Set<IpStatus>>(new Set());
+  const [tagSel, setTagSel] = useState<Set<number>>(new Set());
+  const [untagged, setUntagged] = useState(false);
+  const [focusInt, setFocusInt] = useState<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const { tags, byObject: addrTags, refresh: refreshTags } = useTags("IPAddress");
 
@@ -272,7 +285,54 @@ export default function PrefixDetailPage({
 
   const isV4 = !!prefix && !prefix.prefix.includes(":");
   const showGrid = isV4 && (page?.total ?? 0) <= MAX_GRID;
-  const allChecked = !!page?.items.length && selected.size === page.items.length;
+
+  const filtersActive =
+    !!search || statusSel.size > 0 || tagSel.size > 0 || untagged;
+
+  const filtered = useMemo(() => {
+    const ql = search.trim().toLowerCase();
+    return (page?.items ?? []).filter((a) => {
+      if (ql) {
+        const hay = [a.address, a.hostname, a.mac_address, a.vendor];
+        if (!hay.some((v) => v && v.toLowerCase().includes(ql))) return false;
+      }
+      if (statusSel.size && !statusSel.has(a.status)) return false;
+      const at = addrTags.get(a.id) ?? [];
+      if (untagged && at.length > 0) return false;
+      if (tagSel.size && !at.some((t) => tagSel.has(t.id))) return false;
+      return true;
+    });
+  }, [page, search, statusSel, tagSel, untagged, addrTags]);
+
+  const matchIds = useMemo(
+    () => (filtersActive ? new Set(filtered.map((a) => a.id)) : null),
+    [filtersActive, filtered]
+  );
+
+  const highlight = useMemo(() => {
+    const m = new Map<number, string>();
+    if (!tagSel.size) return m;
+    for (const a of filtered) {
+      const hit = (addrTags.get(a.id) ?? []).find((t) => tagSel.has(t.id));
+      if (hit) m.set(a.id, hit.color);
+    }
+    return m;
+  }, [filtered, tagSel, addrTags]);
+
+  const clearFilters = () => {
+    setSearch("");
+    setStatusSel(new Set());
+    setTagSel(new Set());
+    setUntagged(false);
+  };
+
+  const pickAddress = (a: IpAddress) => {
+    setFocusInt(Number(a.address_int));
+    setDrawer({ ip: a.address, addr: a });
+  };
+
+  const allChecked =
+    filtered.length > 0 && filtered.every((a) => selected.has(a.id));
 
   return (
     <div className="space-y-4">
@@ -413,31 +473,65 @@ export default function PrefixDetailPage({
         <CardContent>
           {!page ? (
             <Skeleton className="h-64 w-full" />
-          ) : showGrid ? (
-            <SubnetGrid
-              page={page}
-              ranges={ranges}
-              onSelect={(ip, addr) => setDrawer({ ip, addr })}
-            />
           ) : (
-            <AddressTable
-              items={page.items}
-              tags={addrTags}
-              allTags={tags}
-              selected={selected}
-              onToggle={(id, on) => {
-                const next = new Set(selected);
-                if (on) next.add(id);
-                else next.delete(id);
-                setSelected(next);
-              }}
-              onToggleAll={(on) =>
-                setSelected(on ? new Set(page.items.map((a) => a.id)) : new Set())
-              }
-              allChecked={allChecked}
-              onTagsChanged={refreshTags}
-              onSelect={(a) => setDrawer({ ip: a.address, addr: a })}
-            />
+            <div className="flex flex-col gap-4 lg:flex-row">
+              <div className="min-w-0 flex-1">
+                {showGrid ? (
+                  <SubnetGrid
+                    page={page}
+                    ranges={ranges}
+                    onSelect={(ip, addr) => setDrawer({ ip, addr })}
+                    tags={addrTags}
+                    matchIds={matchIds}
+                    highlight={highlight}
+                    focusInt={focusInt}
+                  />
+                ) : (
+                  <AddressTable
+                    items={filtered}
+                    tags={addrTags}
+                    allTags={tags}
+                    selected={selected}
+                    onToggle={(id, on) => {
+                      const next = new Set(selected);
+                      if (on) next.add(id);
+                      else next.delete(id);
+                      setSelected(next);
+                    }}
+                    onToggleAll={(on) =>
+                      setSelected(
+                        on ? new Set(filtered.map((a) => a.id)) : new Set()
+                      )
+                    }
+                    allChecked={allChecked}
+                    onTagsChanged={refreshTags}
+                    onSelect={(a) => setDrawer({ ip: a.address, addr: a })}
+                  />
+                )}
+              </div>
+              <aside className="w-full shrink-0 lg:w-72">
+                <AddressFilterPanel
+                  items={page.items}
+                  filtered={filtered}
+                  tags={tags}
+                  addrTags={addrTags}
+                  search={search}
+                  onSearch={setSearch}
+                  statusSel={statusSel}
+                  onToggleStatus={(s) => setStatusSel(toggleIn(statusSel, s))}
+                  tagSel={tagSel}
+                  onToggleTag={(id) => setTagSel(toggleIn(tagSel, id))}
+                  untagged={untagged}
+                  onToggleUntagged={() => setUntagged(!untagged)}
+                  onClear={clearFilters}
+                  onSelectMatching={() =>
+                    setSelected(new Set(filtered.map((a) => a.id)))
+                  }
+                  onPick={pickAddress}
+                  onTagsChanged={refreshTags}
+                />
+              </aside>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -517,6 +611,9 @@ export default function PrefixDetailPage({
           addr={drawer.addr}
           prefixId={prefixId}
           onSaved={refresh}
+          allTags={tags}
+          assigned={drawer.addr ? (addrTags.get(drawer.addr.id) ?? []) : []}
+          onTagsChanged={refreshTags}
         />
       )}
       {prefix && (
