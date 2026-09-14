@@ -15,7 +15,7 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
-import { timeAgo } from "@/lib/utils";
+import { usePrefs } from "@/lib/prefs";
 import type {
   AddressPage,
   IpAddress,
@@ -26,14 +26,14 @@ import type {
   Tag,
 } from "@/types";
 import { AddressFilterPanel } from "@/components/address-filter-panel";
+import { AddressList, AddrMapViewSwitcher } from "@/components/address-list";
 import { IpDrawer } from "@/components/ip-drawer";
-import { IpStatusBadge, PrefixStatusBadge } from "@/components/status-badge";
+import { PrefixStatusBadge } from "@/components/status-badge";
 import { SubnetGrid } from "@/components/subnet-grid";
-import { TagChip, TagPicker, useTags } from "@/components/tag-picker";
+import { TagChip, useTags } from "@/components/tag-picker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -197,6 +197,7 @@ export default function PrefixDetailPage({
   const { can } = useAuth();
   const canWrite = can(PERM.DATA_WRITE);
   const canDelete = can(PERM.DATA_DELETE);
+  const [prefs, setPrefs] = usePrefs();
   const [prefix, setPrefix] = useState<Prefix | null>(null);
   const [page, setPage] = useState<AddressPage | null>(null);
   const [ranges, setRanges] = useState<IpRange[]>([]);
@@ -290,6 +291,7 @@ export default function PrefixDetailPage({
 
   const isV4 = !!prefix && !prefix.prefix.includes(":");
   const showGrid = isV4 && (page?.total ?? 0) <= MAX_GRID;
+  const view = showGrid && prefs.addrMapView === "grid" ? "grid" : "list";
 
   const filtersActive =
     !!search || statusSel.size > 0 || tagSel.size > 0 || untagged;
@@ -473,7 +475,15 @@ export default function PrefixDetailPage({
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center justify-between text-base">
-            Address map
+            <span className="flex items-center gap-3">
+              Address map
+              {showGrid && (
+                <AddrMapViewSwitcher
+                  view={view}
+                  onChange={(v) => setPrefs({ addrMapView: v })}
+                />
+              )}
+            </span>
             <span className="flex gap-3 text-xs font-normal text-muted-foreground">
               <i className="flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-sm bg-emerald-500/60" />active</i>
               <i className="flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-sm bg-violet-500/60" />discovered</i>
@@ -491,7 +501,7 @@ export default function PrefixDetailPage({
           ) : (
             <div className="flex flex-col gap-4 lg:flex-row">
               <div className="min-w-0 flex-1">
-                {showGrid ? (
+                {view === "grid" ? (
                   <SubnetGrid
                     page={page}
                     ranges={ranges}
@@ -502,11 +512,17 @@ export default function PrefixDetailPage({
                     focusInt={focusInt}
                   />
                 ) : (
-                  <AddressTable
-                    items={filtered}
+                  <AddressList
+                    page={page}
+                    ranges={ranges}
+                    filtered={filtered}
+                    filtersActive={filtersActive}
                     tags={addrTags}
                     allTags={tags}
+                    highlight={highlight}
+                    focusInt={focusInt}
                     selectable={canWrite}
+                    canDelete={canDelete}
                     selected={selected}
                     onToggle={(id, on) => {
                       const next = new Set(selected);
@@ -522,6 +538,8 @@ export default function PrefixDetailPage({
                     allChecked={allChecked}
                     onTagsChanged={refreshTags}
                     onSelect={(a) => setDrawer({ ip: a.address, addr: a })}
+                    onSelectFree={(ip) => setDrawer({ ip, addr: null })}
+                    onChanged={refresh}
                   />
                 )}
               </div>
@@ -643,114 +661,5 @@ export default function PrefixDetailPage({
         />
       )}
     </div>
-  );
-}
-
-function AddressTable({
-  items,
-  tags,
-  allTags,
-  selectable,
-  selected,
-  onToggle,
-  onToggleAll,
-  allChecked,
-  onTagsChanged,
-  onSelect,
-}: {
-  items: IpAddress[];
-  tags: Map<number, Tag[]>;
-  allTags: Tag[];
-  selectable: boolean;
-  selected: Set<number>;
-  onToggle: (id: number, on: boolean) => void;
-  onToggleAll: (on: boolean) => void;
-  allChecked: boolean;
-  onTagsChanged: () => void;
-  onSelect: (a: IpAddress) => void;
-}) {
-  return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          {selectable && (
-            <TableHead className="w-8">
-              <Checkbox checked={allChecked} onCheckedChange={(v) => onToggleAll(!!v)} />
-            </TableHead>
-          )}
-          <TableHead>Address</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead>Role</TableHead>
-          <TableHead>Tags</TableHead>
-          <TableHead>Hostname</TableHead>
-          <TableHead>MAC</TableHead>
-          <TableHead>Vendor</TableHead>
-          <TableHead>Type</TableHead>
-          <TableHead>Ports</TableHead>
-          <TableHead>Last seen</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {items.map((a) => {
-          const assigned = tags.get(a.id) ?? [];
-          return (
-            <TableRow key={a.id} className="cursor-pointer" onClick={() => onSelect(a)}>
-              {selectable && (
-                <TableCell onClick={(e) => e.stopPropagation()}>
-                  <Checkbox
-                    checked={selected.has(a.id)}
-                    onCheckedChange={(v) => onToggle(a.id, !!v)}
-                  />
-                </TableCell>
-              )}
-              <TableCell className="font-mono">
-                {a.address}
-                {a.nat_inside_id && (
-                  <span className="ml-1 text-xs text-sky-400" title="NAT inside">
-                    ⇄
-                  </span>
-                )}
-              </TableCell>
-              <TableCell>
-                <IpStatusBadge s={a.status} />
-              </TableCell>
-              <TableCell className="text-muted-foreground">
-                {a.role ?? "—"}
-              </TableCell>
-              <TableCell onClick={(e) => e.stopPropagation()}>
-                <div className="flex items-center gap-1">
-                  {assigned.map((t) => (
-                    <TagChip key={t.id} tag={t} />
-                  ))}
-                  <TagPicker
-                    objectType="IPAddress"
-                    objectId={a.id}
-                    allTags={allTags}
-                    assigned={assigned}
-                    onChanged={onTagsChanged}
-                  />
-                </div>
-              </TableCell>
-              <TableCell>{a.hostname ?? "—"}</TableCell>
-              <TableCell className="font-mono text-xs">{a.mac_address ?? "—"}</TableCell>
-              <TableCell className="text-muted-foreground">{a.vendor ?? "—"}</TableCell>
-              <TableCell>
-                {a.device_type ? (
-                  <Badge variant="secondary" className="capitalize">
-                    {a.device_type}
-                  </Badge>
-                ) : (
-                  "—"
-                )}
-              </TableCell>
-              <TableCell className="font-mono text-xs text-muted-foreground">
-                {a.open_ports?.length ? a.open_ports.join(" ") : "—"}
-              </TableCell>
-              <TableCell className="text-muted-foreground">{timeAgo(a.last_seen)}</TableCell>
-            </TableRow>
-          );
-        })}
-      </TableBody>
-    </Table>
   );
 }
