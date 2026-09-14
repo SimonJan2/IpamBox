@@ -1,9 +1,12 @@
+import ipaddress
+
 import pytest
 from sqlalchemy import select
 
 from app.models.scan_job import ScanJob, ScanStatus
 from app.worker.reconcile import reconcile
 from app.worker.scanner import HostResult, infer_device_type
+from app.worker.worker import _infer_scan_vrf, _scan_vrf
 
 
 class _FakeArqJob:
@@ -89,6 +92,64 @@ async def test_excluded_network_rejected(client, monkeypatch, fake_arq):
         assert r.status_code == 201
     finally:
         scans_mod.settings.scan_exclude_networks = old
+
+
+async def _extra_vrf(client, name="HomeLab") -> int:
+    r = await client.post("/api/v1/vrfs", json={"name": name})
+    assert r.status_code == 201, r.text
+    return r.json()["id"]
+
+
+async def _global_id(client) -> int:
+    vrfs = (await client.get("/api/v1/vrfs")).json()
+    return next(v["id"] for v in vrfs if v["name"] == "Global")
+
+
+async def _mk_prefix(client, cidr: str, vrf_id: int) -> dict:
+    r = await client.post("/api/v1/prefixes", json={"prefix": cidr, "vrf_id": vrf_id})
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+async def test_scan_create_leaves_vrf_unresolved(client, fake_arq):
+    r = await client.post("/api/v1/scans", json={"cidr": "10.245.0.0/24"})
+    assert r.status_code == 201, r.text
+    assert r.json()["vrf_id"] is None
+
+
+async def test_infer_scan_vrf_uses_unique_matching_prefix(client, session):
+    hl = await _extra_vrf(client)
+    await _mk_prefix(client, "10.230.0.0/24", hl)
+    assert await _infer_scan_vrf(session, ipaddress.ip_network("10.230.0.0/24")) == hl
+
+
+async def test_infer_scan_vrf_ambiguous_prefix_falls_back_to_global(client, session):
+    g = await _global_id(client)
+    hl = await _extra_vrf(client)
+    await _mk_prefix(client, "10.231.0.0/24", g)
+    await _mk_prefix(client, "10.231.0.0/24", hl)
+    assert await _infer_scan_vrf(session, ipaddress.ip_network("10.231.0.0/24")) == g
+
+
+async def test_infer_scan_vrf_covering_prefix(client, session):
+    hl = await _extra_vrf(client)
+    await _mk_prefix(client, "10.232.0.0/24", hl)
+    assert await _infer_scan_vrf(session, ipaddress.ip_network("10.232.0.9/32")) == hl
+
+
+async def test_infer_scan_vrf_no_match_uses_global(client, session):
+    g = await _global_id(client)
+    assert await _infer_scan_vrf(session, ipaddress.ip_network("10.233.0.0/24")) == g
+
+
+async def test_scan_vrf_resolution_order(client, session):
+    g = await _global_id(client)
+    hl = await _extra_vrf(client)
+    p = await _mk_prefix(client, "10.234.0.0/24", hl)
+    net = ipaddress.ip_network("10.234.0.0/24")
+    assert await _scan_vrf(session, ScanJob(cidr=str(net), vrf_id=g), net) == g
+    assert await _scan_vrf(session, ScanJob(cidr=str(net), prefix_id=p["id"]), net) == hl
+    assert await _scan_vrf(session, ScanJob(cidr=str(net)), net) == hl
 
 
 async def test_reconcile_persists_ports_and_type(client, session):

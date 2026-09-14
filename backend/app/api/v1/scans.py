@@ -107,18 +107,13 @@ async def create_scan(body: ScanCreate, session: AsyncSession = Depends(get_sess
                 f"{body.cidr} was scanned <{eff.values['scan_min_interval_seconds']}s ago — slow down",
             )
 
-    vrf_id = body.vrf_id
-    if vrf_id is None:
-        vrf_id = (
-            await session.execute(select(VRF.id).where(VRF.name == "Global"))
-        ).scalar_one_or_none()
-    else:
+    if body.vrf_id is not None:
         try:
-            await get_or_404(session, VRF, vrf_id)
+            await get_or_404(session, VRF, body.vrf_id)
         except IPAMError as e:
             raise HTTPException(e.status_code, str(e))
 
-    job = ScanJob(cidr=body.cidr or "", vrf_id=vrf_id, prefix_id=body.prefix_id)
+    job = ScanJob(cidr=body.cidr or "", vrf_id=body.vrf_id, prefix_id=body.prefix_id)
     session.add(job)
     await session.flush()
 

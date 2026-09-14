@@ -51,6 +51,40 @@ async def _global_vrf_id(session) -> int:
     return row.id
 
 
+async def _infer_scan_vrf(session, net) -> int:
+    """Pick the VRF for a scan that didn't specify one.
+
+    An exact-match prefix living in exactly one VRF wins; then a single
+    covering prefix (containers included — scans create ACTIVE children
+    inside them, same as _resolve_prefix); otherwise Global.
+    """
+    rows = (await session.execute(select(Prefix))).scalars().all()
+    exact: set[int] = set()
+    covering: set[int] = set()
+    for p in rows:
+        pn = prefix_math.to_network(p.prefix)
+        if pn.version != net.version:
+            continue
+        if pn == net:
+            exact.add(p.vrf_id)
+        elif net.subnet_of(pn):
+            covering.add(p.vrf_id)
+    for candidates in (exact, covering):
+        if len(candidates) == 1:
+            return next(iter(candidates))
+    return await _global_vrf_id(session)
+
+
+async def _scan_vrf(session, job: ScanJob, net) -> int:
+    if job.vrf_id is not None:
+        return job.vrf_id
+    if job.prefix_id is not None:
+        prefix = await session.get(Prefix, job.prefix_id)
+        if prefix is not None:
+            return prefix.vrf_id
+    return await _infer_scan_vrf(session, net)
+
+
 async def _resolve_prefix(session, cidr: str, vrf_id: int, prefix_id: int | None) -> Prefix:
     if prefix_id is not None:
         row = await session.get(Prefix, prefix_id)
@@ -136,13 +170,13 @@ async def run_scan(ctx: dict, scan_id: int) -> dict:
             if not cidr:
                 raise RuntimeError("could not auto-detect local network CIDR")
             job.cidr = cidr
-            vrf_id = job.vrf_id or await _global_vrf_id(session)
+            net = ipaddress.ip_network(cidr, strict=False)
+            vrf_id = await _scan_vrf(session, job, net)
             job.vrf_id = vrf_id
             prefix = await _resolve_prefix(session, cidr, vrf_id, job.prefix_id)
             job.prefix_id = prefix.id
             job.status = ScanStatus.RUNNING
             job.started_at = started
-            net = ipaddress.ip_network(cidr, strict=False)
             job.total_hosts = prefix_math.usable_count(net)
             await session.commit()
             await _publish(
