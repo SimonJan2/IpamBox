@@ -40,7 +40,8 @@ Scapy raw-socket scanning · Next.js 15 dark-mode UI
 - **CSV**: import addresses (all-or-nothing with per-row error report)
   and export addresses/prefixes.
 - **Subnet matrix**: visual /24-style utilization grid per prefix with
-  IP-range bands.
+  IP-range bands, plus a sortable list view with aggregated free ranges
+  and per-IP actions.
 - **Change log**: every create/update/delete is recorded with actor,
   timestamp and field-level before/after diffs — global `/changelog`
   page plus per-object history in the IP drawer.
@@ -171,7 +172,7 @@ apply without a restart, and can be reset back to the env value per key.
 | `/` | Dashboard — totals, status breakdowns, recent scans |
 | `/discovery` | Discovery Inbox — confirm/delete scanned hosts |
 | `/sites` `/vrfs` `/prefixes` | Core IPAM objects |
-| `/prefixes/[id]` | Subnet matrix, IP table, ranges, bulk ops, CSV |
+| `/prefixes/[id]` | Address map (grid/list views), ranges, bulk ops, CSV |
 | `/vlans` `/tags` | VLAN groups + VLANs, tag management |
 | `/scans` | Trigger/schedule/cancel scans, live progress |
 | `/changelog` | Global audit trail |

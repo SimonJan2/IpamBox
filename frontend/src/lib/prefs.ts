@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 export type ThemeChoice = "dark" | "light" | "system";
 export type DensityChoice = "comfortable" | "compact";
 export type TsFormat = "local" | "iso";
+export type AddrMapView = "grid" | "list";
 
 export interface Prefs {
   theme: ThemeChoice;
@@ -14,6 +15,7 @@ export interface Prefs {
   pageSize: number;
   landing: string;
   tsFormat: TsFormat;
+  addrMapView: AddrMapView;
 }
 
 export const DEFAULT_PREFS: Prefs = {
@@ -22,6 +24,7 @@ export const DEFAULT_PREFS: Prefs = {
   pageSize: 50,
   landing: "/",
   tsFormat: "local",
+  addrMapView: "grid",
 };
 
 const KEY = "ipambox:prefs";
