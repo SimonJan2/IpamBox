@@ -9,6 +9,7 @@ class BackupPreviewOut(BaseModel):
     created_at: str | None
     tables: dict[str, int]
     warnings: list[str]
+    includes_users: bool
 
 
 class RestoreReport(BaseModel):

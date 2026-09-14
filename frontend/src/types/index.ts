@@ -249,6 +249,7 @@ export interface BackupPreview {
   created_at: string | null;
   tables: Record<string, number>;
   warnings: string[];
+  includes_users: boolean;
 }
 
 export interface RestoreReport {

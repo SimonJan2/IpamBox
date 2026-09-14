@@ -25,5 +25,11 @@ acknowledge reports within a few days.
 - **Network exposure**: PostgreSQL and Redis publish on `127.0.0.1` only.
   The scanner container runs `network_mode: host` with `NET_ADMIN`/`NET_RAW`
   capabilities — required for ARP discovery; keep the host trusted.
+- **Backups are credential-bearing when exported with users**: a default
+  `GET /api/v1/backup` contains no accounts, but `?include_users=1`
+  (admin-only) adds non-admin user rows including bcrypt password hashes.
+  Treat such files as secrets: encrypt at rest, restrict access, and
+  transmit only over trusted channels. Admin accounts are never exported,
+  so a backup can never carry an admin credential.
 - **Audit trail**: all object writes are recorded in the change log with
   the acting username (or `scanner`/`scheduler` for automated writes).

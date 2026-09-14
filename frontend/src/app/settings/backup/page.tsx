@@ -23,6 +23,7 @@ import type {
 } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Card,
   CardContent,
@@ -68,6 +69,7 @@ export default function BackupSettingsPage() {
   const [settings, setSettings] = useState<SettingsOut | null>(null);
   const [schedule, setSchedule] = useState({ interval: 0, keep: 14 });
   const [file, setFile] = useState<File | null>(null);
+  const [includeUsers, setIncludeUsers] = useState(false);
   const [preview, setPreview] = useState<BackupPreview | null>(null);
   const [report, setReport] = useState<RestoreReport | null>(null);
   const [confirmText, setConfirmText] = useState("");
@@ -92,7 +94,10 @@ export default function BackupSettingsPage() {
 
   const downloadFresh = async () => {
     try {
-      await downloadUrl("/api/v1/backup", "ipambox-backup.json.gz");
+      await downloadUrl(
+        includeUsers ? "/api/v1/backup?include_users=1" : "/api/v1/backup",
+        "ipambox-backup.json.gz"
+      );
       toast.success("Backup downloaded");
     } catch (e) {
       toast.error("Backup failed", { description: String(e) });
@@ -214,8 +219,8 @@ export default function BackupSettingsPage() {
       <div>
         <h1 className="text-xl font-semibold">Backup &amp; Restore</h1>
         <p className="text-sm text-muted-foreground">
-          Snapshot the entire IpamBox database to a single file. The login
-          account is never included in backups.
+          Snapshot the entire IpamBox database to a single file. Admin
+          accounts are never included; other accounts only when you opt in.
         </p>
       </div>
 
@@ -232,6 +237,20 @@ export default function BackupSettingsPage() {
             <code className="mx-1">.json.gz</code> file you can restore on this
             or any other IpamBox server.
           </p>
+          {canAdmin && (
+            <div className="space-y-1">
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  checked={includeUsers}
+                  onCheckedChange={setIncludeUsers}
+                />
+                Include user accounts (non-admin)
+              </label>
+              <p className="pl-6 text-xs text-amber-400">
+                Contains password hashes — store this file like a secret.
+              </p>
+            </div>
+          )}
           <div className="flex gap-2">
             <Button size="sm" onClick={downloadFresh}>
               <Download /> Download backup
@@ -382,8 +401,10 @@ export default function BackupSettingsPage() {
           <p className="text-sm text-muted-foreground">
             Replaces <b>all</b> data with the contents of the backup file —
             current sites, VRFs, prefixes, addresses, settings and history are
-            wiped. Your login account and session are kept. The operation is
-            atomic: if anything fails, nothing changes.
+            wiped. If the file includes user accounts, all non-admin accounts
+            are replaced as well; admin accounts (and your session) are never
+            touched. The operation is atomic: if anything fails, nothing
+            changes.
           </p>
 
           <div className="grid gap-1.5">
@@ -408,6 +429,11 @@ export default function BackupSettingsPage() {
                 {preview.alembic_revision && (
                   <Badge variant="outline">
                     schema {preview.alembic_revision}
+                  </Badge>
+                )}
+                {preview.includes_users && (
+                  <Badge variant="outline" className="border-amber-500/40 text-amber-400">
+                    includes {preview.tables.users ?? 0} user accounts
                   </Badge>
                 )}
               </div>
