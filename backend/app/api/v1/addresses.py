@@ -7,7 +7,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
+from app.core.deps import DATA_DELETE, DATA_WRITE, has_perm, require_perm
 from app.models.ip_address import IPAddress, IPRole, IPStatus
+from app.models.user import User
 from app.models.prefix import Prefix
 from app.models.tag import TagAssignment
 from app.schemas.ip_address import (
@@ -59,7 +61,11 @@ class ImportRow(BaseModel):
     detail: str
 
 
-@router.post("/import", response_model=list[ImportRow])
+@router.post(
+    "/import",
+    response_model=list[ImportRow],
+    dependencies=[Depends(require_perm(DATA_WRITE))],
+)
 async def import_addresses(
     request: Request,
     dry_run: bool = Query(default=False),
@@ -139,9 +145,16 @@ class BulkBody(BaseModel):
 
 
 @router.post("/bulk")
-async def bulk_addresses(body: BulkBody, session: AsyncSession = Depends(get_session)):
+async def bulk_addresses(
+    body: BulkBody,
+    session: AsyncSession = Depends(get_session),
+    user: User | None = Depends(require_perm(DATA_WRITE)),
+):
     if not body.ids:
         return {"affected": 0}
+    # delete hides inside a POST here — enforce the stricter permission inline
+    if body.action == "delete" and not has_perm(user, DATA_DELETE):
+        raise HTTPException(403, f"requires {DATA_DELETE} permission")
     if body.action == "delete":
         await session.execute(delete(IPAddress).where(IPAddress.id.in_(body.ids)))
     elif body.action == "set_status":
@@ -234,7 +247,12 @@ async def list_addresses(
     return rows
 
 
-@router.post("", response_model=IPAddressOut, status_code=201)
+@router.post(
+    "",
+    response_model=IPAddressOut,
+    status_code=201,
+    dependencies=[Depends(require_perm(DATA_WRITE))],
+)
 async def create_address(body: IPAddressCreate, session: AsyncSession = Depends(get_session)):
     try:
         prefix = await get_or_404(session, Prefix, body.prefix_id)
@@ -283,7 +301,11 @@ async def get_address(address_id: int, session: AsyncSession = Depends(get_sessi
         raise HTTPException(e.status_code, str(e))
 
 
-@router.patch("/{address_id}", response_model=IPAddressOut)
+@router.patch(
+    "/{address_id}",
+    response_model=IPAddressOut,
+    dependencies=[Depends(require_perm(DATA_WRITE))],
+)
 async def update_address(
     address_id: int, body: IPAddressUpdate, session: AsyncSession = Depends(get_session)
 ):
@@ -314,7 +336,11 @@ async def update_address(
     return row
 
 
-@router.delete("/{address_id}", status_code=204)
+@router.delete(
+    "/{address_id}",
+    status_code=204,
+    dependencies=[Depends(require_perm(DATA_DELETE))],
+)
 async def delete_address(address_id: int, session: AsyncSession = Depends(get_session)):
     try:
         row = await get_or_404(session, IPAddress, address_id)

@@ -4,6 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
+from app.core.deps import DATA_DELETE, DATA_WRITE, require_perm
 from app.models.site import Site
 from app.models.vlan import VLAN, VLANGroup
 from app.schemas.vlan import (
@@ -34,7 +35,12 @@ async def list_vlan_groups(session: AsyncSession = Depends(get_session)):
     return out
 
 
-@router.post("/vlan-groups", response_model=VLANGroupOut, status_code=201)
+@router.post(
+    "/vlan-groups",
+    response_model=VLANGroupOut,
+    status_code=201,
+    dependencies=[Depends(require_perm(DATA_WRITE))],
+)
 async def create_vlan_group(
     body: VLANGroupCreate, session: AsyncSession = Depends(get_session)
 ):
@@ -49,7 +55,11 @@ async def create_vlan_group(
     return g
 
 
-@router.patch("/vlan-groups/{group_id}", response_model=VLANGroupOut)
+@router.patch(
+    "/vlan-groups/{group_id}",
+    response_model=VLANGroupOut,
+    dependencies=[Depends(require_perm(DATA_WRITE))],
+)
 async def update_vlan_group(
     group_id: int, body: VLANGroupUpdate, session: AsyncSession = Depends(get_session)
 ):
@@ -71,7 +81,11 @@ async def update_vlan_group(
     return g
 
 
-@router.delete("/vlan-groups/{group_id}", status_code=204)
+@router.delete(
+    "/vlan-groups/{group_id}",
+    status_code=204,
+    dependencies=[Depends(require_perm(DATA_DELETE))],
+)
 async def delete_vlan_group(group_id: int, session: AsyncSession = Depends(get_session)):
     try:
         g = await get_or_404(session, VLANGroup, group_id)
@@ -115,7 +129,12 @@ async def list_vlans(
     return rows
 
 
-@router.post("/vlans", response_model=VLANOut, status_code=201)
+@router.post(
+    "/vlans",
+    response_model=VLANOut,
+    status_code=201,
+    dependencies=[Depends(require_perm(DATA_WRITE))],
+)
 async def create_vlan(body: VLANCreate, session: AsyncSession = Depends(get_session)):
     try:
         if body.group_id is not None:
@@ -136,7 +155,11 @@ async def create_vlan(body: VLANCreate, session: AsyncSession = Depends(get_sess
     return vlan
 
 
-@router.patch("/vlans/{vlan_id}", response_model=VLANOut)
+@router.patch(
+    "/vlans/{vlan_id}",
+    response_model=VLANOut,
+    dependencies=[Depends(require_perm(DATA_WRITE))],
+)
 async def update_vlan(
     vlan_id: int, body: VLANUpdate, session: AsyncSession = Depends(get_session)
 ):
@@ -159,7 +182,11 @@ async def update_vlan(
     return vlan
 
 
-@router.delete("/vlans/{vlan_id}", status_code=204)
+@router.delete(
+    "/vlans/{vlan_id}",
+    status_code=204,
+    dependencies=[Depends(require_perm(DATA_DELETE))],
+)
 async def delete_vlan(vlan_id: int, session: AsyncSession = Depends(get_session)):
     try:
         vlan = await get_or_404(session, VLAN, vlan_id)

@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.db import get_session
+from app.core.deps import DATA_DELETE, DATA_WRITE, require_perm
 from app.models.ip_address import IPAddress
 from app.models.prefix import Prefix, PrefixStatus
 from app.models.site import Site
@@ -105,7 +106,12 @@ async def list_prefixes(
     return [await _with_stats(session, p) for p in rows]
 
 
-@router.post("", response_model=PrefixOut, status_code=201)
+@router.post(
+    "",
+    response_model=PrefixOut,
+    status_code=201,
+    dependencies=[Depends(require_perm(DATA_WRITE))],
+)
 async def create_prefix(body: PrefixCreate, session: AsyncSession = Depends(get_session)):
     net = prefix_math.to_network(body.prefix)
     try:
@@ -155,7 +161,11 @@ async def get_prefix(prefix_id: int, session: AsyncSession = Depends(get_session
     return await _with_stats(session, prefix)
 
 
-@router.patch("/{prefix_id}", response_model=PrefixOut)
+@router.patch(
+    "/{prefix_id}",
+    response_model=PrefixOut,
+    dependencies=[Depends(require_perm(DATA_WRITE))],
+)
 async def update_prefix(prefix_id: int, body: PrefixUpdate, session: AsyncSession = Depends(get_session)):
     prefix = (
         await session.execute(
@@ -229,7 +239,11 @@ async def update_prefix(prefix_id: int, body: PrefixUpdate, session: AsyncSessio
     return await _with_stats(session, prefix)
 
 
-@router.delete("/{prefix_id}", status_code=204)
+@router.delete(
+    "/{prefix_id}",
+    status_code=204,
+    dependencies=[Depends(require_perm(DATA_DELETE))],
+)
 async def delete_prefix(prefix_id: int, session: AsyncSession = Depends(get_session)):
     try:
         prefix = await get_or_404(session, Prefix, prefix_id)
@@ -272,7 +286,12 @@ async def prefix_addresses(
     )
 
 
-@router.post("/{prefix_id}/available-ips", response_model=AvailableIPOut, status_code=201)
+@router.post(
+    "/{prefix_id}/available-ips",
+    response_model=AvailableIPOut,
+    status_code=201,
+    dependencies=[Depends(require_perm(DATA_WRITE))],
+)
 async def allocate_next_available(
     prefix_id: int,
     body: AllocateIPRequest | None = None,

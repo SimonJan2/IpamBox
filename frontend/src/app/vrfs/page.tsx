@@ -5,6 +5,8 @@ import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import { PERM } from "@/lib/permissions";
 import type { Site, Vrf } from "@/types";
 import { Button } from "@/components/ui/button";
 import {
@@ -202,6 +204,9 @@ function DeleteDialog({
 }
 
 export default function VrfsPage() {
+  const { can } = useAuth();
+  const canWrite = can(PERM.DATA_WRITE);
+  const canDelete = can(PERM.DATA_DELETE);
   const [vrfs, setVrfs] = useState<Vrf[]>([]);
   const [sites, setSites] = useState<Site[]>([]);
   const [q, setQ] = useState("");
@@ -230,15 +235,17 @@ export default function VrfsPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">VRFs</h1>
-        <Button
-          size="sm"
-          onClick={() => {
-            setEditing(null);
-            setDialogOpen(true);
-          }}
-        >
-          <Plus /> New VRF
-        </Button>
+        {canWrite && (
+          <Button
+            size="sm"
+            onClick={() => {
+              setEditing(null);
+              setDialogOpen(true);
+            }}
+          >
+            <Plus /> New VRF
+          </Button>
+        )}
       </div>
 
       <Input
@@ -278,23 +285,27 @@ export default function VrfsPage() {
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => {
-                        setEditing(v);
-                        setDialogOpen(true);
-                      }}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setDeleting(v)}
-                    >
-                      <Trash2 className="h-4 w-4 text-rose-400" />
-                    </Button>
+                    {canWrite && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          setEditing(v);
+                          setDialogOpen(true);
+                        }}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setDeleting(v)}
+                      >
+                        <Trash2 className="h-4 w-4 text-rose-400" />
+                      </Button>
+                    )}
                   </div>
                 </TableCell>
               </TableRow>

@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Check, Plus, Search, X } from "lucide-react";
 
+import { useAuth } from "@/lib/auth";
+import { PERM } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import type { IpAddress, IpStatus, Tag } from "@/types";
 import { TagDialog } from "@/components/tag-dialog";
@@ -63,6 +65,8 @@ export function AddressFilterPanel({
   onPick: (a: IpAddress) => void;
   onTagsChanged: () => void;
 }) {
+  const { can } = useAuth();
+  const canWrite = can(PERM.DATA_WRITE);
   const [newTagOpen, setNewTagOpen] = useState(false);
   const active = !!search || statusSel.size > 0 || tagSel.size > 0 || untagged;
 
@@ -138,12 +142,14 @@ export function AddressFilterPanel({
       <div>
         <div className="mb-1.5 flex items-center justify-between">
           <span className="text-xs font-medium text-muted-foreground">Tags</span>
-          <button
-            onClick={() => setNewTagOpen(true)}
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-          >
-            <Plus className="h-3 w-3" /> New tag
-          </button>
+          {canWrite && (
+            <button
+              onClick={() => setNewTagOpen(true)}
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <Plus className="h-3 w-3" /> New tag
+            </button>
+          )}
         </div>
         <div className="max-h-56 space-y-0.5 overflow-auto pr-1">
           <button
@@ -198,15 +204,17 @@ export function AddressFilterPanel({
             <span className="text-xs font-medium text-muted-foreground">
               {filtered.length} matching
             </span>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 px-2 text-xs"
-              disabled={filtered.length === 0}
-              onClick={onSelectMatching}
-            >
-              Select matching
-            </Button>
+            {canWrite && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                disabled={filtered.length === 0}
+                onClick={onSelectMatching}
+              >
+                Select matching
+              </Button>
+            )}
           </div>
           <div className="max-h-64 space-y-0.5 overflow-auto pr-1">
             {shown.map((a) => {

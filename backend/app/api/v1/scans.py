@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.db import SessionLocal, get_session
+from app.core.deps import DATA_WRITE, require_perm
 from app.core.redis import get_arq_pool, get_redis
 from app.models.scan_job import ScanJob, ScanStatus
 from app.models.vrf import VRF
@@ -66,7 +67,12 @@ async def scan_config(session: AsyncSession = Depends(get_session)):
     )
 
 
-@router.post("", response_model=ScanJobOut, status_code=201)
+@router.post(
+    "",
+    response_model=ScanJobOut,
+    status_code=201,
+    dependencies=[Depends(require_perm(DATA_WRITE))],
+)
 async def create_scan(body: ScanCreate, session: AsyncSession = Depends(get_session)):
     eff = await runtime_settings.get_effective(session)
     if body.cidr:
@@ -127,7 +133,11 @@ async def create_scan(body: ScanCreate, session: AsyncSession = Depends(get_sess
     return job
 
 
-@router.post("/{scan_id}/cancel", response_model=ScanJobOut)
+@router.post(
+    "/{scan_id}/cancel",
+    response_model=ScanJobOut,
+    dependencies=[Depends(require_perm(DATA_WRITE))],
+)
 async def cancel_scan(scan_id: int, session: AsyncSession = Depends(get_session)):
     job = await session.get(ScanJob, scan_id)
     if job is None:

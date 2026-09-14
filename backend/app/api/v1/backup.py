@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.db import get_session
-from app.core.deps import require_auth
+from app.core.deps import BACKUP_ACCESS, SYSTEM_ADMIN, require_auth, require_perm
 from app.models.user import User
 from app.schemas.backup import (
     BackupFileInfo,
@@ -24,7 +24,10 @@ MAX_BACKUP_BYTES = 256 * 1024 * 1024  # sanity cap on uploads
 
 
 @router.get("")
-async def download_backup(session: AsyncSession = Depends(get_session)):
+async def download_backup(
+    session: AsyncSession = Depends(get_session),
+    _user: User | None = Depends(require_perm(BACKUP_ACCESS)),
+):
     """Download a full snapshot (every table except users) as .json.gz."""
     payload = await svc.build_backup(session)
     return Response(
@@ -37,7 +40,10 @@ async def download_backup(session: AsyncSession = Depends(get_session)):
 
 
 @router.get("/files", response_model=BackupFilesOut)
-async def list_scheduled_backups(session: AsyncSession = Depends(get_session)):
+async def list_scheduled_backups(
+    session: AsyncSession = Depends(get_session),
+    _user: User | None = Depends(require_perm(BACKUP_ACCESS)),
+):
     """Scheduled snapshot files written by the worker into BACKUP_DIR."""
     eff = await runtime_settings.get_effective(session)
     return BackupFilesOut(
@@ -48,7 +54,9 @@ async def list_scheduled_backups(session: AsyncSession = Depends(get_session)):
 
 
 @router.get("/files/{name}")
-async def download_scheduled_backup(name: str):
+async def download_scheduled_backup(
+    name: str, _user: User | None = Depends(require_perm(BACKUP_ACCESS))
+):
     payload = svc.read_backup_file(name)
     if payload is None:
         raise HTTPException(404, "backup file not found")
@@ -60,7 +68,9 @@ async def download_scheduled_backup(name: str):
 
 
 @router.delete("/files/{name}", status_code=204)
-async def delete_scheduled_backup(name: str):
+async def delete_scheduled_backup(
+    name: str, _user: User | None = Depends(require_perm(BACKUP_ACCESS))
+):
     if not svc.delete_backup_file(name):
         raise HTTPException(404, "backup file not found")
 
@@ -71,7 +81,7 @@ async def restore(
     dry_run: bool = Query(default=False),
     name: str = Query(default="backup.json.gz"),
     session: AsyncSession = Depends(get_session),
-    user: User | None = Depends(require_auth),
+    user: User | None = Depends(require_perm(SYSTEM_ADMIN)),
 ):
     """Restore a backup file (raw .json.gz body). Wipes every data table
     (users are kept) and re-inserts rows with their original IDs — all in

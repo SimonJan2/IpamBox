@@ -67,6 +67,11 @@ Scapy raw-socket scanning · Next.js 15 dark-mode UI
 - **First-run auth**: the UI asks you to create the admin account on
   first launch (or pre-provision with `IPAMBOX_PASSWORD[_FILE]`).
   Session-cookie login with 5-strike IP lockout.
+- **4-tier RBAC**: every account has a role — Administrator, Operator
+  (Tier-1), Contributor (Tier-2) or Viewer (Tier-3) — enforced on every
+  API route, not just hidden in the UI. The **Users & Roles** console
+  under Settings shows role breakdowns and manages accounts. See
+  **Roles & permissions** below.
 - **Ops endpoints**: `GET /healthz`, `GET /readyz` (checks DB + Redis),
   `GET /metrics` (Prometheus text format with object counts).
 - **Backup & restore**: download a full snapshot (every table except the
@@ -180,9 +185,31 @@ The Settings area has its own sub-navigation:
 | `/settings` | General — version, schema rev, DB/Redis health, detected LAN |
 | `/settings/scanning` | Networks, excludes, ports, intervals — runtime-editable |
 | `/settings/backup` | Snapshots, schedule + retention, restore |
-| `/settings/security` | Change password, user management, active sessions |
+| `/settings/security` | Change password, active sessions |
+| `/settings/users` | Users & Roles console — admins only |
 | `/settings/appearance` | Theme (dark/light/system), density, page size |
 | `/settings/data` | Purge scans/changelog/discovery, CSV exports, factory reset |
+
+## Roles & permissions
+
+Every account carries one role; the API enforces it on each request
+(`403` on a denied action) — the UI only hides what you can't use.
+Existing accounts migrate to **Administrator** on upgrade, so nothing
+locks you out.
+
+| Role | Can | Cannot |
+|---|---|---|
+| **Administrator** | Everything — data CRUD, backups + restore, runtime settings, user & role management, maintenance/factory reset | — |
+| **Tier-1 · Operator** | Add/edit/delete all IPAM data, trigger & download backups | Manage users or roles, change settings, restore, purge, factory reset |
+| **Tier-2 · Contributor** | View, add and edit all IPAM data (incl. tag assignments) | Delete anything, trigger/download backups, manage users, change settings |
+| **Tier-3 · Viewer** | Read data, reports, changelog, settings overview | Create, edit or delete anything; backups; user admin |
+
+Guardrails: the last administrator can't demote or delete themselves,
+and nobody can delete their own account. Changing a user's role or
+password revokes all of their sessions immediately.
+
+`IPAMBOX_ALLOW_INSECURE=true` bypasses roles entirely (trusted-proxy
+mode) — every request gets full permissions.
 
 ## Operations
 
@@ -194,12 +221,12 @@ The Settings area has its own sub-navigation:
 | `GET /api/v1/backup` | download a full backup (`*.json.gz`) |
 | `GET /api/v1/backup/files` | list scheduled snapshots in `BACKUP_DIR` |
 | `POST /api/v1/backup/restore` | restore an uploaded backup (`?dry_run=1` previews) |
-| `GET/PATCH /api/v1/settings` | read/patch runtime settings — patch `{"key": null}` resets a key to its env value |
-| `GET/POST /api/v1/users` | list/create user accounts |
-| `PATCH/DELETE /api/v1/users/{id}` | update/delete users; sessions die with the user |
+| `GET/PATCH /api/v1/settings` | read/patch runtime settings — patch `{"key": null}` resets a key to its env value (PATCH: admin only) |
+| `GET/POST /api/v1/users` | list/create user accounts (admin only) |
+| `PATCH/DELETE /api/v1/users/{id}` | update/delete users; sessions die with the user (admin only) |
 | `POST /api/v1/auth/change-password` | change the current account's password |
 | `GET/DELETE /api/v1/auth/sessions` | list/revoke your active sessions |
-| `POST /api/v1/maintenance/*` | purge scans/changelog/discovery, factory reset |
+| `POST /api/v1/maintenance/*` | purge scans/changelog/discovery, factory reset (admin only) |
 | `GET /docs` | interactive OpenAPI (Swagger) |
 
 **Restoring to a fresh server**: bring the stack up, create the admin

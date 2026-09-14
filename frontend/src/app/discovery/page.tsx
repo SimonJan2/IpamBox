@@ -5,6 +5,8 @@ import { Check, ShieldCheck, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import { PERM } from "@/lib/permissions";
 import { timeAgo } from "@/lib/utils";
 import type { IpAddress, Prefix } from "@/types";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +23,9 @@ import {
 } from "@/components/ui/table";
 
 export default function DiscoveryPage() {
+  const { can } = useAuth();
+  const canWrite = can(PERM.DATA_WRITE);
+  const canDelete = can(PERM.DATA_DELETE);
   const [items, setItems] = useState<IpAddress[]>([]);
   const [prefixes, setPrefixes] = useState<Record<number, string>>({});
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -88,12 +93,16 @@ export default function DiscoveryPage() {
           <span className="text-sm text-muted-foreground">
             {selected.size} selected
           </span>
-          <Button size="sm" variant="outline" onClick={() => bulk("set_status")}>
-            <Check /> Mark all active
-          </Button>
-          <Button size="sm" variant="destructive" onClick={() => bulk("delete")}>
-            <Trash2 /> Delete
-          </Button>
+          {canWrite && (
+            <Button size="sm" variant="outline" onClick={() => bulk("set_status")}>
+              <Check /> Mark all active
+            </Button>
+          )}
+          {canDelete && (
+            <Button size="sm" variant="destructive" onClick={() => bulk("delete")}>
+              <Trash2 /> Delete
+            </Button>
+          )}
           <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
             Clear
           </Button>
@@ -163,15 +172,21 @@ export default function DiscoveryPage() {
                   <TableCell className="text-muted-foreground">{timeAgo(a.last_seen)}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
-                      <Button size="sm" variant="ghost" onClick={() => act(a.id, "active")}>
-                        <Check className="text-emerald-400" /> Active
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => act(a.id, "reserved")}>
-                        <ShieldCheck className="text-amber-400" /> Reserve
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => remove(a.id)}>
-                        <Trash2 className="text-red-400" />
-                      </Button>
+                      {canWrite && (
+                        <>
+                          <Button size="sm" variant="ghost" onClick={() => act(a.id, "active")}>
+                            <Check className="text-emerald-400" /> Active
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => act(a.id, "reserved")}>
+                            <ShieldCheck className="text-amber-400" /> Reserve
+                          </Button>
+                        </>
+                      )}
+                      {canDelete && (
+                        <Button size="sm" variant="ghost" onClick={() => remove(a.id)}>
+                          <Trash2 className="text-red-400" />
+                        </Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>

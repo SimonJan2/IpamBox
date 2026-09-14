@@ -13,6 +13,8 @@ import {
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import { PERM } from "@/lib/permissions";
 import { timeAgo } from "@/lib/utils";
 import type {
   AddressPage,
@@ -192,6 +194,9 @@ export default function PrefixDetailPage({
 }) {
   const { id } = use(params);
   const prefixId = Number(id);
+  const { can } = useAuth();
+  const canWrite = can(PERM.DATA_WRITE);
+  const canDelete = can(PERM.DATA_DELETE);
   const [prefix, setPrefix] = useState<Prefix | null>(null);
   const [page, setPage] = useState<AddressPage | null>(null);
   const [ranges, setRanges] = useState<IpRange[]>([]);
@@ -356,31 +361,39 @@ export default function PrefixDetailPage({
           <Skeleton className="h-7 w-48" />
         )}
         <div className="ml-auto flex gap-2">
-          <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()}>
-            <Upload /> Import
-          </Button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".csv"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) importCsv(f);
-              e.target.value = "";
-            }}
-          />
+          {canWrite && (
+            <>
+              <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()}>
+                <Upload /> Import
+              </Button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".csv"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) importCsv(f);
+                  e.target.value = "";
+                }}
+              />
+            </>
+          )}
           <Button size="sm" variant="outline" asChild>
             <a href={`/api/v1/addresses/export.csv?prefix_id=${prefixId}`} download>
               <Download /> Export
             </a>
           </Button>
-          <Button size="sm" variant="outline" onClick={() => setRangeOpen(true)}>
-            <Plus /> IP range
-          </Button>
-          <Button size="sm" onClick={allocNext}>
-            <Zap /> Allocate next free IP
-          </Button>
+          {canWrite && (
+            <>
+              <Button size="sm" variant="outline" onClick={() => setRangeOpen(true)}>
+                <Plus /> IP range
+              </Button>
+              <Button size="sm" onClick={allocNext}>
+                <Zap /> Allocate next free IP
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -443,9 +456,11 @@ export default function PrefixDetailPage({
                       {r.description ?? "—"}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" onClick={() => removeRange(r)}>
-                        <Trash2 className="h-4 w-4 text-rose-400" />
-                      </Button>
+                      {canDelete && (
+                        <Button variant="ghost" size="icon" onClick={() => removeRange(r)}>
+                          <Trash2 className="h-4 w-4 text-rose-400" />
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -491,6 +506,7 @@ export default function PrefixDetailPage({
                     items={filtered}
                     tags={addrTags}
                     allTags={tags}
+                    selectable={canWrite}
                     selected={selected}
                     onToggle={(id, on) => {
                       const next = new Set(selected);
@@ -536,7 +552,7 @@ export default function PrefixDetailPage({
         </CardContent>
       </Card>
 
-      {selected.size > 0 && (
+      {selected.size > 0 && canWrite && (
         <div className="sticky bottom-4 z-10 mx-auto flex w-fit items-center gap-3 rounded-lg border bg-card px-4 py-2 shadow-lg">
           <span className="text-sm text-muted-foreground">
             {selected.size} selected
@@ -590,13 +606,15 @@ export default function PrefixDetailPage({
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => bulk({ action: "delete" })}
-          >
-            <Trash2 /> Delete
-          </Button>
+          {canDelete && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => bulk({ action: "delete" })}
+            >
+              <Trash2 /> Delete
+            </Button>
+          )}
           <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>
             Clear
           </Button>
@@ -632,6 +650,7 @@ function AddressTable({
   items,
   tags,
   allTags,
+  selectable,
   selected,
   onToggle,
   onToggleAll,
@@ -642,6 +661,7 @@ function AddressTable({
   items: IpAddress[];
   tags: Map<number, Tag[]>;
   allTags: Tag[];
+  selectable: boolean;
   selected: Set<number>;
   onToggle: (id: number, on: boolean) => void;
   onToggleAll: (on: boolean) => void;
@@ -653,9 +673,11 @@ function AddressTable({
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead className="w-8">
-            <Checkbox checked={allChecked} onCheckedChange={(v) => onToggleAll(!!v)} />
-          </TableHead>
+          {selectable && (
+            <TableHead className="w-8">
+              <Checkbox checked={allChecked} onCheckedChange={(v) => onToggleAll(!!v)} />
+            </TableHead>
+          )}
           <TableHead>Address</TableHead>
           <TableHead>Status</TableHead>
           <TableHead>Role</TableHead>
@@ -673,12 +695,14 @@ function AddressTable({
           const assigned = tags.get(a.id) ?? [];
           return (
             <TableRow key={a.id} className="cursor-pointer" onClick={() => onSelect(a)}>
-              <TableCell onClick={(e) => e.stopPropagation()}>
-                <Checkbox
-                  checked={selected.has(a.id)}
-                  onCheckedChange={(v) => onToggle(a.id, !!v)}
-                />
-              </TableCell>
+              {selectable && (
+                <TableCell onClick={(e) => e.stopPropagation()}>
+                  <Checkbox
+                    checked={selected.has(a.id)}
+                    onCheckedChange={(v) => onToggle(a.id, !!v)}
+                  />
+                </TableCell>
+              )}
               <TableCell className="font-mono">
                 {a.address}
                 {a.nat_inside_id && (

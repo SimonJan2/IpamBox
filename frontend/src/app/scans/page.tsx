@@ -5,6 +5,8 @@ import { Play, Square } from "lucide-react";
 import { toast } from "sonner";
 
 import { api, scanStreamUrl } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import { PERM } from "@/lib/permissions";
 import { timeAgo } from "@/lib/utils";
 import type { ScanConfig, ScanJob, Vrf } from "@/types";
 import { ScanStatusBadge } from "@/components/status-badge";
@@ -28,6 +30,8 @@ function fmtEta(s: number | null | undefined): string {
 }
 
 export default function ScansPage() {
+  const { can } = useAuth();
+  const canWrite = can(PERM.DATA_WRITE);
   const [scans, setScans] = useState<ScanJob[]>([]);
   const [vrfs, setVrfs] = useState<Record<number, string>>({});
   const [config, setConfig] = useState<ScanConfig | null>(null);
@@ -123,9 +127,11 @@ export default function ScansPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Scans</h1>
-        <Button size="sm" onClick={() => startScan()}>
-          <Play /> Scan LAN (auto-detect)
-        </Button>
+        {canWrite && (
+          <Button size="sm" onClick={() => startScan()}>
+            <Play /> Scan LAN (auto-detect)
+          </Button>
+        )}
       </div>
 
       {config && (
@@ -151,7 +157,7 @@ export default function ScansPage() {
             {config.exclude_networks.length > 0 && (
               <span>excluded: {config.exclude_networks.join(", ")}</span>
             )}
-            {targets.length > 0 && (
+            {targets.length > 0 && canWrite && (
               <span className="ml-auto flex gap-2">
                 {targets.map((n) => (
                   <Button
@@ -221,7 +227,7 @@ export default function ScansPage() {
                     {timeAgo(s.started_at ?? s.created_at)}
                   </TableCell>
                   <TableCell>
-                    {(s.status === "running" || s.status === "queued") && (
+                    {canWrite && (s.status === "running" || s.status === "queued") && (
                       <Button
                         variant="ghost"
                         size="icon"

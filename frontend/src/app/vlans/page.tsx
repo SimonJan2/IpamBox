@@ -5,6 +5,8 @@ import { ListFilter, Pencil, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import { PERM } from "@/lib/permissions";
 import type { Site, Vlan, VlanGroup, VlanStatus } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -277,6 +279,9 @@ function GroupDialog({
 }
 
 export default function VlansPage() {
+  const { can } = useAuth();
+  const canWrite = can(PERM.DATA_WRITE);
+  const canDelete = can(PERM.DATA_DELETE);
   const [vlans, setVlans] = useState<Vlan[]>([]);
   const [groups, setGroups] = useState<VlanGroup[]>([]);
   const [sites, setSites] = useState<Site[]>([]);
@@ -323,30 +328,34 @@ export default function VlansPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">VLANs</h1>
-        <Button
-          size="sm"
-          onClick={() => {
-            setEditing(null);
-            setDialogOpen(true);
-          }}
-        >
-          <Plus /> New VLAN
-        </Button>
+        {canWrite && (
+          <Button
+            size="sm"
+            onClick={() => {
+              setEditing(null);
+              setDialogOpen(true);
+            }}
+          >
+            <Plus /> New VLAN
+          </Button>
+        )}
       </div>
 
       <div className="rounded-lg border">
         <div className="flex items-center justify-between border-b px-3 py-2">
           <span className="text-sm font-medium">VLAN groups</span>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setEditingGroup(null);
-              setGroupDialogOpen(true);
-            }}
-          >
-            <Plus /> New group
-          </Button>
+          {canWrite && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setEditingGroup(null);
+                setGroupDialogOpen(true);
+              }}
+            >
+              <Plus /> New group
+            </Button>
+          )}
         </div>
         <Table>
           <TableBody>
@@ -369,23 +378,27 @@ export default function VlansPage() {
                     >
                       <ListFilter className="h-4 w-4" />
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => {
-                        setEditingGroup(g);
-                        setGroupDialogOpen(true);
-                      }}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => removeGroup(g)}
-                    >
-                      <Trash2 className="h-4 w-4 text-rose-400" />
-                    </Button>
+                    {canWrite && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          setEditingGroup(g);
+                          setGroupDialogOpen(true);
+                        }}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeGroup(g)}
+                      >
+                        <Trash2 className="h-4 w-4 text-rose-400" />
+                      </Button>
+                    )}
                   </div>
                 </TableCell>
               </TableRow>
@@ -449,19 +462,23 @@ export default function VlansPage() {
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => {
-                        setEditing(v);
-                        setDialogOpen(true);
-                      }}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={() => remove(v)}>
-                      <Trash2 className="h-4 w-4 text-rose-400" />
-                    </Button>
+                    {canWrite && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          setEditing(v);
+                          setDialogOpen(true);
+                        }}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button variant="ghost" size="icon" onClick={() => remove(v)}>
+                        <Trash2 className="h-4 w-4 text-rose-400" />
+                      </Button>
+                    )}
                   </div>
                 </TableCell>
               </TableRow>

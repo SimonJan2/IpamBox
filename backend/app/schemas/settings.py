@@ -45,6 +45,7 @@ class SettingsOut(BaseModel):
 class UserOut(BaseModel):
     id: int
     username: str
+    role: str
     created_at: str
 
 
