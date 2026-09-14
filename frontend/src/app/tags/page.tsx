@@ -5,6 +5,8 @@ import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import { PERM } from "@/lib/permissions";
 import type { Tag } from "@/types";
 import { TagDialog } from "@/components/tag-dialog";
 import { TagChip } from "@/components/tag-picker";
@@ -19,6 +21,9 @@ import {
 } from "@/components/ui/table";
 
 export default function TagsPage() {
+  const { can } = useAuth();
+  const canWrite = can(PERM.DATA_WRITE);
+  const canDelete = can(PERM.DATA_DELETE);
   const [tags, setTags] = useState<Tag[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Tag | null>(null);
@@ -43,15 +48,17 @@ export default function TagsPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Tags</h1>
-        <Button
-          size="sm"
-          onClick={() => {
-            setEditing(null);
-            setDialogOpen(true);
-          }}
-        >
-          <Plus /> New tag
-        </Button>
+        {canWrite && (
+          <Button
+            size="sm"
+            onClick={() => {
+              setEditing(null);
+              setDialogOpen(true);
+            }}
+          >
+            <Plus /> New tag
+          </Button>
+        )}
       </div>
       <p className="text-sm text-muted-foreground">
         Tags can be attached to sites, VRFs, prefixes and addresses.
@@ -81,19 +88,23 @@ export default function TagsPage() {
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => {
-                        setEditing(t);
-                        setDialogOpen(true);
-                      }}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={() => remove(t)}>
-                      <Trash2 className="h-4 w-4 text-rose-400" />
-                    </Button>
+                    {canWrite && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          setEditing(t);
+                          setDialogOpen(true);
+                        }}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button variant="ghost" size="icon" onClick={() => remove(t)}>
+                        <Trash2 className="h-4 w-4 text-rose-400" />
+                      </Button>
+                    )}
                   </div>
                 </TableCell>
               </TableRow>

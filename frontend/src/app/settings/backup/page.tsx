@@ -13,6 +13,8 @@ import { toast } from "sonner";
 
 import { api } from "@/lib/api";
 import { fmtTs } from "@/lib/prefs";
+import { useAuth } from "@/lib/auth";
+import { PERM } from "@/lib/permissions";
 import type {
   BackupFilesOut,
   BackupPreview,
@@ -60,6 +62,8 @@ async function downloadUrl(path: string, fallbackName: string) {
 }
 
 export default function BackupSettingsPage() {
+  const { can } = useAuth();
+  const canAdmin = can(PERM.SYSTEM_ADMIN);
   const [files, setFiles] = useState<BackupFilesOut | null>(null);
   const [settings, setSettings] = useState<SettingsOut | null>(null);
   const [schedule, setSchedule] = useState({ interval: 0, keep: 14 });
@@ -191,6 +195,20 @@ export default function BackupSettingsPage() {
     (schedule.interval !== settings.values.backup_interval_minutes ||
       schedule.keep !== settings.values.backup_keep);
 
+  if (!can(PERM.BACKUP_ACCESS)) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-xl font-semibold">Backup &amp; Restore</h1>
+        <Card className="border-amber-500/30">
+          <CardContent className="pt-6 text-sm text-muted-foreground">
+            Your role is read-only for backups — ask an Administrator or Tier-1
+            Operator for access.
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -232,12 +250,13 @@ export default function BackupSettingsPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <fieldset disabled={!canAdmin} className="contents">
           <div className="grid gap-4 sm:grid-cols-2">
             <SettingField
               label="Interval (minutes)"
               hint="0 = disabled. E.g. 1440 = daily."
               source={settings?.sources.backup_interval_minutes}
-              onReset={async () => {
+              onReset={canAdmin ? async () => {
                 const out = await api.patch<SettingsOut>("/api/v1/settings", {
                   backup_interval_minutes: null,
                 });
@@ -246,7 +265,7 @@ export default function BackupSettingsPage() {
                   ...s,
                   interval: out.values.backup_interval_minutes,
                 }));
-              }}
+              } : undefined}
             >
               <Input
                 type="number"
@@ -264,13 +283,13 @@ export default function BackupSettingsPage() {
             <SettingField
               label="Keep newest N files"
               source={settings?.sources.backup_keep}
-              onReset={async () => {
+              onReset={canAdmin ? async () => {
                 const out = await api.patch<SettingsOut>("/api/v1/settings", {
                   backup_keep: null,
                 });
                 setSettings(out);
                 setSchedule((s) => ({ ...s, keep: out.values.backup_keep }));
-              }}
+              } : undefined}
             >
               <Input
                 type="number"
@@ -286,7 +305,13 @@ export default function BackupSettingsPage() {
               />
             </SettingField>
           </div>
-          {scheduleDirty && (
+          </fieldset>
+          {!canAdmin && (
+            <p className="text-xs text-muted-foreground">
+              Schedule changes require the Administrator role.
+            </p>
+          )}
+          {scheduleDirty && canAdmin && (
             <Button size="sm" onClick={saveSchedule}>
               Save schedule
             </Button>
@@ -346,6 +371,7 @@ export default function BackupSettingsPage() {
         </CardContent>
       </Card>
 
+      {canAdmin && (
       <Card className="border-rose-500/30">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base text-rose-400">
@@ -447,6 +473,7 @@ export default function BackupSettingsPage() {
           )}
         </CardContent>
       </Card>
+      )}
     </div>
   );
 }

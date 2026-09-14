@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.db import get_session
+from app.core.deps import SYSTEM_ADMIN, require_perm
 from app.core.redis import get_redis
 from app.schemas.settings import LanInfo, SettingsOut, SettingsPatch, SystemInfo
 from app.services import runtime_settings
@@ -78,7 +79,9 @@ async def read_settings(session: AsyncSession = Depends(get_session)):
 
 @router.patch("", response_model=SettingsOut)
 async def update_settings(
-    body: SettingsPatch, session: AsyncSession = Depends(get_session)
+    body: SettingsPatch,
+    session: AsyncSession = Depends(get_session),
+    _user=Depends(require_perm(SYSTEM_ADMIN)),
 ):
     updates = body.model_dump(exclude_unset=True)
     try:

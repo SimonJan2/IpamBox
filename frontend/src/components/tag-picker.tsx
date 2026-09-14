@@ -5,6 +5,8 @@ import { Tags } from "lucide-react";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import { PERM } from "@/lib/permissions";
 import type { Tag, TagAssignment } from "@/types";
 import { Button } from "@/components/ui/button";
 import {
@@ -70,6 +72,7 @@ export function TagPicker({
   assigned: Tag[];
   onChanged: () => void;
 }) {
+  const { can } = useAuth();
   const assignedIds = new Set(assigned.map((t) => t.id));
 
   const toggle = async (tagId: number, isAssigned: boolean) => {
@@ -89,6 +92,8 @@ export function TagPicker({
       toast.error("Tag update failed", { description: String(e) });
     }
   };
+
+  if (!can(PERM.DATA_WRITE)) return null;
 
   return (
     <DropdownMenu>

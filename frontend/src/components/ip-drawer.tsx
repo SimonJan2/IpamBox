@@ -5,6 +5,8 @@ import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import { PERM } from "@/lib/permissions";
 import { timeAgo } from "@/lib/utils";
 import type { ChangeLogEntry, IpAddress, IpRole, IpStatus, Tag } from "@/types";
 import { IpStatusBadge } from "@/components/status-badge";
@@ -51,6 +53,9 @@ export function IpDrawer({
   assigned?: Tag[];
   onTagsChanged?: () => void;
 }) {
+  const { can } = useAuth();
+  const canWrite = can(PERM.DATA_WRITE);
+  const canDelete = can(PERM.DATA_DELETE);
   const [form, setForm] = useState({
     hostname: "",
     mac_address: "",
@@ -206,6 +211,7 @@ export function IpDrawer({
               value={form.hostname}
               onChange={(e) => setForm({ ...form, hostname: e.target.value })}
               placeholder="host.lan"
+              disabled={!canWrite}
             />
           </div>
           <div className="grid gap-1.5">
@@ -215,6 +221,7 @@ export function IpDrawer({
               onChange={(e) => setForm({ ...form, mac_address: e.target.value })}
               placeholder="AA:BB:CC:DD:EE:FF"
               className="font-mono"
+              disabled={!canWrite}
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -223,6 +230,7 @@ export function IpDrawer({
               <Select
                 value={form.status}
                 onValueChange={(v) => setForm({ ...form, status: v as IpStatus })}
+                disabled={!canWrite}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -241,6 +249,7 @@ export function IpDrawer({
               <Select
                 value={form.role}
                 onValueChange={(v) => setForm({ ...form, role: v as IpRole | "none" })}
+                disabled={!canWrite}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -263,6 +272,7 @@ export function IpDrawer({
               placeholder="e.g. 10.0.0.5 (must exist in this prefix)"
               className="font-mono"
               list="nat-candidates"
+              disabled={!canWrite}
             />
             <datalist id="nat-candidates">
               {natOptions
@@ -277,18 +287,23 @@ export function IpDrawer({
             <Textarea
               value={form.notes}
               onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              disabled={!canWrite}
             />
           </div>
-          <div className="flex gap-2 pt-2">
-            <Button onClick={save} disabled={busy} className="flex-1">
-              {busy ? "Saving…" : addr ? "Save" : "Reserve"}
-            </Button>
-            {addr && (
-              <Button variant="destructive" size="icon" onClick={remove} disabled={busy}>
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
+          {(canWrite || (addr && canDelete)) && (
+            <div className="flex gap-2 pt-2">
+              {canWrite && (
+                <Button onClick={save} disabled={busy} className="flex-1">
+                  {busy ? "Saving…" : addr ? "Save" : "Reserve"}
+                </Button>
+              )}
+              {addr && canDelete && (
+                <Button variant="destructive" size="icon" onClick={remove} disabled={busy}>
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          )}
 
           {history.length > 0 && (
             <div className="border-t pt-3">

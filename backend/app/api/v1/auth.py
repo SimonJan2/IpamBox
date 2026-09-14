@@ -20,7 +20,8 @@ from app.core.security import (
     record_login_failure,
     verify_password,
 )
-from app.models.user import User
+from app.core.deps import user_permissions
+from app.models.user import User, UserRole
 from app.schemas.auth import AuthStatus, LoginBody, SetupBody
 from app.schemas.settings import ChangePasswordBody, SessionOut
 from app.services import runtime_settings
@@ -45,7 +46,13 @@ async def ensure_env_password_user(session: AsyncSession) -> None:
         return
     if await session.scalar(select(func.count(User.id))):
         return
-    session.add(User(username="admin", password_hash=hash_password(pw)))
+    session.add(
+        User(
+            username="admin",
+            password_hash=hash_password(pw),
+            role=UserRole.ADMIN,
+        )
+    )
     await session.commit()
 
 
@@ -79,7 +86,12 @@ async def _login_session(
 async def auth_status(request: Request, session: AsyncSession = Depends(get_session)):
     settings = get_settings()
     if settings.ipambox_allow_insecure:
-        return AuthStatus(initialized=True, authenticated=True, allow_insecure=True)
+        return AuthStatus(
+            initialized=True,
+            authenticated=True,
+            allow_insecure=True,
+            permissions=sorted(user_permissions(None)),
+        )
     await ensure_env_password_user(session)
     initialized = bool(await session.scalar(select(func.count(User.id))))
     user = await _current_user(request, session)
@@ -88,6 +100,8 @@ async def auth_status(request: Request, session: AsyncSession = Depends(get_sess
         authenticated=user is not None,
         allow_insecure=False,
         username=user.username if user else None,
+        role=user.role.value if user else None,
+        permissions=sorted(user_permissions(user)) if user else [],
     )
 
 
@@ -103,7 +117,9 @@ async def setup(
     if await session.scalar(select(func.count(User.id))):
         raise HTTPException(409, "already initialized")
     user = User(
-        username=body.username.strip(), password_hash=hash_password(body.password)
+        username=body.username.strip(),
+        password_hash=hash_password(body.password),
+        role=UserRole.ADMIN,
     )
     session.add(user)
     await session.commit()
@@ -148,7 +164,11 @@ async def logout(request: Request, response: Response):
 
 @router.get("/me")
 async def me(user: User | None = Depends(require_auth)):
-    return {"username": user.username if user else None}
+    return {
+        "username": user.username if user else None,
+        "role": user.role.value if user else None,
+        "permissions": sorted(user_permissions(user)),
+    }
 
 
 @router.post("/change-password")

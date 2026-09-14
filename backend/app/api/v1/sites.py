@@ -4,6 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
+from app.core.deps import DATA_DELETE, DATA_WRITE, require_perm
 from app.models.site import Site
 from app.schemas.site import SiteCreate, SiteOut, SiteUpdate
 from app.services.ipam import IPAMError, get_or_404, slugify
@@ -16,7 +17,12 @@ async def list_sites(session: AsyncSession = Depends(get_session)):
     return (await session.execute(select(Site).order_by(Site.name))).scalars().all()
 
 
-@router.post("", response_model=SiteOut, status_code=201)
+@router.post(
+    "",
+    response_model=SiteOut,
+    status_code=201,
+    dependencies=[Depends(require_perm(DATA_WRITE))],
+)
 async def create_site(body: SiteCreate, session: AsyncSession = Depends(get_session)):
     site = Site(name=body.name, slug=body.slug or slugify(body.name), description=body.description)
     session.add(site)
@@ -37,7 +43,11 @@ async def get_site(site_id: int, session: AsyncSession = Depends(get_session)):
         raise HTTPException(e.status_code, str(e))
 
 
-@router.patch("/{site_id}", response_model=SiteOut)
+@router.patch(
+    "/{site_id}",
+    response_model=SiteOut,
+    dependencies=[Depends(require_perm(DATA_WRITE))],
+)
 async def update_site(site_id: int, body: SiteUpdate, session: AsyncSession = Depends(get_session)):
     try:
         site = await get_or_404(session, Site, site_id)
@@ -54,7 +64,11 @@ async def update_site(site_id: int, body: SiteUpdate, session: AsyncSession = De
     return site
 
 
-@router.delete("/{site_id}", status_code=204)
+@router.delete(
+    "/{site_id}",
+    status_code=204,
+    dependencies=[Depends(require_perm(DATA_DELETE))],
+)
 async def delete_site(site_id: int, session: AsyncSession = Depends(get_session)):
     try:
         site = await get_or_404(session, Site, site_id)

@@ -1,12 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { KeyRound, MonitorSmartphone, Plus, ShieldAlert, Trash2, Users } from "lucide-react";
+import { KeyRound, MonitorSmartphone, ShieldAlert, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
 import { fmtTs } from "@/lib/prefs";
-import type { AuthStatus, SessionOut, UserOut } from "@/types";
+import { useAuth } from "@/lib/auth";
+import { ROLE_META } from "@/lib/permissions";
+import type { SessionOut } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,13 +18,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -43,17 +38,12 @@ function fmtAgo(seconds: number | null): string {
 }
 
 export default function SecurityPage() {
-  const [auth, setAuth] = useState<AuthStatus | null>(null);
-  const [users, setUsers] = useState<UserOut[]>([]);
+  const { status: auth } = useAuth();
   const [sessions, setSessions] = useState<SessionOut[]>([]);
-  const [addOpen, setAddOpen] = useState(false);
-  const [newUser, setNewUser] = useState({ username: "", password: "" });
   const [pw, setPw] = useState({ current: "", next: "", logout: true });
   const [pwBusy, setPwBusy] = useState(false);
 
   const refresh = useCallback(() => {
-    api.get<AuthStatus>("/api/v1/auth/status").then(setAuth).catch(() => {});
-    api.get<UserOut[]>("/api/v1/users").then(setUsers).catch(() => {});
     api
       .get<SessionOut[]>("/api/v1/auth/sessions")
       .then(setSessions)
@@ -79,39 +69,6 @@ export default function SecurityPage() {
       toast.error("Password change failed", { description: String(e) });
     } finally {
       setPwBusy(false);
-    }
-  };
-
-  const addUser = async () => {
-    try {
-      await api.post("/api/v1/users", newUser);
-      toast.success(`User "${newUser.username}" created`);
-      setAddOpen(false);
-      setNewUser({ username: "", password: "" });
-      refresh();
-    } catch (e) {
-      toast.error("Create failed", { description: String(e) });
-    }
-  };
-
-  const deleteUser = async (u: UserOut) => {
-    try {
-      await api.del(`/api/v1/users/${u.id}`);
-      toast.success(`User "${u.username}" deleted`);
-      refresh();
-    } catch (e) {
-      toast.error("Delete failed", { description: String(e) });
-    }
-  };
-
-  const resetPassword = async (u: UserOut) => {
-    const next = window.prompt(`New password for ${u.username} (min 8 chars):`);
-    if (!next) return;
-    try {
-      await api.patch(`/api/v1/users/${u.id}`, { password: next });
-      toast.success(`Password reset for "${u.username}"`);
-    } catch (e) {
-      toast.error("Reset failed", { description: String(e) });
     }
   };
 
@@ -156,7 +113,20 @@ export default function SecurityPage() {
       <div>
         <h1 className="text-xl font-semibold">Account &amp; Security</h1>
         <p className="text-sm text-muted-foreground">
-          Manage login accounts and active sessions. All users are full admins.
+          Your password and active sessions.
+          {auth?.role && (
+            <>
+              {" "}
+              You are signed in as{" "}
+              <Badge
+                variant="outline"
+                className={ROLE_META[auth.role].badgeClass}
+              >
+                {ROLE_META[auth.role].label}
+              </Badge>
+              .
+            </>
+          )}
         </p>
       </div>
 
@@ -200,66 +170,6 @@ export default function SecurityPage() {
             onClick={changePassword}
           >
             {pwBusy ? "Changing…" : "Change password"}
-          </Button>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Users className="h-4 w-4" /> Users
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="rounded-lg border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Username</TableHead>
-                  <TableHead className="w-44">Created</TableHead>
-                  <TableHead className="w-40 text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {users.map((u) => (
-                  <TableRow key={u.id}>
-                    <TableCell className="font-medium">
-                      {u.username}
-                      {auth?.username === u.username && (
-                        <Badge variant="outline" className="ml-2 text-[10px]">
-                          you
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {fmtTs(u.created_at)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        title="Reset password"
-                        onClick={() => resetPassword(u)}
-                      >
-                        <KeyRound className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        title="Delete user"
-                        disabled={auth?.username === u.username}
-                        onClick={() => deleteUser(u)}
-                      >
-                        <Trash2 className="h-4 w-4 text-rose-400" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-          <Button size="sm" variant="outline" onClick={() => setAddOpen(true)}>
-            <Plus /> Add user
           </Button>
         </CardContent>
       </Card>
@@ -333,45 +243,6 @@ export default function SecurityPage() {
           )}
         </CardContent>
       </Card>
-
-      <Dialog open={addOpen} onOpenChange={setAddOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add user</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-3">
-            <div className="grid gap-1.5">
-              <Label>Username</Label>
-              <Input
-                value={newUser.username}
-                onChange={(e) =>
-                  setNewUser({ ...newUser, username: e.target.value })
-                }
-              />
-            </div>
-            <div className="grid gap-1.5">
-              <Label>Password (min 8 chars)</Label>
-              <Input
-                type="password"
-                autoComplete="new-password"
-                value={newUser.password}
-                onChange={(e) =>
-                  setNewUser({ ...newUser, password: e.target.value })
-                }
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              size="sm"
-              disabled={!newUser.username || newUser.password.length < 8}
-              onClick={addUser}
-            >
-              Create user
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

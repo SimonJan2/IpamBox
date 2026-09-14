@@ -21,6 +21,8 @@ import {
 
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { AuthProvider, authCtxValue } from "@/lib/auth";
+import { PERM, ROLE_META } from "@/lib/permissions";
 import type { AuthStatus } from "@/types";
 import { Button } from "@/components/ui/button";
 import { QuickScanDialog } from "@/components/quick-scan";
@@ -63,7 +65,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         }
         setAuth(s);
       })
-      .catch(() => setAuth({ initialized: true, authenticated: true, allow_insecure: true, username: null }));
+      .catch(() =>
+        setAuth({
+          initialized: true,
+          authenticated: true,
+          allow_insecure: true,
+          username: null,
+          role: null,
+          permissions: [],
+        })
+      );
   }, [isAuthRoute, router, pathname]);
 
   const signOut = async () => {
@@ -86,8 +97,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
+  const ctx = authCtxValue(auth);
+
   return (
-    <div className="flex min-h-screen">
+    <AuthProvider value={ctx}>
+      <div className="flex min-h-screen">
       <aside className="fixed inset-y-0 z-30 flex w-60 flex-col border-r bg-card">
         <div className="flex h-14 items-center gap-2 border-b px-5">
           <Network className="h-5 w-5 text-emerald-400" />
@@ -115,7 +129,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           })}
         </nav>
         <div className="flex items-center justify-between border-t p-3 text-xs text-muted-foreground">
-          <span>{auth.username ? `Signed in as ${auth.username}` : "IPAM & network scanner"}</span>
+          <span>
+            {auth.username ? `Signed in as ${auth.username}` : "IPAM & network scanner"}
+            {auth.role && (
+              <span className="ml-1 text-muted-foreground/70">
+                · {ROLE_META[auth.role].tier}
+              </span>
+            )}
+          </span>
           {!auth.allow_insecure && (
             <Button
               variant="ghost"
@@ -133,9 +154,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="ml-60 flex min-h-screen flex-1 flex-col">
         <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b bg-background/80 px-6 backdrop-blur">
           <div />
-          <Button size="sm" onClick={() => setScanOpen(true)}>
-            <Radar /> Quick scan
-          </Button>
+          {ctx.can(PERM.DATA_WRITE) && (
+            <Button size="sm" onClick={() => setScanOpen(true)}>
+              <Radar /> Quick scan
+            </Button>
+          )}
         </header>
         <main className="flex-1 p-6">{children}</main>
       </div>
@@ -145,6 +168,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         onOpenChange={setScanOpen}
         onFinished={() => window.dispatchEvent(new Event("ipam:refresh"))}
       />
-    </div>
+      </div>
+    </AuthProvider>
   );
 }

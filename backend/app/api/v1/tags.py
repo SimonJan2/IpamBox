@@ -4,6 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
+from app.core.deps import DATA_DELETE, DATA_WRITE, require_perm
 from app.models.tag import Tag, TagAssignment
 from app.schemas.tag import (
     TAGGABLE,
@@ -36,7 +37,12 @@ async def list_tags(session: AsyncSession = Depends(get_session)):
     )
 
 
-@router.post("", response_model=TagOut, status_code=201)
+@router.post(
+    "",
+    response_model=TagOut,
+    status_code=201,
+    dependencies=[Depends(require_perm(DATA_WRITE))],
+)
 async def create_tag(body: TagCreate, session: AsyncSession = Depends(get_session)):
     tag = Tag(
         name=body.name,
@@ -62,7 +68,11 @@ async def get_tag(tag_id: int, session: AsyncSession = Depends(get_session)):
         raise HTTPException(e.status_code, str(e))
 
 
-@router.patch("/{tag_id}", response_model=TagOut)
+@router.patch(
+    "/{tag_id}",
+    response_model=TagOut,
+    dependencies=[Depends(require_perm(DATA_WRITE))],
+)
 async def update_tag(
     tag_id: int, body: TagUpdate, session: AsyncSession = Depends(get_session)
 ):
@@ -84,7 +94,11 @@ async def update_tag(
     return tag
 
 
-@router.delete("/{tag_id}", status_code=204)
+@router.delete(
+    "/{tag_id}",
+    status_code=204,
+    dependencies=[Depends(require_perm(DATA_DELETE))],
+)
 async def delete_tag(tag_id: int, session: AsyncSession = Depends(get_session)):
     try:
         tag = await get_or_404(session, Tag, tag_id)
@@ -94,7 +108,12 @@ async def delete_tag(tag_id: int, session: AsyncSession = Depends(get_session)):
     await session.commit()
 
 
-@router.post("/{tag_id}/assignments", response_model=TagAssignmentOut, status_code=201)
+@router.post(
+    "/{tag_id}/assignments",
+    response_model=TagAssignmentOut,
+    status_code=201,
+    dependencies=[Depends(require_perm(DATA_WRITE))],
+)
 async def assign_tag(
     tag_id: int, body: AssignBody, session: AsyncSession = Depends(get_session)
 ):
@@ -116,7 +135,9 @@ async def assign_tag(
 
 
 @router.delete(
-    "/{tag_id}/assignments/{object_type}/{object_id}", status_code=204
+    "/{tag_id}/assignments/{object_type}/{object_id}",
+    status_code=204,
+    dependencies=[Depends(require_perm(DATA_WRITE))],
 )
 async def unassign_tag(
     tag_id: int,

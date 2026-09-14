@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
+from app.core.deps import DATA_DELETE, DATA_WRITE, require_perm
 from app.models.ip_range import IPRange
 from app.models.prefix import Prefix
 from app.schemas.ip_range import IPRangeCreate, IPRangeOut, IPRangeUpdate
@@ -42,7 +43,12 @@ async def _check_range_overlap(
             )
 
 
-@router.post("", response_model=IPRangeOut, status_code=201)
+@router.post(
+    "",
+    response_model=IPRangeOut,
+    status_code=201,
+    dependencies=[Depends(require_perm(DATA_WRITE))],
+)
 async def create_range(body: IPRangeCreate, session: AsyncSession = Depends(get_session)):
     try:
         prefix = await get_or_404(session, Prefix, body.prefix_id)
@@ -72,7 +78,11 @@ async def create_range(body: IPRangeCreate, session: AsyncSession = Depends(get_
     return row
 
 
-@router.patch("/{range_id}", response_model=IPRangeOut)
+@router.patch(
+    "/{range_id}",
+    response_model=IPRangeOut,
+    dependencies=[Depends(require_perm(DATA_WRITE))],
+)
 async def update_range(
     range_id: int, body: IPRangeUpdate, session: AsyncSession = Depends(get_session)
 ):
@@ -87,7 +97,11 @@ async def update_range(
     return row
 
 
-@router.delete("/{range_id}", status_code=204)
+@router.delete(
+    "/{range_id}",
+    status_code=204,
+    dependencies=[Depends(require_perm(DATA_DELETE))],
+)
 async def delete_range(range_id: int, session: AsyncSession = Depends(get_session)):
     try:
         row = await get_or_404(session, IPRange, range_id)

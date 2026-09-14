@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
+from app.core.deps import DATA_WRITE, require_perm
 from app.models.ip_address import IPAddress, IPStatus
 from app.schemas.ip_address import IPAddressOut
 from app.services.ipam import IPAMError, get_or_404
@@ -29,7 +30,11 @@ class ConfirmBody(BaseModel):
     status: IPStatus = IPStatus.ACTIVE
 
 
-@router.post("/{address_id}/confirm", response_model=IPAddressOut)
+@router.post(
+    "/{address_id}/confirm",
+    response_model=IPAddressOut,
+    dependencies=[Depends(require_perm(DATA_WRITE))],
+)
 async def confirm_discovered(
     address_id: int, body: ConfirmBody | None = None, session: AsyncSession = Depends(get_session)
 ):

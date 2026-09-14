@@ -5,6 +5,8 @@ import { DatabaseZap, FileDown, FileUp } from "lucide-react";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import { PERM } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -29,6 +31,7 @@ async function download(path: string, name: string) {
 }
 
 export default function DataPage() {
+  const { can } = useAuth();
   const [scanDays, setScanDays] = useState("");
   const [logDays, setLogDays] = useState("");
 
@@ -84,6 +87,7 @@ export default function DataPage() {
         </CardContent>
       </Card>
 
+      {can(PERM.SYSTEM_ADMIN) && (
       <Card className="border-rose-500/30">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base text-rose-400">
@@ -192,6 +196,7 @@ export default function DataPage() {
           />
         </CardContent>
       </Card>
+      )}
     </div>
   );
 }

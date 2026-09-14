@@ -197,11 +197,15 @@ export interface ChangeLogEntry {
   changes: ChangeField[];
 }
 
+export type RoleName = "admin" | "operator" | "contributor" | "viewer";
+
 export interface AuthStatus {
   initialized: boolean;
   authenticated: boolean;
   allow_insecure: boolean;
   username: string | null;
+  role: RoleName | null;
+  permissions: string[];
 }
 
 export interface ScanEvent {
@@ -301,6 +305,7 @@ export interface SettingsOut {
 export interface UserOut {
   id: number;
   username: string;
+  role: RoleName;
   created_at: string;
 }
 

@@ -13,6 +13,8 @@ import {
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import { PERM } from "@/lib/permissions";
 import type { Prefix, Site, Vlan, Vrf } from "@/types";
 import { PrefixStatusBadge } from "@/components/status-badge";
 import { TagChip, TagPicker, useTags } from "@/components/tag-picker";
@@ -422,6 +424,9 @@ function DeletePrefixDialog({
 
 export default function PrefixesPage() {
   const router = useRouter();
+  const { can } = useAuth();
+  const canWrite = can(PERM.DATA_WRITE);
+  const canDelete = can(PERM.DATA_DELETE);
   const [prefixes, setPrefixes] = useState<Prefix[]>([]);
   const [vrfs, setVrfs] = useState<Vrf[]>([]);
   const [sites, setSites] = useState<Site[]>([]);
@@ -541,25 +546,29 @@ export default function PrefixesPage() {
             className="flex justify-end gap-1"
             onClick={(e) => e.stopPropagation()}
           >
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setEditing(c.row.original)}
-            >
-              <Pencil className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setDeleting(c.row.original)}
-            >
-              <Trash2 className="h-4 w-4 text-rose-400" />
-            </Button>
+            {canWrite && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setEditing(c.row.original)}
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+            )}
+            {canDelete && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setDeleting(c.row.original)}
+              >
+                <Trash2 className="h-4 w-4 text-rose-400" />
+              </Button>
+            )}
           </div>
         ),
       },
     ],
-    [vrfName, siteName, tags, prefixTags, refreshTags]
+    [vrfName, siteName, tags, prefixTags, refreshTags, canWrite, canDelete]
   );
 
   const filtered = useMemo(
@@ -588,9 +597,11 @@ export default function PrefixesPage() {
               <Download /> CSV
             </a>
           </Button>
-          <Button size="sm" onClick={() => setCreateOpen(true)}>
-            <Plus /> New prefix
-          </Button>
+          {canWrite && (
+            <Button size="sm" onClick={() => setCreateOpen(true)}>
+              <Plus /> New prefix
+            </Button>
+          )}
         </div>
       </div>
 

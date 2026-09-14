@@ -16,3 +16,5 @@ class AuthStatus(BaseModel):
     authenticated: bool
     allow_insecure: bool
     username: str | None = None
+    role: str | None = None
+    permissions: list[str] = []
