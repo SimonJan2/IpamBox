@@ -4,7 +4,7 @@ import json
 from sqlalchemy import text
 
 from app.models.base import Base
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.services import backup as svc
 from app.services.backup import BACKUP_TABLES, EXCLUDED_TABLES
 
@@ -21,6 +21,9 @@ def test_registry_covers_all_tables():
     all_tables = set(Base.metadata.tables)
     expected = all_tables - EXCLUDED_TABLES
     assert _registry_names() == expected
+    # `users` is valid in an envelope ONLY via the includes_users flag — it
+    # must never join the registry, whose TRUNCATE would wipe admin accounts.
+    assert "users" in EXCLUDED_TABLES and "users" not in _registry_names()
 
 
 async def _vrf(client) -> int:
@@ -91,11 +94,44 @@ async def _wipe(session):
     await session.commit()
 
 
-async def _backup_bytes(client) -> bytes:
-    r = await client.get("/api/v1/backup")
+async def _backup_bytes(client, **params) -> bytes:
+    r = await client.get("/api/v1/backup", params=params)
     assert r.status_code == 200, r.text
     assert r.headers["content-type"] == "application/gzip"
     return r.content
+
+
+def _envelope_bytes(tables: dict, **extra) -> bytes:
+    """Hand-craft a backup envelope (e.g. with a forged users table)."""
+    env = {
+        "format": "ipambox-backup",
+        "format_version": 1,
+        "tables": tables,
+        **extra,
+    }
+    return gzip.compress(json.dumps(env).encode())
+
+
+async def _mkusers(session) -> dict[str, User]:
+    users = {}
+    for name, role in [
+        ("admin1", UserRole.ADMIN),
+        ("op1", UserRole.OPERATOR),
+        ("c1", UserRole.CONTRIBUTOR),
+        ("v1", UserRole.VIEWER),
+    ]:
+        u = User(username=name, password_hash="x", role=role)
+        session.add(u)
+        users[name] = u
+    await session.commit()
+    for u in users.values():
+        await session.refresh(u)
+    return users
+
+
+async def _usernames(session) -> set[str]:
+    rows = await session.execute(text("SELECT username FROM users"))
+    return set(rows.scalars().all())
 
 
 async def _restore(client, payload: bytes, name="backup.json.gz", **params):
@@ -269,3 +305,164 @@ async def test_backup_file_store(client, tmp_path, monkeypatch):
     removed = svc.prune_backups(keep=2)
     assert removed == 2
     assert len(svc.list_backup_files()) == 2
+
+
+# --------------------------------------------------------------------- users
+
+
+async def test_backup_include_users_excludes_admins(client, session):
+    await _mkusers(session)
+    payload = await _backup_bytes(client, include_users=1)
+    envelope = json.loads(gzip.decompress(payload))
+    assert envelope["includes_users"] is True
+    rows = envelope["tables"]["users"]
+    assert {u["username"] for u in rows} == {"op1", "c1", "v1"}
+    assert all(u["role"] != "admin" for u in rows)
+    assert all("password_hash" in u for u in rows)
+
+    # default export: no users table, no flag
+    envelope = json.loads(gzip.decompress(await _backup_bytes(client)))
+    assert "users" not in envelope["tables"]
+    assert "includes_users" not in envelope
+
+
+async def test_restore_users_replaces_non_admins_keeps_admins(client, session):
+    """Fresh-server scenario: the target's admins survive; its non-admin set
+    is fully replaced by the file's non-admin rows (original ids kept)."""
+    users = await _mkusers(session)
+    payload = await _backup_bytes(client, include_users=1)
+
+    await _wipe(session)
+    session.add(
+        User(username="bootstrap", password_hash="x", role=UserRole.ADMIN)
+    )
+    session.add(User(username="stale", password_hash="x", role=UserRole.VIEWER))
+    await session.commit()
+
+    r = await _restore(client, payload)
+    assert r.status_code == 200, r.text
+    assert r.json()["restored"]["users"] == 3
+
+    rows = (
+        await session.execute(text("SELECT id, username FROM users"))
+    ).all()
+    by_name = {u.username: u.id for u in rows}
+    assert "bootstrap" in by_name  # admin created on the target survives
+    assert "stale" not in by_name  # non-admin set was replaced
+    assert "admin1" not in by_name  # admins are never exported
+    assert by_name["op1"] == users["op1"].id  # original ids preserved
+
+    # users sequence resynced — a new account can't collide with restored ids
+    session.add(User(username="after", password_hash="x", role=UserRole.VIEWER))
+    await session.commit()
+
+
+async def test_restore_ignores_admin_rows_in_file(client, session):
+    session.add(User(username="keeper", password_hash="x", role=UserRole.ADMIN))
+    await session.commit()
+    payload = _envelope_bytes(
+        {
+            "users": [
+                {"id": 5, "username": "sneaky", "password_hash": "h", "role": "admin"},
+                {"id": 6, "username": "op", "password_hash": "h", "role": "operator"},
+            ]
+        },
+        includes_users=True,
+    )
+    r = await _restore(client, payload)
+    assert r.status_code == 200, r.text
+    report = r.json()
+    assert (
+        "1 admin account(s) ignored — admins are never restored"
+        in report["warnings"]
+    )
+    assert await _usernames(session) == {"keeper", "op"}
+
+
+async def test_restore_user_pk_collision_with_admin(client, session):
+    admin = User(username="boss", password_hash="x", role=UserRole.ADMIN)
+    session.add(admin)
+    await session.commit()
+    await session.refresh(admin)
+    payload = _envelope_bytes(
+        {
+            "users": [
+                {
+                    "id": admin.id,
+                    "username": "impostor",
+                    "password_hash": "h",
+                    "role": "viewer",
+                },
+                {
+                    "id": admin.id + 100,
+                    "username": "fine",
+                    "password_hash": "h",
+                    "role": "viewer",
+                },
+            ]
+        },
+        includes_users=True,
+    )
+    r = await _restore(client, payload)
+    assert r.status_code == 200, r.text
+    assert (
+        f"user 'impostor' skipped: id {admin.id} in use by an admin account"
+        in r.json()["warnings"]
+    )
+    assert await _usernames(session) == {"boss", "fine"}
+
+
+async def test_restore_users_invalid_role_skipped(client, session):
+    session.add(User(username="keeper", password_hash="x", role=UserRole.ADMIN))
+    await session.commit()
+    payload = _envelope_bytes(
+        {
+            "users": [
+                {"id": 2, "username": "bad", "password_hash": "h", "role": "superuser"},
+                {"id": 3, "username": "good", "password_hash": "h", "role": "viewer"},
+            ]
+        },
+        includes_users=True,
+    )
+    r = await _restore(client, payload)
+    assert r.status_code == 200, r.text
+    assert "user 'bad' skipped: unknown role 'superuser'" in r.json()["warnings"]
+    assert await _usernames(session) == {"keeper", "good"}
+
+
+async def test_restore_users_empty_set_clears_non_admins(client, session):
+    session.add(User(username="keeper", password_hash="x", role=UserRole.ADMIN))
+    session.add(User(username="gone", password_hash="x", role=UserRole.VIEWER))
+    await session.commit()
+    payload = _envelope_bytes({"users": []}, includes_users=True)
+    r = await _restore(client, payload)
+    assert r.status_code == 200, r.text
+    assert await _usernames(session) == {"keeper"}
+
+
+async def test_dry_run_reports_users(client, session):
+    await _mkusers(session)
+    payload = await _backup_bytes(client, include_users=1)
+
+    r = await _restore(client, payload, dry_run=1)
+    assert r.status_code == 200, r.text
+    preview = r.json()
+    assert preview["includes_users"] is True
+    assert preview["tables"]["users"] == 3
+
+    n = await session.execute(text("SELECT COUNT(*) FROM users"))
+    assert n.scalar() == 4  # preview wrote nothing
+
+
+async def test_users_table_without_flag_is_skipped(client, session):
+    """A forged users table without the includes_users flag is treated as
+    unknown and the real users table is left untouched."""
+    session.add(User(username="keeper", password_hash="x", role=UserRole.ADMIN))
+    await session.commit()
+    payload = _envelope_bytes(
+        {"users": [{"id": 9, "username": "x", "password_hash": "h", "role": "viewer"}]}
+    )
+    r = await _restore(client, payload)
+    assert r.status_code == 200, r.text
+    assert "unknown table 'users' skipped" in r.json()["warnings"]
+    assert await _usernames(session) == {"keeper"}

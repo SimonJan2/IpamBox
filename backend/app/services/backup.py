@@ -1,10 +1,14 @@
 """Full-database backup & restore.
 
-Everything except the `users` table is exported into a single gzipped JSON
-envelope and restored by wiping the data tables and re-inserting rows with
-their original primary keys. Preserved IDs mean polymorphic references
-(tag_assignments.object_id, change_log.object_id) and every foreign key stay
-valid with no remapping.
+Data tables are exported into a single gzipped JSON envelope and restored by
+wiping them and re-inserting rows with their original primary keys. Preserved
+IDs mean polymorphic references (tag_assignments.object_id,
+change_log.object_id) and every foreign key stay valid with no remapping.
+
+The `users` table is excluded by default. On request
+(`build_backup(include_users=True)`) non-admin accounts are exported and the
+envelope is flagged `includes_users`; restore then replaces the non-admin
+set. Admin accounts are never exported and never modified by a restore.
 
 Extensibility contract
 ----------------------
@@ -45,6 +49,7 @@ from app.models.prefix import Prefix
 from app.models.scan_job import ScanJob
 from app.models.site import Site
 from app.models.tag import Tag, TagAssignment
+from app.models.user import User, UserRole
 from app.models.vlan import VLAN, VLANGroup
 from app.models.vrf import VRF
 
@@ -54,7 +59,9 @@ settings = get_settings()
 FORMAT = "ipambox-backup"
 FORMAT_VERSION = 1
 
-# Tables never included in a backup (auth state survives on the target server).
+# Tables outside the BACKUP_TABLES registry (auth state survives on the
+# target server). `users` is exported only via build_backup(include_users=
+# True) — it must never join the registry, whose TRUNCATE would wipe admins.
 EXCLUDED_TABLES = {"users"}
 
 
@@ -163,8 +170,13 @@ def _alembic_revisions() -> list[str]:
     return [rev.revision for rev in script.walk_revisions()]
 
 
-async def build_backup(session: AsyncSession) -> bytes:
-    """Serialize every registered table into the gzipped JSON envelope."""
+async def build_backup(session: AsyncSession, include_users: bool = False) -> bytes:
+    """Serialize every registered table into the gzipped JSON envelope.
+
+    With include_users=True the envelope also carries every user EXCEPT
+    admins (password hashes included — handle the file like a secret) and
+    is flagged "includes_users" so restore knows to expect it.
+    """
     from app.main import APP_VERSION
 
     tables: dict[str, list[dict]] = {}
@@ -182,6 +194,20 @@ async def build_backup(session: AsyncSession) -> bytes:
         )
         tables[spec.name] = [_serialize_row(spec.model, r) for r in rows]
 
+    if include_users:
+        users = (
+            (
+                await session.execute(
+                    select(User)
+                    .where(User.role != UserRole.ADMIN)
+                    .order_by(User.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        tables["users"] = [_serialize_row(User, u) for u in users]
+
     revisions = _alembic_revisions()
     envelope = {
         "format": FORMAT,
@@ -191,6 +217,8 @@ async def build_backup(session: AsyncSession) -> bytes:
         "created_at": datetime.utcnow().isoformat(),
         "tables": tables,
     }
+    if include_users:
+        envelope["includes_users"] = True
     return gzip.compress(json.dumps(envelope).encode("utf-8"))
 
 
@@ -208,6 +236,8 @@ class BackupPreview:
     created_at: str | None
     tables: dict[str, int]
     warnings: list[str] = field(default_factory=list)
+    # envelope flag: `users` is a known table only when this is true
+    includes_users: bool = False
     # parsed payload, kept for restore so the file isn't decompressed twice
     envelope: dict = field(default_factory=dict)
 
@@ -247,7 +277,10 @@ def inspect_backup(payload: bytes) -> BackupPreview:
     tables = envelope.get("tables")
     if not isinstance(tables, dict):
         raise BackupError("backup has no 'tables' object")
+    includes_users = bool(envelope.get("includes_users"))
     known_names = {spec.name for spec in BACKUP_TABLES}
+    if includes_users:
+        known_names |= {"users"}
     counts: dict[str, int] = {}
     for name, rows in tables.items():
         if name not in known_names:
@@ -265,6 +298,7 @@ def inspect_backup(payload: bytes) -> BackupPreview:
         created_at=envelope.get("created_at"),
         tables=counts,
         warnings=warnings,
+        includes_users=includes_users,
         envelope=envelope,
     )
 
@@ -294,13 +328,82 @@ def _resync_sequence_sql(table: str) -> str:
     )
 
 
+async def _restore_users(
+    session: AsyncSession, raw_rows: list[dict], warnings: list[str]
+) -> int:
+    """Replace the non-admin user set from a users-inclusive envelope.
+
+    Admin rows in the payload are dropped (backups never carry them, but a
+    hand-crafted file might) and every admin on the target is preserved —
+    rows colliding with an admin id or username are skipped, not failed.
+    """
+    valid_roles = {r.value for r in UserRole}
+    kept: list[dict] = []
+    ignored_admins = 0
+    for raw in raw_rows:
+        if not isinstance(raw, dict):
+            warnings.append("users: non-object row skipped")
+            continue
+        role = raw.get("role")
+        if role == UserRole.ADMIN.value:
+            ignored_admins += 1
+            continue
+        if role not in valid_roles:
+            warnings.append(
+                f"user {raw.get('username')!r} skipped: unknown role {role!r}"
+            )
+            continue
+        kept.append(raw)
+    if ignored_admins:
+        warnings.append(
+            f"{ignored_admins} admin account(s) ignored — admins are never restored"
+        )
+
+    # Replace semantics: the non-admin set is fully replaced, admins untouched.
+    await session.execute(text("DELETE FROM users WHERE role <> 'admin'"))
+    admin_ids = set((await session.execute(select(User.id))).scalars())
+    admin_names = set((await session.execute(select(User.username))).scalars())
+
+    columns = {c.key: c for c in User.__table__.columns}
+    rows: list[dict] = []
+    seen_unknown: set[str] = set()
+    for raw in kept:
+        if raw.get("id") in admin_ids:
+            warnings.append(
+                f"user {raw.get('username')!r} skipped: "
+                f"id {raw['id']} in use by an admin account"
+            )
+            continue
+        if raw.get("username") in admin_names:
+            warnings.append(
+                f"user {raw.get('username')!r} skipped: "
+                "username in use by an admin account"
+            )
+            continue
+        row: dict = {}
+        for key, v in raw.items():
+            col = columns.get(key)
+            if col is None:
+                if key not in seen_unknown:
+                    seen_unknown.add(key)
+                    warnings.append(f"users: unknown column {key!r} skipped")
+                continue
+            row[key] = _from_json(col, v)
+        rows.append(row)
+    if rows:
+        await session.execute(User.__table__.insert(), rows)
+    return len(rows)
+
+
 async def restore_backup(
     session: AsyncSession, preview: BackupPreview, actor: str, filename: str
 ) -> dict:
     """Wipe all registered tables and re-load them from the backup envelope.
 
     Runs inside the session's implicit transaction — any failure rolls back
-    completely. `users` is never truncated, so the current login survives.
+    completely. `users` is never truncated: a users-inclusive envelope
+    replaces only non-admin accounts, so admins (and the current login)
+    always survive.
     """
     tables: dict[str, list[dict]] = preview.envelope["tables"]
     warnings = list(preview.warnings)
@@ -344,11 +447,20 @@ async def restore_backup(
                 .values({col: val})
             )
 
+        if preview.includes_users:
+            counts["users"] = await _restore_users(
+                session, tables.get("users") or [], warnings
+            )
+
         for spec in BACKUP_TABLES:
             if _has_serial_id(spec):
                 await session.execute(
                     text(_resync_sequence_sql(spec.name)), {"t": spec.name}
                 )
+        if preview.includes_users:
+            await session.execute(
+                text(_resync_sequence_sql("users")), {"t": "users"}
+            )
 
         await session.execute(
             ChangeLog.__table__.insert(),

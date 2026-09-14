@@ -5,7 +5,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.db import get_session
-from app.core.deps import BACKUP_ACCESS, SYSTEM_ADMIN, require_auth, require_perm
+from app.core.deps import (
+    BACKUP_ACCESS,
+    SYSTEM_ADMIN,
+    has_perm,
+    require_auth,
+    require_perm,
+)
 from app.models.user import User
 from app.schemas.backup import (
     BackupFileInfo,
@@ -25,11 +31,20 @@ MAX_BACKUP_BYTES = 256 * 1024 * 1024  # sanity cap on uploads
 
 @router.get("")
 async def download_backup(
+    include_users: bool = Query(default=False),
     session: AsyncSession = Depends(get_session),
-    _user: User | None = Depends(require_perm(BACKUP_ACCESS)),
+    user: User | None = Depends(require_auth),
 ):
-    """Download a full snapshot (every table except users) as .json.gz."""
-    payload = await svc.build_backup(session)
+    """Download a full snapshot (every table except users) as .json.gz.
+
+    ?include_users=1 also exports non-admin accounts (admins are never
+    exported). The payload then contains password hashes, so it requires
+    system:admin instead of the usual backup:access.
+    """
+    perm = SYSTEM_ADMIN if include_users else BACKUP_ACCESS
+    if not has_perm(user, perm):
+        raise HTTPException(403, f"requires {perm} permission")
+    payload = await svc.build_backup(session, include_users=include_users)
     return Response(
         payload,
         media_type="application/gzip",
@@ -103,6 +118,7 @@ async def restore(
             created_at=preview.created_at,
             tables=preview.tables,
             warnings=preview.warnings,
+            includes_users=preview.includes_users,
         )
 
     try:

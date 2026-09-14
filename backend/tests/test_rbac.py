@@ -367,3 +367,50 @@ async def test_insecure_mode_bypasses_all_guards(client: AsyncClient):
     status = (await client.get("/api/v1/auth/status")).json()
     assert status["allow_insecure"] is True
     assert "users:manage" in status["permissions"]
+
+
+# ------------------------------------------------------- users-inclusive backup
+
+
+async def test_operator_cannot_export_users(
+    client: AsyncClient, session: AsyncSession, auth_on
+):
+    await mkuser(session, "op", UserRole.OPERATOR)
+    await login(client, "op")
+
+    # plain backup is fine for operators
+    assert (await client.get("/api/v1/backup")).status_code == 200
+    # ...but a users-inclusive export carries password hashes -> admin only
+    r = await client.get("/api/v1/backup", params={"include_users": 1})
+    assert r.status_code == 403
+
+
+async def test_restore_users_backup_keeps_admin_session(
+    client: AsyncClient, session: AsyncSession, auth_on
+):
+    await mkuser(session, "a", UserRole.ADMIN)
+    op = await mkuser(session, "op", UserRole.OPERATOR)
+    await login(client, "a")
+
+    r = await client.get("/api/v1/backup", params={"include_users": 1})
+    assert r.status_code == 200
+
+    # non-admin changes on the target are replaced by the restore
+    await session.delete(op)
+    await session.commit()
+
+    r = await client.post(
+        "/api/v1/backup/restore",
+        content=r.content,
+        headers={"content-type": "application/gzip"},
+    )
+    assert r.status_code == 200, r.text
+
+    # the restoring admin's session still maps to their preserved user id
+    me = await client.get("/api/v1/auth/me")
+    assert me.status_code == 200
+    assert me.json()["username"] == "a"
+
+    # and the non-admin set was replaced from the file
+    restored = await session.scalar(select(User).where(User.username == "op"))
+    assert restored is not None and restored.role == UserRole.OPERATOR

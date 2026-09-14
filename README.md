@@ -75,9 +75,10 @@ Scapy raw-socket scanning · Next.js 15 dark-mode UI
   **Roles & permissions** below.
 - **Ops endpoints**: `GET /healthz`, `GET /readyz` (checks DB + Redis),
   `GET /metrics` (Prometheus text format with object counts).
-- **Backup & restore**: download a full snapshot (every table except the
-  login accounts) as a single `.json.gz` from **Settings**, and restore it
-  on any IpamBox server — even a fresh install. Restores are atomic,
+- **Backup & restore**: download a full snapshot as a single `.json.gz`
+  from **Settings** — user accounts are excluded by default (admins always
+  are), with an admin-only opt-in for non-admin accounts — and restore it
+  on any IpamBox server, even a fresh install. Restores are atomic,
   preserve IDs, and keep you logged in. Optional scheduled snapshots to a
   docker volume via `BACKUP_INTERVAL_MINUTES`.
 - **Settings area**: sidebar-organized sections under `/settings` —
@@ -219,7 +220,7 @@ mode) — every request gets full permissions.
 | `GET /healthz` | liveness — process up |
 | `GET /readyz` | readiness — checks DB + Redis connectivity |
 | `GET /metrics` | Prometheus text: object counts, scan status, version info |
-| `GET /api/v1/backup` | download a full backup (`*.json.gz`) |
+| `GET /api/v1/backup` | download a full backup (`*.json.gz`); `?include_users=1` also exports non-admin accounts (admin only) |
 | `GET /api/v1/backup/files` | list scheduled snapshots in `BACKUP_DIR` |
 | `POST /api/v1/backup/restore` | restore an uploaded backup (`?dry_run=1` previews) |
 | `GET/PATCH /api/v1/settings` | read/patch runtime settings — patch `{"key": null}` resets a key to its env value (PATCH: admin only) |
@@ -233,10 +234,12 @@ mode) — every request gets full permissions.
 **Restoring to a fresh server**: bring the stack up, create the admin
 account at `/setup`, log in, then upload the backup under **Settings →
 Restore**. All data tables are replaced inside one transaction with their
-original IDs; the `users` table (and your session) are never touched.
-Backups record the Alembic schema revision — a file from a newer IpamBox
-release is refused rather than half-applied. See **Backup & Restore**
-below for the full rundown.
+original IDs; the `users` table is never touched unless the file was
+exported with `?include_users=1` — and even then only non-admin accounts
+are replaced, so the admin you just created (and your session) always
+survives. Backups record the Alembic schema revision — a file from a newer
+IpamBox release is refused rather than half-applied. See **Backup &
+Restore** below for the full rundown.
 
 Example Prometheus scrape config:
 
@@ -252,14 +255,20 @@ scrape_configs:
 A backup is a **single portable file** (`ipambox-backup-<ts>.json.gz`)
 containing the whole database state — sites, VRFs, VLAN groups + VLANs,
 prefixes, IP ranges, addresses, tags + assignments, runtime settings, the
-full changelog and scan history. The `users` table is deliberately
-excluded: the admin
-account always belongs to the server you're restoring *on*.
+full changelog and scan history. The `users` table is excluded by
+default: accounts usually belong to the server you're restoring *on*.
+Admins can opt in to exporting **non-admin** accounts (operators,
+contributors, viewers) — admin accounts are never written into a backup,
+so a file can never carry an admin's credentials.
 
 ### Take a backup
 
-- **UI**: **Settings → Backup → Download backup**.
+- **UI**: **Settings → Backup → Download backup**. Admins can tick
+  **Include user accounts (non-admin)** first — the resulting file
+  contains password hashes, so store it like a secret.
 - **API**: `curl -b cookies.txt -OJ http://localhost:8001/api/v1/backup`
+  (append `?include_users=1` for non-admin accounts; requires the
+  Administrator role instead of the usual backup permission).
 - **Scheduled**: set `BACKUP_INTERVAL_MINUTES` (e.g. `1440` for daily) and
   the worker writes timestamped snapshots into the `backupdata` docker
   volume (`BACKUP_DIR`), keeping the newest `BACKUP_KEEP` files. They show
@@ -297,6 +306,11 @@ What restore guarantees:
   was taken are marked `failed` (they can't resume on the new server).
 - **Fresh-install friendly** — the migration-seeded `Global` VRF is
   replaced by the backup's copy, not duplicated.
+- **Admin-safe** — admin accounts are never exported and never modified by
+  a restore. A users-inclusive file replaces only the *non-admin* set:
+  admin rows inside it are ignored (with a warning), and payload rows
+  colliding with an existing admin id/username are skipped rather than
+  overwriting the admin.
 
 Avoid restoring while a scan is running — wait for it to finish or cancel
 it first.
@@ -310,9 +324,13 @@ it first.
   "app_version": "0.2.0",
   "alembic_revision": "0009_app_settings",
   "created_at": "2026-09-13T15:07:11",
+  "includes_users": true,
   "tables": { "sites": [ { "id": 1, "name": "HQ", ... } ], "...": [] }
 }
 ```
+
+`includes_users` is present only on `?include_users=1` exports — it marks
+`tables.users` (non-admin accounts) as restorable.
 
 **For developers**: which tables are backed up lives in
 `BACKUP_TABLES` in `backend/app/services/backup.py` — one registry entry
