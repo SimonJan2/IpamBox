@@ -14,10 +14,15 @@ from sqlalchemy.orm import Session as SyncSession
 
 from app.core.security import get_actor
 from app.models.app_setting import AppSetting
+from app.models.asset import Asset
+from app.models.certificate import Certificate
 from app.models.change_log import ChangeLog
+from app.models.circuit import Circuit
+from app.models.import_batch import ImportBatch
 from app.models.ip_address import IPAddress
 from app.models.ip_range import IPRange
 from app.models.prefix import Prefix
+from app.models.service import Service
 from app.models.site import Site
 from app.models.tag import Tag, TagAssignment
 from app.models.user import User
@@ -36,6 +41,11 @@ AUDITED_MODELS: tuple = (
     VLANGroup,
     AppSetting,
     User,
+    ImportBatch,
+    Circuit,
+    Certificate,
+    Asset,
+    Service,
 )
 # churn-only columns that produce noise, never signal
 SKIP_FIELDS = {"updated_at", "last_seen", "password_hash"}

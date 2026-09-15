@@ -236,13 +236,16 @@ async def list_addresses(
         )
     rows = (await session.execute(stmt)).scalars().all()
     if q:
-        ql = q.lower()
+        from app.services.workbook.normalize import fold_hebrew
+
+        ql = fold_hebrew(q.lower())
         rows = [
             r
             for r in rows
             if ql in str(r.address)
-            or (r.hostname and ql in r.hostname.lower())
+            or (r.hostname and ql in fold_hebrew(r.hostname.lower()))
             or (r.mac_address and ql in r.mac_address.lower())
+            or (r.description and ql in fold_hebrew(r.description.lower()))
         ]
     return rows
 

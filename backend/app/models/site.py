@@ -13,6 +13,15 @@ class Site(Base):
     name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     slug: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     description: Mapped[str | None] = mapped_column(Text)
+    # Short code from the sites master list (e.g. "ALNB"); unique when set.
+    code: Mapped[str | None] = mapped_column(String(16), unique=True, index=True)
+    # The N in 10.{N}.0.0 — links imported site sheets to this site.
+    site_number: Mapped[int | None] = mapped_column(index=True)
+    # Raw size class from the workbook (קטן/בינוני/גדול …) — kept as text.
+    size: Mapped[str | None] = mapped_column(String(32))
+    is_active: Mapped[bool] = mapped_column(default=True, server_default="true")
+    contact: Mapped[str | None] = mapped_column(Text)
+    address: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     vrfs: Mapped[list["VRF"]] = relationship(back_populates="site")  # noqa: F821

@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     backup_interval_minutes: int = 0   # >0 -> recurring backups on the worker
     backup_keep: int = 14              # scheduled files retained on disk
 
+    # Import settings — uploaded workbooks persist under import_dir so a
+    # wizard can preview/commit without re-uploading.
+    import_dir: str = ""             # empty -> <backup_dir>/imports
+    import_keep: int = 20            # stored workbooks retained on disk
+
     # Auth settings (env vars are IPAMBOX_*)
     ipambox_password: str = ""  # pre-provision the admin password
     ipambox_password_file: str = ""  # path to a file holding the password (wins over above)
@@ -52,6 +57,12 @@ class Settings(BaseSettings):
     @property
     def scan_exclude_network_list(self) -> list[str]:
         return [n.strip() for n in self.scan_exclude_networks.split(",") if n.strip()]
+
+    @property
+    def import_dir_path(self):
+        from pathlib import Path
+
+        return Path(self.import_dir) if self.import_dir else Path(self.backup_dir) / "imports"
 
     @property
     def sync_database_url(self) -> str:

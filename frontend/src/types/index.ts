@@ -58,6 +58,12 @@ export interface Site {
   name: string;
   slug: string;
   description: string | null;
+  code: string | null;
+  site_number: number | null;
+  size: string | null;
+  is_active: boolean;
+  contact: string | null;
+  address: string | null;
   created_at: string;
 }
 
@@ -109,6 +115,12 @@ export interface IpAddress {
   nat_inside_id: number | null;
   open_ports: number[] | null;
   device_type: string | null;
+  serial_number: string | null;
+  switch_name: string | null;
+  switch_port: string | null;
+  counter_location: string | null;
+  custom_fields: Record<string, unknown> | null;
+  import_batch_id: number | null;
   last_seen: string | null;
   notes: string | null;
   created_at: string;
@@ -154,6 +166,12 @@ export interface DashboardStats {
   devices_reserved: number;
   scans_total: number;
   last_scan: ScanJob | null;
+  circuits_total: number;
+  certificates_total: number;
+  certs_expiring_30d: number;
+  assets_total: number;
+  services_total: number;
+  mac_mismatches: number;
 }
 
 export interface PrefixNode {
@@ -317,4 +335,112 @@ export interface SessionOut {
   ua: string | null;
   expires_in: number | null;
   current: boolean;
+}
+
+export type ImportBatchStatus = "draft" | "committed" | "failed";
+export type AssetKind = "hardware" | "software";
+export type SheetFamily =
+  | "sites_master"
+  | "circuits"
+  | "certificates"
+  | "assets"
+  | "services"
+  | "inventory"
+  | "site_sheet"
+  | "empty"
+  | "unknown";
+
+export interface ImportBatch {
+  id: number;
+  filename: string;
+  sha256: string;
+  status: ImportBatchStatus;
+  stats: Record<string, unknown> | null;
+  actor: string | null;
+  created_at: string;
+  committed_at: string | null;
+}
+
+export interface SheetPreview {
+  sheet: string;
+  family: SheetFamily;
+  rows: number;
+  headers: string[];
+  site_id: number | null;
+  site_name: string | null;
+  matched_by: "octet" | "code" | "name" | "override" | null;
+  warnings: string[];
+}
+
+export interface RowResult {
+  sheet: string;
+  row: number;
+  action: "create" | "update" | "skip" | "conflict" | "error";
+  detail: string;
+}
+
+export interface Circuit {
+  id: number;
+  env: string | null;
+  site_id: number | null;
+  site_number: number | null;
+  site_code: string | null;
+  site_name: string | null;
+  line_type: string | null;
+  bezeq_circuit_id: string | null;
+  node: string | null;
+  bw_down: string | null;
+  bw_up: string | null;
+  wan_ip: string | null;
+  app_client_num: string | null;
+  app_client_name: string | null;
+  app_service_type: string | null;
+  contact: string | null;
+  status: string | null;
+  notes: string | null;
+  import_batch_id: number | null;
+  created_at: string;
+}
+
+export interface Certificate {
+  id: number;
+  platform: string | null;
+  target: string | null;
+  server_name: string | null;
+  cert_name: string | null;
+  expires_on: string | null;
+  serial_raw: string | null;
+  notes: string | null;
+  import_batch_id: number | null;
+  created_at: string;
+}
+
+export interface Asset {
+  id: number;
+  kind: AssetKind;
+  category: string | null;
+  vendor: string | null;
+  model: string | null;
+  purpose: string | null;
+  version: string | null;
+  eol_on: string | null;
+  support_status: string | null;
+  serial_number: string | null;
+  site_id: number | null;
+  notes: string | null;
+  import_batch_id: number | null;
+  created_at: string;
+}
+
+export interface Service {
+  id: number;
+  name: string | null;
+  beneficiary: string | null;
+  site_id: number | null;
+  site_code: string | null;
+  doc_path: string | null;
+  test_info: string | null;
+  notes: string | null;
+  import_batch_id: number | null;
+  created_at: string;
 }

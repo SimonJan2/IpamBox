@@ -41,12 +41,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.models.app_setting import AppSetting
+from app.models.asset import Asset
 from app.models.base import Base
+from app.models.certificate import Certificate
 from app.models.change_log import ChangeLog
+from app.models.circuit import Circuit
+from app.models.import_batch import ImportBatch
 from app.models.ip_address import IPAddress
 from app.models.ip_range import IPRange
 from app.models.prefix import Prefix
 from app.models.scan_job import ScanJob
+from app.models.service import Service
 from app.models.site import Site
 from app.models.tag import Tag, TagAssignment
 from app.models.user import User, UserRole
@@ -99,7 +104,12 @@ BACKUP_TABLES: tuple[BackupTable, ...] = (
     BackupTable("vlans", VLAN),
     BackupTable("prefixes", Prefix),
     BackupTable("ip_ranges", IPRange),
+    BackupTable("import_batches", ImportBatch),
     BackupTable("ip_addresses", IPAddress, deferred_fks=("nat_inside_id",)),
+    BackupTable("circuits", Circuit),
+    BackupTable("certificates", Certificate),
+    BackupTable("assets", Asset),
+    BackupTable("services", Service),
     BackupTable("tags", Tag),
     BackupTable("tag_assignments", TagAssignment),
     BackupTable("scan_jobs", ScanJob, sanitize=_fail_inflight_scans),

@@ -124,8 +124,14 @@ async def list_vlans(
         stmt = stmt.where(VLAN.site_id == site_id)
     rows = (await session.execute(stmt)).scalars().all()
     if q:
-        ql = q.lower()
-        rows = [v for v in rows if ql in v.name.lower() or ql in str(v.vid)]
+        from app.services.workbook.normalize import fold_hebrew
+
+        ql = fold_hebrew(q.lower())
+        rows = [
+            v
+            for v in rows
+            if ql in fold_hebrew(v.name.lower()) or ql in str(v.vid)
+        ]
     return rows
 
 

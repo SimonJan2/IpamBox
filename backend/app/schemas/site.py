@@ -7,12 +7,24 @@ class SiteCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     slug: str | None = Field(default=None, max_length=255)
     description: str | None = None
+    code: str | None = Field(default=None, max_length=16)
+    site_number: int | None = None
+    size: str | None = Field(default=None, max_length=32)
+    is_active: bool = True
+    contact: str | None = None
+    address: str | None = None
 
 
 class SiteUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     slug: str | None = Field(default=None, max_length=255)
     description: str | None = None
+    code: str | None = Field(default=None, max_length=16)
+    site_number: int | None = None
+    size: str | None = Field(default=None, max_length=32)
+    is_active: bool | None = None
+    contact: str | None = None
+    address: str | None = None
 
 
 class SiteOut(BaseModel):
@@ -22,4 +34,10 @@ class SiteOut(BaseModel):
     name: str
     slug: str
     description: str | None
+    code: str | None
+    site_number: int | None
+    size: str | None
+    is_active: bool
+    contact: str | None
+    address: str | None
     created_at: datetime

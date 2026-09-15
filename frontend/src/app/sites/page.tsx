@@ -8,6 +8,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
 import type { Site } from "@/types";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -38,7 +39,17 @@ function SiteDialog({
   site: Site | null;
   onSaved: () => void;
 }) {
-  const [form, setForm] = useState({ name: "", slug: "", description: "" });
+  const [form, setForm] = useState({
+    name: "",
+    slug: "",
+    description: "",
+    code: "",
+    site_number: "",
+    size: "",
+    is_active: true,
+    contact: "",
+    address: "",
+  });
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -47,6 +58,12 @@ function SiteDialog({
         name: site?.name ?? "",
         slug: site?.slug ?? "",
         description: site?.description ?? "",
+        code: site?.code ?? "",
+        site_number: site?.site_number?.toString() ?? "",
+        size: site?.size ?? "",
+        is_active: site?.is_active ?? true,
+        contact: site?.contact ?? "",
+        address: site?.address ?? "",
       });
     }
   }, [open, site]);
@@ -58,6 +75,12 @@ function SiteDialog({
         name: form.name,
         slug: form.slug || undefined,
         description: form.description || null,
+        code: form.code || null,
+        site_number: form.site_number ? +form.site_number : null,
+        size: form.size || null,
+        is_active: form.is_active,
+        contact: form.contact || null,
+        address: form.address || null,
       };
       if (site) {
         await api.patch(`/api/v1/sites/${site.id}`, body);
@@ -101,10 +124,66 @@ function SiteDialog({
           <div className="grid gap-1.5">
             <Label>Description</Label>
             <Input
+              dir="auto"
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
             />
           </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="grid gap-1.5">
+              <Label>Code</Label>
+              <Input
+                dir="ltr"
+                placeholder="ALNB"
+                value={form.code}
+                onChange={(e) => setForm({ ...form, code: e.target.value })}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Site number</Label>
+              <Input
+                dir="ltr"
+                placeholder="2"
+                value={form.site_number}
+                onChange={(e) =>
+                  setForm({ ...form, site_number: e.target.value })
+                }
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Size</Label>
+              <Input
+                dir="auto"
+                placeholder="קטן/בינוני/גדול"
+                value={form.size}
+                onChange={(e) => setForm({ ...form, size: e.target.value })}
+              />
+            </div>
+          </div>
+          <div className="grid gap-1.5">
+            <Label>Contact</Label>
+            <Input
+              dir="auto"
+              value={form.contact}
+              onChange={(e) => setForm({ ...form, contact: e.target.value })}
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <Label>Address</Label>
+            <Input
+              dir="auto"
+              value={form.address}
+              onChange={(e) => setForm({ ...form, address: e.target.value })}
+            />
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={form.is_active}
+              onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
+            />
+            Active site
+          </label>
         </div>
         <DialogFooter>
           <Button onClick={submit} disabled={busy || !form.name}>
@@ -183,7 +262,9 @@ export default function SitesPage() {
   const filtered = sites.filter(
     (s) =>
       s.name.toLowerCase().includes(q.toLowerCase()) ||
-      s.slug.toLowerCase().includes(q.toLowerCase())
+      s.slug.toLowerCase().includes(q.toLowerCase()) ||
+      (s.code ?? "").toLowerCase().includes(q.toLowerCase()) ||
+      (s.site_number?.toString() ?? "").includes(q)
   );
 
   return (
@@ -215,24 +296,46 @@ export default function SitesPage() {
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
-              <TableHead>Slug</TableHead>
+              <TableHead>Code</TableHead>
+              <TableHead>#</TableHead>
+              <TableHead>Size</TableHead>
+              <TableHead>Status</TableHead>
               <TableHead>Description</TableHead>
-              <TableHead>Created</TableHead>
               <TableHead className="w-24 text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filtered.map((s) => (
               <TableRow key={s.id}>
-                <TableCell className="font-medium">{s.name}</TableCell>
-                <TableCell className="font-mono text-muted-foreground">
-                  {s.slug}
+                <TableCell dir="auto" className="font-medium">
+                  {s.name}
+                  <span className="ml-2 font-mono text-xs text-muted-foreground">
+                    {s.slug}
+                  </span>
                 </TableCell>
-                <TableCell className="text-muted-foreground">
+                <TableCell dir="ltr" className="font-mono text-muted-foreground">
+                  {s.code ?? "—"}
+                </TableCell>
+                <TableCell dir="ltr" className="font-mono text-muted-foreground">
+                  {s.site_number ?? "—"}
+                </TableCell>
+                <TableCell dir="auto" className="text-muted-foreground">
+                  {s.size ?? "—"}
+                </TableCell>
+                <TableCell>
+                  <Badge
+                    variant="outline"
+                    className={
+                      s.is_active
+                        ? "border-emerald-500/40 text-emerald-400"
+                        : "border-muted-foreground/40 text-muted-foreground"
+                    }
+                  >
+                    {s.is_active ? "active" : "inactive"}
+                  </Badge>
+                </TableCell>
+                <TableCell dir="auto" className="text-muted-foreground">
                   {s.description ?? "—"}
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {new Date(s.created_at).toLocaleDateString()}
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1">
@@ -264,7 +367,7 @@ export default function SitesPage() {
             {filtered.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={5}
+                  colSpan={7}
                   className="py-10 text-center text-muted-foreground"
                 >
                   No sites found.

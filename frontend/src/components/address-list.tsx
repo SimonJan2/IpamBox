@@ -484,13 +484,26 @@ export function AddressList({
             )}
           </span>
         </TableCell>
-        <TableCell className="max-w-48 truncate py-2">
+        <TableCell dir="auto" className="max-w-48 truncate py-2">
           {a.hostname ?? "—"}
         </TableCell>
         <TableCell className="max-w-52 truncate py-2">
-          <span className="font-mono text-xs">{a.mac_address ?? "—"}</span>
+          <span dir="ltr" className="font-mono text-xs">
+            {a.mac_address ?? "—"}
+          </span>
+          {!!a.custom_fields?.mac_mismatch && (
+            <span
+              className="ml-1 text-xs text-amber-400"
+              title={`MAC changed: was ${(a.custom_fields.mac_mismatch as { was?: string }).was ?? "?"}`}
+            >
+              ⚠
+            </span>
+          )}
           {a.vendor && (
-            <span className="text-xs text-muted-foreground"> · {a.vendor}</span>
+            <span dir="auto" className="text-xs text-muted-foreground">
+              {" "}
+              · {a.vendor}
+            </span>
           )}
         </TableCell>
         <TableCell

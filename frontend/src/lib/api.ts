@@ -51,12 +51,13 @@ export const api = {
       body,
       headers: { "content-type": contentType },
     }),
-  // Raw file body (a File is a Blob/BodyInit) — used by backup restore.
-  upload: <T>(path: string, file: File) =>
+  // Raw file body (a File is a Blob/BodyInit) — used by backup restore (.gz)
+  // and workbook import (.xlsx -> application/octet-stream).
+  upload: <T>(path: string, file: File, contentType = "application/gzip") =>
     req<T>(path, {
       method: "POST",
       body: file,
-      headers: { "content-type": "application/gzip" },
+      headers: { "content-type": contentType },
     }),
   patch: <T>(path: string, body: unknown) =>
     req<T>(path, { method: "PATCH", body: JSON.stringify(body) }),

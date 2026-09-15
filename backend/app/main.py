@@ -12,8 +12,13 @@ from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.core.deps import require_auth
 from app.core.redis import get_redis
+from app.models.asset import Asset
+from app.models.certificate import Certificate
+from app.models.circuit import Circuit
+from app.models.import_batch import ImportBatch
 from app.models.ip_address import IPAddress
 from app.models.ip_range import IPRange
+from app.models.service import Service
 from app.models.prefix import Prefix
 from app.models.scan_job import ScanJob, ScanStatus
 from app.models.site import Site
@@ -25,7 +30,7 @@ from app.models.vrf import VRF
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-APP_VERSION = "0.2.0"
+APP_VERSION = "0.3.0"
 
 
 @asynccontextmanager
@@ -96,6 +101,11 @@ async def metrics() -> str:
         tags = await s.scalar(select(func.count(Tag.id)))
         ranges = await s.scalar(select(func.count(IPRange.id)))
         users = await s.scalar(select(func.count(User.id)))
+        circuits = await s.scalar(select(func.count(Circuit.id)))
+        certificates = await s.scalar(select(func.count(Certificate.id)))
+        assets = await s.scalar(select(func.count(Asset.id)))
+        services = await s.scalar(select(func.count(Service.id)))
+        imports = await s.scalar(select(func.count(ImportBatch.id)))
         addr_by_status = (
             await s.execute(
                 select(IPAddress.status, func.count()).group_by(IPAddress.status)
@@ -118,6 +128,11 @@ async def metrics() -> str:
         f"ipambox_tags_total {tags or 0}",
         f"ipambox_ip_ranges_total {ranges or 0}",
         f"ipambox_users_total {users or 0}",
+        f"ipambox_circuits_total {circuits or 0}",
+        f"ipambox_certificates_total {certificates or 0}",
+        f"ipambox_assets_total {assets or 0}",
+        f"ipambox_services_total {services or 0}",
+        f"ipambox_import_batches_total {imports or 0}",
         "# TYPE ipambox_addresses_total gauge",
     ]
     for status, n in addr_by_status:
