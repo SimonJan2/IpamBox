@@ -17,3 +17,9 @@ class DashboardStats(BaseModel):
     devices_reserved: int
     scans_total: int
     last_scan: ScanJobOut | None = None
+    circuits_total: int = 0
+    certificates_total: int = 0
+    certs_expiring_30d: int = 0
+    assets_total: int = 0
+    services_total: int = 0
+    mac_mismatches: int = 0

@@ -6,6 +6,8 @@ from app.api.v1 import (
     changelog,
     dashboard,
     discovery,
+    entities,
+    imports,
     maintenance,
     prefixes,
     ranges,
@@ -34,3 +36,8 @@ api_router.include_router(changelog.router)
 api_router.include_router(tags.router)
 api_router.include_router(vlans.router)
 api_router.include_router(ranges.router)
+api_router.include_router(imports.router)
+api_router.include_router(entities.circuits_router)
+api_router.include_router(entities.certificates_router)
+api_router.include_router(entities.assets_router)
+api_router.include_router(entities.services_router)

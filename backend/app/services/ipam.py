@@ -1,5 +1,6 @@
 import ipaddress
 from collections.abc import Iterable
+from datetime import date, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -219,6 +220,45 @@ async def dashboard_stats(session: AsyncSession) -> dict:
         await session.execute(select(ScanJob).order_by(ScanJob.id.desc()).limit(1))
     ).scalar_one_or_none()
 
+    # workbook-imported entities
+    from app.models.asset import Asset
+    from app.models.certificate import Certificate
+    from app.models.circuit import Circuit
+    from app.models.service import Service
+
+    circuits_total = int(
+        (await session.execute(select(func.count(Circuit.id)))).scalar_one()
+    )
+    assets_total = int(
+        (await session.execute(select(func.count(Asset.id)))).scalar_one()
+    )
+    services_total = int(
+        (await session.execute(select(func.count(Service.id)))).scalar_one()
+    )
+    certificates_total = int(
+        (await session.execute(select(func.count(Certificate.id)))).scalar_one()
+    )
+    soon = date.today() + timedelta(days=30)
+    certs_expiring_30d = int(
+        (
+            await session.execute(
+                select(func.count(Certificate.id)).where(
+                    Certificate.expires_on.is_not(None),
+                    Certificate.expires_on <= soon,
+                )
+            )
+        ).scalar_one()
+    )
+    mac_mismatches = int(
+        (
+            await session.execute(
+                select(func.count(IPAddress.id)).where(
+                    IPAddress.custom_fields.has_key("mac_mismatch")  # noqa: W601
+                )
+            )
+        ).scalar_one()
+    )
+
     return {
         "sites_total": sites_total,
         "vrfs_total": vrfs_total,
@@ -233,11 +273,33 @@ async def dashboard_stats(session: AsyncSession) -> dict:
         "devices_reserved": by_status.get(IPStatus.RESERVED, 0),
         "scans_total": scans_total,
         "last_scan": last_scan,
+        "circuits_total": circuits_total,
+        "certificates_total": certificates_total,
+        "certs_expiring_30d": certs_expiring_30d,
+        "assets_total": assets_total,
+        "services_total": services_total,
+        "mac_mismatches": mac_mismatches,
     }
 
 
 def slugify(name: str) -> str:
     import re
+    import unicodedata
 
-    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    # \w keeps non-ASCII letters (Hebrew site names) instead of collapsing
+    # them all to the same "site" fallback; NFKC folds compatibility chars.
+    norm = unicodedata.normalize("NFKC", name).lower()
+    slug = re.sub(r"[^\w]+", "-", norm).strip("-")
     return slug or "site"
+
+
+async def slugify_unique(session: AsyncSession, name: str) -> str:
+    """slugify + dedup against existing site slugs (site, site-2, site-3…)."""
+    base = slugify(name)
+    existing = set((await session.execute(select(Site.slug))).scalars())
+    slug = base
+    n = 2
+    while slug in existing:
+        slug = f"{base}-{n}"
+        n += 1
+    return slug

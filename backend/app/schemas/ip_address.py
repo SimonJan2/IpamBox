@@ -28,6 +28,11 @@ class IPAddressCreate(BaseModel):
     status: IPStatus = IPStatus.ACTIVE
     role: IPRole | None = None
     nat_inside_id: int | None = None
+    serial_number: str | None = Field(default=None, max_length=128)
+    switch_name: str | None = Field(default=None, max_length=255)
+    switch_port: str | None = Field(default=None, max_length=64)
+    counter_location: str | None = Field(default=None, max_length=255)
+    custom_fields: dict | None = None
     notes: str | None = None
 
     @field_validator("address")
@@ -51,6 +56,11 @@ class IPAddressUpdate(BaseModel):
     status: IPStatus | None = None
     role: IPRole | None = None
     nat_inside_id: int | None = None
+    serial_number: str | None = Field(default=None, max_length=128)
+    switch_name: str | None = Field(default=None, max_length=255)
+    switch_port: str | None = Field(default=None, max_length=64)
+    counter_location: str | None = Field(default=None, max_length=255)
+    custom_fields: dict | None = None
     notes: str | None = None
     prefix_id: int | None = None
 
@@ -76,6 +86,12 @@ class IPAddressOut(BaseModel):
     nat_inside_id: int | None
     open_ports: list[int] | None
     device_type: str | None
+    serial_number: str | None
+    switch_name: str | None
+    switch_port: str | None
+    counter_location: str | None
+    custom_fields: dict | None
+    import_batch_id: int | None
     last_seen: datetime | None
     notes: str | None
     created_at: datetime

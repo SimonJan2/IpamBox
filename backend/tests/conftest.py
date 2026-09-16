@@ -18,16 +18,22 @@ def _base_dsn() -> str:
     return url.replace("postgresql+asyncpg://", "postgresql://")
 
 
+def _split_dsn(url: str) -> tuple[str, str]:
+    """Split 'postgresql://host/db?params' into ('postgresql://host', '?params')."""
+    base, _, query = url.partition("?")
+    return base.rsplit("/", 1)[0], f"?{query}" if query else ""
+
+
 def test_url() -> str:
-    base = _base_dsn().rsplit("/", 1)[0]
-    return f"{base}/{TEST_DB_NAME}".replace("postgresql://", "postgresql+asyncpg://")
+    root, query = _split_dsn(_base_dsn())
+    return f"{root}/{TEST_DB_NAME}{query}".replace("postgresql://", "postgresql+asyncpg://")
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session", autouse=True)
 async def _prepare_test_db():
     """Create the test database (if missing) and run migrations against it."""
-    root = _base_dsn().rsplit("/", 1)[0]
-    conn = await asyncpg.connect(f"{root}/postgres")
+    root, query = _split_dsn(_base_dsn())
+    conn = await asyncpg.connect(f"{root}/postgres{query}")
     try:
         exists = await conn.fetchval("SELECT 1 FROM pg_database WHERE datname=$1", TEST_DB_NAME)
         if not exists:
@@ -61,7 +67,8 @@ async def session(engine, sf):
             text(
                 "TRUNCATE scan_jobs, ip_addresses, ip_ranges, prefixes, vrfs, "
                 "sites, users, change_log, tag_assignments, tags, vlans, "
-                "vlan_groups, app_settings RESTART IDENTITY CASCADE"
+                "vlan_groups, app_settings, import_batches, circuits, "
+                "certificates, assets, services RESTART IDENTITY CASCADE"
             )
         )
         await conn.execute(

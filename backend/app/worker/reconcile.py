@@ -51,6 +51,21 @@ async def reconcile(
         else:
             row.last_seen = now
             if h.mac:
+                if row.mac_address and row.mac_address.lower() != h.mac.lower():
+                    # Imported inventory said a different MAC — keep the live
+                    # value but flag the mismatch for review.
+                    cf = dict(row.custom_fields or {})
+                    cf["mac_mismatch"] = {
+                        "was": row.mac_address,
+                        "seen": h.mac,
+                        "at": now.isoformat(timespec="seconds"),
+                    }
+                    row.custom_fields = cf
+                elif "mac_mismatch" in (row.custom_fields or {}):
+                    # scan now agrees with the stored MAC — clear the flag
+                    cf = dict(row.custom_fields)
+                    cf.pop("mac_mismatch", None)
+                    row.custom_fields = cf
                 row.mac_address = h.mac
             if h.vendor:
                 row.vendor = h.vendor

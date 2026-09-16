@@ -208,6 +208,7 @@ export function IpDrawer({
           <div className="grid gap-1.5">
             <Label>Hostname</Label>
             <Input
+              dir="auto"
               value={form.hostname}
               onChange={(e) => setForm({ ...form, hostname: e.target.value })}
               placeholder="host.lan"
@@ -217,6 +218,7 @@ export function IpDrawer({
           <div className="grid gap-1.5">
             <Label>MAC address</Label>
             <Input
+              dir="ltr"
               value={form.mac_address}
               onChange={(e) => setForm({ ...form, mac_address: e.target.value })}
               placeholder="AA:BB:CC:DD:EE:FF"
@@ -285,6 +287,7 @@ export function IpDrawer({
           <div className="grid gap-1.5">
             <Label>Notes</Label>
             <Textarea
+              dir="auto"
               value={form.notes}
               onChange={(e) => setForm({ ...form, notes: e.target.value })}
               disabled={!canWrite}

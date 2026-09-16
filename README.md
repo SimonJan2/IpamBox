@@ -8,7 +8,7 @@ FastAPI · async SQLAlchemy 2.0 · PostgreSQL 16 · Redis/ARQ worker ·
 Scapy raw-socket scanning · Next.js 15 dark-mode UI
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-![Version](https://img.shields.io/badge/version-0.2.0-green.svg)
+![Version](https://img.shields.io/badge/version-0.3.0-green.svg)
 
 ---
 
@@ -38,7 +38,21 @@ Scapy raw-socket scanning · Next.js 15 dark-mode UI
   NAT-inside links, colored tags on sites/VRFs/prefixes/addresses.
 - **Bulk operations**: select rows → set status/role, tag, delete.
 - **CSV**: import addresses (all-or-nothing with per-row error report)
-  and export addresses/prefixes.
+  and export addresses/prefixes (UTF-8 BOM — opens cleanly in Excel).
+- **Excel workbook import**: upload a `Network_Address.xlsx`-style
+  workbook under **Import** → per-sheet type detection → dry-run preview
+  with a per-row conflict/error report → commit all-or-nothing or
+  partial (per-sheet rollback). Handles the messy bits: split-octet IPs,
+  multi-IP cells, MACs in four formats, Excel serial dates, repeated
+  headers and duplicated column blocks. Hebrew content is normalized and
+  every imported row keeps provenance back to its upload batch.
+- **Extended entities**: WAN circuits, certificate expiry tracking
+  (30-day countdown), SW/HW asset + serial-number inventory, and a
+  service catalog — first-class tables with pages, search, RBAC,
+  backup and changelog coverage.
+- **Hebrew data support**: final-letter folding in search (type
+  `רשת`, match `רשתו`), `dir="auto"` on free-text cells so RTL text
+  renders correctly, LTR-pinned IP/MAC columns, Hebrew-safe site slugs.
 - **Subnet matrix**: visual /24-style utilization grid per prefix with
   IP-range bands, plus a sortable list view with aggregated free ranges
   and per-IP actions.
@@ -61,7 +75,9 @@ Scapy raw-socket scanning · Next.js 15 dark-mode UI
 - Cancellable jobs, SSE live progress with ETA, per-CIDR rate limiting.
 - **Reconciliation**: new hosts land as `discovered` in the Discovery
   Inbox (bulk confirm/delete), missing `active` hosts go `offline`,
-  returning hosts flip back to `active`.
+  returning hosts flip back to `active`. When a scanned MAC disagrees
+  with a stored (e.g. imported) MAC, the live value wins but the address
+  is flagged `mac_mismatch` for review — the dashboard counts them.
 
 ### Platform
 
@@ -162,6 +178,7 @@ apply without a restart, and can be reset back to the env value per key.
 | `BACKUP_DIR` | where scheduled snapshots are written (docker volume) | `/backups` |
 | `BACKUP_INTERVAL_MINUTES` ✎ | recurring backup interval; `0` = manual only | `0` |
 | `BACKUP_KEEP` ✎ | how many scheduled files to retain | `14` |
+| `IMPORT_DIR` | where uploaded workbooks are stored for re-preview/commit | `<BACKUP_DIR>/imports` |
 
 > **Secrets**: prefer `IPAMBOX_PASSWORD_FILE` (e.g. a Docker secret) over
 > `IPAMBOX_PASSWORD` so the value never sits in your env/compose file.
@@ -170,10 +187,13 @@ apply without a restart, and can be reset back to the env value per key.
 
 | Route | What |
 |---|---|
-| `/` | Dashboard — totals, status breakdowns, recent scans |
+| `/` | Dashboard — totals, status breakdowns, recent scans, entity counts |
 | `/discovery` | Discovery Inbox — confirm/delete scanned hosts |
 | `/sites` `/vrfs` `/prefixes` | Core IPAM objects |
 | `/prefixes/[id]` | Address map (grid/list views), ranges, bulk ops, CSV |
+| `/circuits` `/certificates` | WAN circuits, certificate expiry (30d countdown) |
+| `/inventory` `/services` | SW/HW + serial inventory, service catalog |
+| `/import` | Workbook import wizard — upload, detection, preview, commit |
 | `/vlans` `/tags` | VLAN groups + VLANs, tag management |
 | `/scans` | Trigger/schedule/cancel scans, live progress |
 | `/changelog` | Global audit trail |
@@ -254,7 +274,8 @@ scrape_configs:
 
 A backup is a **single portable file** (`ipambox-backup-<ts>.json.gz`)
 containing the whole database state — sites, VRFs, VLAN groups + VLANs,
-prefixes, IP ranges, addresses, tags + assignments, runtime settings, the
+prefixes, IP ranges, addresses, tags + assignments, circuits,
+certificates, assets, services, import batches, runtime settings, the
 full changelog and scan history. The `users` table is excluded by
 default: accounts usually belong to the server you're restoring *on*.
 Admins can opt in to exporting **non-admin** accounts (operators,
@@ -321,8 +342,8 @@ it first.
 {
   "format": "ipambox-backup",
   "format_version": 1,
-  "app_version": "0.2.0",
-  "alembic_revision": "0009_app_settings",
+  "app_version": "0.3.0",
+  "alembic_revision": "0011_import_entities",
   "created_at": "2026-09-13T15:07:11",
   "includes_users": true,
   "tables": { "sites": [ { "id": 1, "name": "HQ", ... } ], "...": [] }
@@ -345,7 +366,7 @@ docker compose exec api alembic upgrade head   # apply migrations manually
 ```
 
 - Migrations run automatically when `api` starts; the chain is
-  `0001` → `0009`.
+  `0001` → `0011`.
 - The `scanner` service has its **own image** — after changing backend
   code run `docker compose build api scanner` (or just `build`), not
   `build api` alone.

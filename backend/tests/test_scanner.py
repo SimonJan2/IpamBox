@@ -178,3 +178,45 @@ async def test_reconcile_persists_ports_and_type(client, session):
     assert by_ip["10.240.0.5"]["open_ports"] == [80]
     assert by_ip["10.240.0.6"]["device_type"] == "printer"
     assert by_ip["10.240.0.6"]["open_ports"] == [631, 9100]
+
+
+async def test_reconcile_flags_mac_mismatch(client, session):
+    """A stored (e.g. imported) MAC that differs from the scan is flagged in
+    custom_fields; a matching re-scan clears the flag."""
+    vrf_id = (await client.get("/api/v1/vrfs")).json()[0]["id"]
+    p = (
+        await client.post(
+            "/api/v1/prefixes", json={"prefix": "10.241.0.0/24", "vrf_id": vrf_id}
+        )
+    ).json()
+    a = (
+        await client.post(
+            "/api/v1/addresses",
+            json={
+                "prefix_id": p["id"],
+                "vrf_id": vrf_id,
+                "address": "10.241.0.10",
+                "status": "active",
+                "mac_address": "00:11:22:33:44:55",
+            },
+        )
+    ).json()
+
+    hosts = [HostResult(ip="10.241.0.10", mac="66:77:88:99:AA:BB")]
+    await reconcile(session, p["id"], vrf_id, hosts)
+    await session.commit()
+
+    row = (
+        await client.get("/api/v1/addresses", params={"q": "10.241.0.10"})
+    ).json()[0]
+    assert row["mac_address"] == "66:77:88:99:AA:BB"
+    assert row["custom_fields"]["mac_mismatch"]["was"] == "00:11:22:33:44:55"
+
+    # re-scan with the matching MAC clears the flag
+    await reconcile(session, p["id"], vrf_id,
+                    [HostResult(ip="10.241.0.10", mac="66:77:88:99:AA:BB")])
+    await session.commit()
+    row = (
+        await client.get("/api/v1/addresses", params={"q": "10.241.0.10"})
+    ).json()[0]
+    assert "mac_mismatch" not in (row["custom_fields"] or {})

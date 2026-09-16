@@ -12,8 +12,9 @@ def csv_response(filename: str, header: list[str], rows: Iterable[Iterable]) -> 
     for row in rows:
         w.writerow(["" if v is None else v for v in row])
     buf.seek(0)
+    # utf-8 BOM so Excel renders Hebrew (and other UTF-8) correctly
     return StreamingResponse(
-        iter([buf.getvalue()]),
+        iter(["\ufeff" + buf.getvalue()]),
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

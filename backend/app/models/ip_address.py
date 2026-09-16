@@ -2,7 +2,7 @@ import enum
 from datetime import datetime
 
 from sqlalchemy import Enum, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, func
-from sqlalchemy.dialects.postgresql import ARRAY, INET
+from sqlalchemy.dialects.postgresql import ARRAY, INET, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -66,6 +66,17 @@ class IPAddress(Base):
     # device classification derived from ports + vendor + hostname.
     open_ports: Mapped[list[int] | None] = mapped_column(ARRAY(Integer))
     device_type: Mapped[str | None] = mapped_column(String(32))
+    # Imported-inventory fields (Network_Address.xlsx site sheets).
+    serial_number: Mapped[str | None] = mapped_column(String(128))
+    switch_name: Mapped[str | None] = mapped_column(String(255))
+    switch_port: Mapped[str | None] = mapped_column(String(64))
+    counter_location: Mapped[str | None] = mapped_column(String(255))
+    # Overflow bag for imported values that have no typed column
+    # (status_raw, mac_raw, other_ips, unmatched sheet columns, …).
+    custom_fields: Mapped[dict | None] = mapped_column(JSONB, server_default="{}")
+    import_batch_id: Mapped[int | None] = mapped_column(
+        ForeignKey("import_batches.id", ondelete="SET NULL"), index=True
+    )
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())

@@ -2,7 +2,17 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Activity, Globe, Inbox, Network, Percent } from "lucide-react";
+import {
+  Activity,
+  Cable,
+  Globe,
+  HardDrive,
+  Inbox,
+  Network,
+  Percent,
+  Server,
+  ShieldCheck,
+} from "lucide-react";
 import {
   Bar,
   BarChart,
@@ -104,6 +114,39 @@ export default function DashboardPage() {
           value={stats?.devices_active ?? "—"}
           sub={`${stats?.devices_discovered ?? 0} pending review`}
           icon={Activity}
+        />
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          title="Circuits"
+          value={stats?.circuits_total ?? "—"}
+          icon={Cable}
+        />
+        <StatCard
+          title="Certificates"
+          value={stats?.certificates_total ?? "—"}
+          sub={
+            stats && stats.certs_expiring_30d > 0
+              ? `${stats.certs_expiring_30d} expiring within 30d`
+              : "none expiring soon"
+          }
+          icon={ShieldCheck}
+        />
+        <StatCard
+          title="Assets"
+          value={stats?.assets_total ?? "—"}
+          icon={HardDrive}
+        />
+        <StatCard
+          title="Services"
+          value={stats?.services_total ?? "—"}
+          sub={
+            stats && stats.mac_mismatches > 0
+              ? `${stats.mac_mismatches} MAC mismatch(es) flagged`
+              : undefined
+          }
+          icon={Server}
         />
       </div>
 

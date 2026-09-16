@@ -24,7 +24,10 @@ async def list_sites(session: AsyncSession = Depends(get_session)):
     dependencies=[Depends(require_perm(DATA_WRITE))],
 )
 async def create_site(body: SiteCreate, session: AsyncSession = Depends(get_session)):
-    site = Site(name=body.name, slug=body.slug or slugify(body.name), description=body.description)
+    site = Site(
+        **body.model_dump(exclude={"slug"}),
+        slug=body.slug or slugify(body.name),
+    )
     session.add(site)
     try:
         await session.commit()
