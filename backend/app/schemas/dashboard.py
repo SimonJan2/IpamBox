@@ -1,6 +1,16 @@
 from pydantic import BaseModel
 
+from app.schemas.certificate import CertificateOut
 from app.schemas.scan import ScanJobOut
+
+
+class MacMismatchItem(BaseModel):
+    id: int
+    address: str
+    prefix_id: int
+    mac_was: str | None
+    mac_seen: str | None
+    flagged_at: str | None
 
 
 class DashboardStats(BaseModel):
@@ -23,3 +33,7 @@ class DashboardStats(BaseModel):
     assets_total: int = 0
     services_total: int = 0
     mac_mismatches: int = 0
+    # Bounded samples for the dashboard attention zone — full lists live on
+    # the entity pages; these ride along so the page needs no extra requests.
+    certs_expiring: list[CertificateOut] = []
+    mac_mismatch_items: list[MacMismatchItem] = []

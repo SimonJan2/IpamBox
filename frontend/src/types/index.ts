@@ -152,6 +152,15 @@ export interface ScanJob {
   created_at: string;
 }
 
+export interface MacMismatchItem {
+  id: number;
+  address: string;
+  prefix_id: number;
+  mac_was: string | null;
+  mac_seen: string | null;
+  flagged_at: string | null;
+}
+
 export interface DashboardStats {
   sites_total: number;
   vrfs_total: number;
@@ -172,6 +181,8 @@ export interface DashboardStats {
   assets_total: number;
   services_total: number;
   mac_mismatches: number;
+  certs_expiring: Certificate[];
+  mac_mismatch_items: MacMismatchItem[];
 }
 
 export interface PrefixNode {
