@@ -1,3 +1,9 @@
+from datetime import date, timedelta
+
+from app.worker.reconcile import reconcile
+from app.worker.scanner import HostResult
+
+
 async def _vrf(client) -> int:
     vrfs = (await client.get("/api/v1/vrfs")).json()
     return next(v["id"] for v in vrfs if v["name"] == "Global")
@@ -208,3 +214,43 @@ async def test_csv_export_import(client):
     # failed rows abort the whole import (all-or-nothing)
     got = (await client.get("/api/v1/addresses", params={"prefix_id": p["id"]})).json()
     assert {x["address"] for x in got} == {"10.95.0.7"}
+
+
+async def test_dashboard_attention_fields(client, session):
+    today = date.today()
+    for name, days in [("expired-cert", -10), ("soon-cert", 10), ("far-cert", 300)]:
+        r = await client.post(
+            "/api/v1/certificates",
+            json={"cert_name": name, "expires_on": str(today + timedelta(days=days))},
+        )
+        assert r.status_code == 201, r.text
+
+    vrf_id = await _vrf(client)
+    p = await _prefix(client, "10.98.0.0/24")
+    await client.post(
+        "/api/v1/addresses",
+        json={
+            "prefix_id": p["id"],
+            "address": "10.98.0.10",
+            "status": "active",
+            "mac_address": "00:11:22:33:44:55",
+        },
+    )
+    await reconcile(
+        session, p["id"], vrf_id, [HostResult(ip="10.98.0.10", mac="66:77:88:99:AA:BB")]
+    )
+    await session.commit()
+
+    stats = (await client.get("/api/v1/dashboard/stats")).json()
+    assert stats["certs_expiring_30d"] == 2
+    # expired first, far-future cert excluded
+    assert [c["cert_name"] for c in stats["certs_expiring"]] == [
+        "expired-cert",
+        "soon-cert",
+    ]
+    assert stats["mac_mismatches"] == 1
+    item = stats["mac_mismatch_items"][0]
+    assert item["address"] == "10.98.0.10"
+    assert item["prefix_id"] == p["id"]
+    assert item["mac_was"] == "00:11:22:33:44:55"
+    assert item["mac_seen"] == "66:77:88:99:AA:BB"

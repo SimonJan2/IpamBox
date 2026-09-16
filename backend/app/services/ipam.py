@@ -249,6 +249,18 @@ async def dashboard_stats(session: AsyncSession) -> dict:
             )
         ).scalar_one()
     )
+    # Oldest expiry first — already-expired certs (past dates) lead the list.
+    certs_expiring = (
+        await session.execute(
+            select(Certificate)
+            .where(
+                Certificate.expires_on.is_not(None),
+                Certificate.expires_on <= soon,
+            )
+            .order_by(Certificate.expires_on.asc(), Certificate.id)
+            .limit(8)
+        )
+    ).scalars().all()
     mac_mismatches = int(
         (
             await session.execute(
@@ -258,6 +270,26 @@ async def dashboard_stats(session: AsyncSession) -> dict:
             )
         ).scalar_one()
     )
+    mismatch_rows = (
+        await session.execute(
+            select(IPAddress)
+            .where(IPAddress.custom_fields.has_key("mac_mismatch"))  # noqa: W601
+            .order_by(IPAddress.updated_at.desc())
+            .limit(8)
+        )
+    ).scalars().all()
+    mac_mismatch_items = [
+        {
+            "id": r.id,
+            "address": str(r.address),
+            "prefix_id": r.prefix_id,
+            "mac_was": (r.custom_fields or {}).get("mac_mismatch", {}).get("was"),
+            # reconcile already updated mac_address to the scanned ("seen") MAC
+            "mac_seen": r.mac_address,
+            "flagged_at": (r.custom_fields or {}).get("mac_mismatch", {}).get("at"),
+        }
+        for r in mismatch_rows
+    ]
 
     return {
         "sites_total": sites_total,
@@ -279,6 +311,8 @@ async def dashboard_stats(session: AsyncSession) -> dict:
         "assets_total": assets_total,
         "services_total": services_total,
         "mac_mismatches": mac_mismatches,
+        "certs_expiring": certs_expiring,
+        "mac_mismatch_items": mac_mismatch_items,
     }
 
 
