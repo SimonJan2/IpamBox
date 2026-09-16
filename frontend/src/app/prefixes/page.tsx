@@ -7,14 +7,18 @@ import {
   flexRender,
   getCoreRowModel,
   getFilteredRowModel,
+  getSortedRowModel,
   useReactTable,
   type ColumnDef,
+  type SortingState,
 } from "@tanstack/react-table";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
+import { foldHebrew, ipToInt } from "@/lib/utils";
+import { SortHeader } from "@/components/sort-header";
 import type { Prefix, Site, Vlan, Vrf } from "@/types";
 import { PrefixStatusBadge } from "@/components/status-badge";
 import { TagChip, TagPicker, useTags } from "@/components/tag-picker";
@@ -433,6 +437,7 @@ export default function PrefixesPage() {
   const [vlans, setVlans] = useState<Vlan[]>([]);
   const [q, setQ] = useState("");
   const [vrfFilter, setVrfFilter] = useState("all");
+  const [sorting, setSorting] = useState<SortingState>([]);
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<Prefix | null>(null);
   const [deleting, setDeleting] = useState<Prefix | null>(null);
@@ -460,23 +465,33 @@ export default function PrefixesPage() {
     () => [
       {
         accessorKey: "prefix",
-        header: "Prefix",
+        header: ({ column }) => (
+          <SortHeader column={column}>Prefix</SortHeader>
+        ),
+        sortingFn: (a, b) => {
+          const [aNet, aLen] = a.original.prefix.split("/");
+          const [bNet, bLen] = b.original.prefix.split("/");
+          const diff = ipToInt(aNet) - ipToInt(bNet);
+          return diff !== 0 ? diff : Number(aLen) - Number(bLen);
+        },
         cell: (c) => <span className="font-mono">{c.getValue<string>()}</span>,
       },
       {
-        accessorKey: "vrf_id",
-        header: "VRF",
-        cell: (c) => vrfName[c.getValue<number>()] ?? c.getValue(),
+        id: "vrf",
+        accessorFn: (p) => vrfName[p.vrf_id] ?? "",
+        header: ({ column }) => <SortHeader column={column}>VRF</SortHeader>,
+        cell: (c) => c.getValue<string>(),
       },
       {
-        accessorKey: "site_id",
-        header: "Site",
-        cell: (c) =>
-          c.getValue<number | null>() ? siteName[c.getValue<number>()!] : "—",
+        id: "site",
+        accessorFn: (p) => (p.site_id ? (siteName[p.site_id] ?? "") : ""),
+        header: ({ column }) => <SortHeader column={column}>Site</SortHeader>,
+        cell: (c) => c.getValue<string>() || "—",
       },
       {
-        accessorKey: "vlan_id",
-        header: "VLAN",
+        id: "vlan",
+        accessorFn: (p) => p.vlan?.vid ?? -1,
+        header: ({ column }) => <SortHeader column={column}>VLAN</SortHeader>,
         cell: (c) => {
           const v = c.row.original.vlan;
           return v ? `${v.vid} · ${v.name}` : "—";
@@ -485,6 +500,7 @@ export default function PrefixesPage() {
       {
         id: "tags",
         header: "Tags",
+        enableSorting: false,
         cell: (c) => {
           const p = c.row.original;
           const assigned = prefixTags.get(p.id) ?? [];
@@ -509,12 +525,16 @@ export default function PrefixesPage() {
       },
       {
         accessorKey: "status",
-        header: "Status",
+        header: ({ column }) => (
+          <SortHeader column={column}>Status</SortHeader>
+        ),
         cell: (c) => <PrefixStatusBadge s={c.getValue<Prefix["status"]>()} />,
       },
       {
         accessorKey: "utilization_pct",
-        header: "Utilization",
+        header: ({ column }) => (
+          <SortHeader column={column}>Utilization</SortHeader>
+        ),
         cell: (c) => {
           const p = c.row.original;
           return (
@@ -533,7 +553,9 @@ export default function PrefixesPage() {
       },
       {
         accessorKey: "description",
-        header: "Description",
+        header: ({ column }) => (
+          <SortHeader column={column}>Description</SortHeader>
+        ),
         cell: (c) => (
           <span className="text-muted-foreground">{c.getValue<string | null>() ?? ""}</span>
         ),
@@ -541,6 +563,7 @@ export default function PrefixesPage() {
       {
         id: "actions",
         header: "",
+        enableSorting: false,
         cell: (c) => (
           <div
             className="flex justify-end gap-1"
@@ -581,10 +604,14 @@ export default function PrefixesPage() {
     columns,
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
-    state: { globalFilter: q },
+    getSortedRowModel: getSortedRowModel(),
+    state: { sorting, globalFilter: q },
+    onSortingChange: setSorting,
     onGlobalFilterChange: setQ,
     globalFilterFn: (row, _id, value) =>
-      JSON.stringify(row.original).toLowerCase().includes(String(value).toLowerCase()),
+      foldHebrew(JSON.stringify(row.original).toLowerCase()).includes(
+        foldHebrew(String(value).toLowerCase())
+      ),
   });
 
   return (

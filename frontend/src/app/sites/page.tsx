@@ -1,12 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+  type ColumnDef,
+  type SortingState,
+} from "@tanstack/react-table";
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
+import { foldHebrew } from "@/lib/utils";
+import { SortHeader } from "@/components/sort-header";
 import type { Site } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -250,6 +260,7 @@ export default function SitesPage() {
   const canDelete = can(PERM.DATA_DELETE);
   const [sites, setSites] = useState<Site[]>([]);
   const [q, setQ] = useState("");
+  const [sorting, setSorting] = useState<SortingState>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Site | null>(null);
   const [deleting, setDeleting] = useState<Site | null>(null);
@@ -259,13 +270,131 @@ export default function SitesPage() {
   };
   useEffect(refresh, []);
 
-  const filtered = sites.filter(
-    (s) =>
-      s.name.toLowerCase().includes(q.toLowerCase()) ||
-      s.slug.toLowerCase().includes(q.toLowerCase()) ||
-      (s.code ?? "").toLowerCase().includes(q.toLowerCase()) ||
-      (s.site_number?.toString() ?? "").includes(q)
+  const filtered = useMemo(() => {
+    const needle = foldHebrew(q.toLowerCase());
+    return sites.filter(
+      (s) =>
+        foldHebrew(s.name.toLowerCase()).includes(needle) ||
+        foldHebrew(s.slug.toLowerCase()).includes(needle) ||
+        foldHebrew((s.code ?? "").toLowerCase()).includes(needle) ||
+        foldHebrew((s.size ?? "").toLowerCase()).includes(needle) ||
+        foldHebrew((s.contact ?? "").toLowerCase()).includes(needle) ||
+        (s.site_number?.toString() ?? "").includes(q)
+    );
+  }, [sites, q]);
+
+  const columns = useMemo<ColumnDef<Site>[]>(
+    () => [
+      {
+        accessorKey: "name",
+        header: ({ column }) => <SortHeader column={column}>Name</SortHeader>,
+        cell: (c) => (
+          <span dir="auto" className="font-medium">
+            {c.getValue<string>()}
+            <span className="ml-2 font-mono text-xs text-muted-foreground">
+              {c.row.original.slug}
+            </span>
+          </span>
+        ),
+      },
+      {
+        accessorKey: "code",
+        header: ({ column }) => <SortHeader column={column}>Code</SortHeader>,
+        cell: (c) => (
+          <span dir="ltr" className="font-mono text-muted-foreground">
+            {c.getValue<string | null>() ?? "—"}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "site_number",
+        header: ({ column }) => <SortHeader column={column}>#</SortHeader>,
+        cell: (c) => (
+          <span dir="ltr" className="font-mono text-muted-foreground">
+            {c.getValue<number | null>() ?? "—"}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "size",
+        header: ({ column }) => <SortHeader column={column}>Size</SortHeader>,
+        cell: (c) => (
+          <span dir="auto" className="text-muted-foreground">
+            {c.getValue<string | null>() ?? "—"}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "is_active",
+        header: ({ column }) => (
+          <SortHeader column={column}>Status</SortHeader>
+        ),
+        cell: (c) => (
+          <Badge
+            variant="outline"
+            className={
+              c.getValue<boolean>()
+                ? "border-emerald-500/40 text-emerald-400"
+                : "border-muted-foreground/40 text-muted-foreground"
+            }
+          >
+            {c.getValue<boolean>() ? "active" : "inactive"}
+          </Badge>
+        ),
+      },
+      {
+        accessorKey: "description",
+        header: ({ column }) => (
+          <SortHeader column={column}>Description</SortHeader>
+        ),
+        cell: (c) => (
+          <span dir="auto" className="text-muted-foreground">
+            {c.getValue<string | null>() ?? "—"}
+          </span>
+        ),
+      },
+      {
+        id: "actions",
+        header: () => <div className="text-right">Actions</div>,
+        enableSorting: false,
+        cell: (c) => (
+          <div className="flex justify-end gap-1">
+            {canWrite && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  setEditing(c.row.original);
+                  setDialogOpen(true);
+                }}
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+            )}
+            {canDelete && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setDeleting(c.row.original)}
+              >
+                <Trash2 className="h-4 w-4 text-rose-400" />
+              </Button>
+            )}
+          </div>
+        ),
+      },
+    ],
+    [canWrite, canDelete]
   );
+
+  const table = useReactTable({
+    data: filtered,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    state: { sorting },
+    onSortingChange: setSorting,
+  });
 
   return (
     <div className="space-y-4">
@@ -284,87 +413,42 @@ export default function SitesPage() {
         )}
       </div>
 
-      <Input
-        placeholder="Search sites…"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        className="max-w-xs"
-      />
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          placeholder="Search sites…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          className="max-w-xs"
+        />
+        <span className="ml-auto text-sm text-muted-foreground">
+          {table.getRowModel().rows.length} of {sites.length}
+        </span>
+      </div>
 
       <div className="rounded-lg border">
         <Table>
           <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Code</TableHead>
-              <TableHead>#</TableHead>
-              <TableHead>Size</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead className="w-24 text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filtered.map((s) => (
-              <TableRow key={s.id}>
-                <TableCell dir="auto" className="font-medium">
-                  {s.name}
-                  <span className="ml-2 font-mono text-xs text-muted-foreground">
-                    {s.slug}
-                  </span>
-                </TableCell>
-                <TableCell dir="ltr" className="font-mono text-muted-foreground">
-                  {s.code ?? "—"}
-                </TableCell>
-                <TableCell dir="ltr" className="font-mono text-muted-foreground">
-                  {s.site_number ?? "—"}
-                </TableCell>
-                <TableCell dir="auto" className="text-muted-foreground">
-                  {s.size ?? "—"}
-                </TableCell>
-                <TableCell>
-                  <Badge
-                    variant="outline"
-                    className={
-                      s.is_active
-                        ? "border-emerald-500/40 text-emerald-400"
-                        : "border-muted-foreground/40 text-muted-foreground"
-                    }
-                  >
-                    {s.is_active ? "active" : "inactive"}
-                  </Badge>
-                </TableCell>
-                <TableCell dir="auto" className="text-muted-foreground">
-                  {s.description ?? "—"}
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-1">
-                    {canWrite && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => {
-                          setEditing(s);
-                          setDialogOpen(true);
-                        }}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                    )}
-                    {canDelete && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setDeleting(s)}
-                      >
-                        <Trash2 className="h-4 w-4 text-rose-400" />
-                      </Button>
-                    )}
-                  </div>
-                </TableCell>
+            {table.getHeaderGroups().map((hg) => (
+              <TableRow key={hg.id}>
+                {hg.headers.map((h) => (
+                  <TableHead key={h.id}>
+                    {flexRender(h.column.columnDef.header, h.getContext())}
+                  </TableHead>
+                ))}
               </TableRow>
             ))}
-            {filtered.length === 0 && (
+          </TableHeader>
+          <TableBody>
+            {table.getRowModel().rows.map((row) => (
+              <TableRow key={row.id}>
+                {row.getVisibleCells().map((cell) => (
+                  <TableCell key={cell.id}>
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))}
+            {table.getRowModel().rows.length === 0 && (
               <TableRow>
                 <TableCell
                   colSpan={7}

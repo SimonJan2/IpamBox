@@ -1,13 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+  type ColumnDef,
+  type SortingState,
+} from "@tanstack/react-table";
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
-import type { Asset, AssetKind } from "@/types";
+import { foldHebrew } from "@/lib/utils";
+import { SortHeader } from "@/components/sort-header";
+import type { Asset, AssetKind, Site } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -45,6 +55,7 @@ const EMPTY = {
   eol_on: "",
   support_status: "",
   serial_number: "",
+  site_id: "none",
   notes: "",
 };
 
@@ -53,8 +64,10 @@ export default function InventoryPage() {
   const canWrite = can(PERM.DATA_WRITE);
   const canDelete = can(PERM.DATA_DELETE);
   const [items, setItems] = useState<Asset[]>([]);
+  const [sites, setSites] = useState<Site[]>([]);
   const [q, setQ] = useState("");
   const [kindFilter, setKindFilter] = useState("all");
+  const [sorting, setSorting] = useState<SortingState>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Asset | null>(null);
   const [deleting, setDeleting] = useState<Asset | null>(null);
@@ -63,6 +76,7 @@ export default function InventoryPage() {
 
   const refresh = () => {
     api.get<Asset[]>("/api/v1/assets").then(setItems).catch(() => {});
+    api.get<Site[]>("/api/v1/sites").then(setSites).catch(() => {});
   };
   useEffect(refresh, []);
 
@@ -80,6 +94,7 @@ export default function InventoryPage() {
               eol_on: editing.eol_on ?? "",
               support_status: editing.support_status ?? "",
               serial_number: editing.serial_number ?? "",
+              site_id: editing.site_id ? String(editing.site_id) : "none",
               notes: editing.notes ?? "",
             }
           : EMPTY
@@ -92,10 +107,13 @@ export default function InventoryPage() {
     try {
       const body = {
         ...Object.fromEntries(
-          Object.entries(form).map(([k, v]) => [k, v || null])
+          Object.entries(form)
+            .filter(([k]) => k !== "site_id")
+            .map(([k, v]) => [k, v || null])
         ),
         kind: form.kind,
         eol_on: form.eol_on || null,
+        site_id: form.site_id === "none" ? null : Number(form.site_id),
       };
       if (editing) {
         await api.patch(`/api/v1/assets/${editing.id}`, body);
@@ -125,19 +143,32 @@ export default function InventoryPage() {
     }
   };
 
-  const filtered = items.filter((a) => {
-    if (kindFilter !== "all" && a.kind !== kindFilter) return false;
-    const s = q.toLowerCase();
-    return [a.vendor, a.model, a.serial_number, a.purpose, a.category]
-      .filter(Boolean)
-      .some((v) => v!.toLowerCase().includes(s));
-  });
+  const siteName = useMemo(
+    () => Object.fromEntries(sites.map((s) => [s.id, s.name])),
+    [sites]
+  );
 
-  const set = (k: keyof typeof EMPTY) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setForm({ ...form, [k]: e.target.value });
+  const filtered = useMemo(() => {
+    const needle = foldHebrew(q.toLowerCase());
+    return items.filter((a) => {
+      if (kindFilter !== "all" && a.kind !== kindFilter) return false;
+      if (!q) return true;
+      return [
+        a.vendor,
+        a.model,
+        a.serial_number,
+        a.purpose,
+        a.category,
+        a.version,
+        a.support_status,
+        a.notes,
+        a.site_id ? siteName[a.site_id] : null,
+      ].some((f) => f != null && foldHebrew(f.toLowerCase()).includes(needle));
+    });
+  }, [items, q, kindFilter, siteName]);
 
   const eolBadge = (eol: string | null) => {
-    if (!eol) return null;
+    if (!eol) return <span className="text-muted-foreground">—</span>;
     const past = new Date(eol).getTime() < Date.now();
     return (
       <Badge
@@ -152,6 +183,145 @@ export default function InventoryPage() {
       </Badge>
     );
   };
+
+  const columns = useMemo<ColumnDef<Asset>[]>(
+    () => [
+      {
+        id: "model",
+        accessorFn: (a) => a.model ?? a.category ?? "",
+        header: ({ column }) => (
+          <SortHeader column={column}>Model</SortHeader>
+        ),
+        cell: (c) => (
+          <span dir="auto" className="font-medium">
+            {c.getValue<string>() || "—"}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "kind",
+        header: ({ column }) => <SortHeader column={column}>Kind</SortHeader>,
+        cell: (c) => <Badge variant="outline">{c.getValue<string>()}</Badge>,
+      },
+      {
+        accessorKey: "vendor",
+        header: ({ column }) => (
+          <SortHeader column={column}>Vendor</SortHeader>
+        ),
+        cell: (c) => (
+          <span dir="auto" className="text-muted-foreground">
+            {c.getValue<string | null>() ?? "—"}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "serial_number",
+        header: ({ column }) => (
+          <SortHeader column={column}>Serial</SortHeader>
+        ),
+        cell: (c) => (
+          <span dir="ltr" className="font-mono text-muted-foreground">
+            {c.getValue<string | null>() ?? "—"}
+          </span>
+        ),
+      },
+      {
+        id: "site",
+        accessorFn: (a) => (a.site_id ? (siteName[a.site_id] ?? "") : ""),
+        header: ({ column }) => <SortHeader column={column}>Site</SortHeader>,
+        cell: (c) => (
+          <span dir="auto" className="text-muted-foreground">
+            {c.getValue<string>() || "—"}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "purpose",
+        header: ({ column }) => (
+          <SortHeader column={column}>Purpose</SortHeader>
+        ),
+        cell: (c) => (
+          <span
+            dir="auto"
+            title={c.getValue<string | null>() ?? undefined}
+            className="block max-w-[200px] truncate text-muted-foreground"
+          >
+            {c.getValue<string | null>() ?? "—"}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "version",
+        header: ({ column }) => (
+          <SortHeader column={column}>Version</SortHeader>
+        ),
+        cell: (c) => (
+          <span dir="ltr" className="font-mono text-muted-foreground">
+            {c.getValue<string | null>() ?? "—"}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "support_status",
+        header: ({ column }) => (
+          <SortHeader column={column}>Support</SortHeader>
+        ),
+        cell: (c) => (
+          <span dir="auto" className="text-muted-foreground">
+            {c.getValue<string | null>() ?? "—"}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "eol_on",
+        header: ({ column }) => <SortHeader column={column}>EOL</SortHeader>,
+        cell: (c) => eolBadge(c.getValue<string | null>()),
+      },
+      {
+        id: "actions",
+        header: () => <div className="text-right">Actions</div>,
+        enableSorting: false,
+        cell: (c) => (
+          <div className="flex justify-end gap-1">
+            {canWrite && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  setEditing(c.row.original);
+                  setDialogOpen(true);
+                }}
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+            )}
+            {canDelete && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setDeleting(c.row.original)}
+              >
+                <Trash2 className="h-4 w-4 text-rose-400" />
+              </Button>
+            )}
+          </div>
+        ),
+      },
+    ],
+    [siteName, canWrite, canDelete]
+  );
+
+  const table = useReactTable({
+    data: filtered,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    state: { sorting },
+    onSortingChange: setSorting,
+  });
+
+  const set = (k: keyof typeof EMPTY) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm({ ...form, [k]: e.target.value });
 
   return (
     <div className="space-y-4">
@@ -170,7 +340,7 @@ export default function InventoryPage() {
         )}
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Input
           placeholder="Search inventory…"
           value={q}
@@ -187,75 +357,38 @@ export default function InventoryPage() {
             <SelectItem value="software">Software</SelectItem>
           </SelectContent>
         </Select>
+        <span className="ml-auto text-sm text-muted-foreground">
+          {table.getRowModel().rows.length} of {items.length}
+        </span>
       </div>
 
       <div className="rounded-lg border">
         <Table>
           <TableHeader>
-            <TableRow>
-              <TableHead>Model</TableHead>
-              <TableHead>Kind</TableHead>
-              <TableHead>Vendor</TableHead>
-              <TableHead>Serial</TableHead>
-              <TableHead>Purpose</TableHead>
-              <TableHead>Version</TableHead>
-              <TableHead>EOL</TableHead>
-              <TableHead className="w-24 text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filtered.map((a) => (
-              <TableRow key={a.id}>
-                <TableCell dir="auto" className="font-medium">
-                  {a.model ?? a.category ?? "—"}
-                </TableCell>
-                <TableCell>
-                  <Badge variant="outline">{a.kind}</Badge>
-                </TableCell>
-                <TableCell dir="auto" className="text-muted-foreground">
-                  {a.vendor ?? "—"}
-                </TableCell>
-                <TableCell dir="ltr" className="font-mono text-muted-foreground">
-                  {a.serial_number ?? "—"}
-                </TableCell>
-                <TableCell dir="auto" className="text-muted-foreground">
-                  {a.purpose ?? "—"}
-                </TableCell>
-                <TableCell dir="ltr" className="font-mono text-muted-foreground">
-                  {a.version ?? "—"}
-                </TableCell>
-                <TableCell>{eolBadge(a.eol_on)}</TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-1">
-                    {canWrite && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => {
-                          setEditing(a);
-                          setDialogOpen(true);
-                        }}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                    )}
-                    {canDelete && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setDeleting(a)}
-                      >
-                        <Trash2 className="h-4 w-4 text-rose-400" />
-                      </Button>
-                    )}
-                  </div>
-                </TableCell>
+            {table.getHeaderGroups().map((hg) => (
+              <TableRow key={hg.id}>
+                {hg.headers.map((h) => (
+                  <TableHead key={h.id}>
+                    {flexRender(h.column.columnDef.header, h.getContext())}
+                  </TableHead>
+                ))}
               </TableRow>
             ))}
-            {filtered.length === 0 && (
+          </TableHeader>
+          <TableBody>
+            {table.getRowModel().rows.map((row) => (
+              <TableRow key={row.id}>
+                {row.getVisibleCells().map((cell) => (
+                  <TableCell key={cell.id}>
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))}
+            {table.getRowModel().rows.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={8}
+                  colSpan={10}
                   className="py-10 text-center text-muted-foreground"
                 >
                   No assets found.
@@ -284,6 +417,25 @@ export default function InventoryPage() {
                 <SelectContent>
                   <SelectItem value="hardware">Hardware</SelectItem>
                   <SelectItem value="software">Software</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Site</Label>
+              <Select
+                value={form.site_id}
+                onValueChange={(v) => setForm({ ...form, site_id: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {sites.map((s) => (
+                    <SelectItem key={s.id} value={String(s.id)}>
+                      <span dir="auto">{s.name}</span>
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

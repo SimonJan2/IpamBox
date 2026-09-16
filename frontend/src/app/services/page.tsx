@@ -1,13 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+  type ColumnDef,
+  type SortingState,
+} from "@tanstack/react-table";
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
-import type { Service } from "@/types";
+import { foldHebrew } from "@/lib/utils";
+import { SortHeader } from "@/components/sort-header";
+import type { Service, Site } from "@/types";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,6 +28,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -30,6 +47,7 @@ import {
 const EMPTY = {
   name: "",
   beneficiary: "",
+  site_id: "none",
   site_code: "",
   doc_path: "",
   test_info: "",
@@ -41,7 +59,9 @@ export default function ServicesPage() {
   const canWrite = can(PERM.DATA_WRITE);
   const canDelete = can(PERM.DATA_DELETE);
   const [items, setItems] = useState<Service[]>([]);
+  const [sites, setSites] = useState<Site[]>([]);
   const [q, setQ] = useState("");
+  const [sorting, setSorting] = useState<SortingState>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Service | null>(null);
   const [deleting, setDeleting] = useState<Service | null>(null);
@@ -50,6 +70,7 @@ export default function ServicesPage() {
 
   const refresh = () => {
     api.get<Service[]>("/api/v1/services").then(setItems).catch(() => {});
+    api.get<Site[]>("/api/v1/sites").then(setSites).catch(() => {});
   };
   useEffect(refresh, []);
 
@@ -60,6 +81,7 @@ export default function ServicesPage() {
           ? {
               name: editing.name ?? "",
               beneficiary: editing.beneficiary ?? "",
+              site_id: editing.site_id ? String(editing.site_id) : "none",
               site_code: editing.site_code ?? "",
               doc_path: editing.doc_path ?? "",
               test_info: editing.test_info ?? "",
@@ -73,9 +95,14 @@ export default function ServicesPage() {
   const submit = async () => {
     setBusy(true);
     try {
-      const body = Object.fromEntries(
-        Object.entries(form).map(([k, v]) => [k, v || null])
-      );
+      const body = {
+        ...Object.fromEntries(
+          Object.entries(form)
+            .filter(([k]) => k !== "site_id")
+            .map(([k, v]) => [k, v || null])
+        ),
+        site_id: form.site_id === "none" ? null : Number(form.site_id),
+      };
       if (editing) {
         await api.patch(`/api/v1/services/${editing.id}`, body);
         toast.success("Service updated");
@@ -104,11 +131,149 @@ export default function ServicesPage() {
     }
   };
 
-  const filtered = items.filter((s) => {
-    const needle = q.toLowerCase();
-    return [s.name, s.beneficiary, s.site_code, s.doc_path]
-      .filter(Boolean)
-      .some((v) => v!.toLowerCase().includes(needle));
+  const siteName = useMemo(
+    () => Object.fromEntries(sites.map((s) => [s.id, s.name])),
+    [sites]
+  );
+
+  const filtered = useMemo(() => {
+    if (!q) return items;
+    const needle = foldHebrew(q.toLowerCase());
+    return items.filter((s) =>
+      [
+        s.name,
+        s.beneficiary,
+        s.site_code,
+        s.doc_path,
+        s.test_info,
+        s.notes,
+        s.site_id ? siteName[s.site_id] : null,
+      ].some((f) => f != null && foldHebrew(f.toLowerCase()).includes(needle))
+    );
+  }, [items, q, siteName]);
+
+  const columns = useMemo<ColumnDef<Service>[]>(
+    () => [
+      {
+        accessorKey: "name",
+        header: ({ column }) => <SortHeader column={column}>Name</SortHeader>,
+        cell: (c) => (
+          <span dir="auto" className="font-medium">
+            {c.getValue<string | null>() ?? "—"}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "beneficiary",
+        header: ({ column }) => (
+          <SortHeader column={column}>Beneficiary</SortHeader>
+        ),
+        cell: (c) => (
+          <span dir="auto" className="text-muted-foreground">
+            {c.getValue<string | null>() ?? "—"}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "site_code",
+        header: ({ column }) => (
+          <SortHeader column={column}>Site code</SortHeader>
+        ),
+        cell: (c) => (
+          <span dir="ltr" className="font-mono text-muted-foreground">
+            {c.getValue<string | null>() ?? "—"}
+          </span>
+        ),
+      },
+      {
+        id: "site",
+        accessorFn: (s) => (s.site_id ? (siteName[s.site_id] ?? "") : ""),
+        header: ({ column }) => <SortHeader column={column}>Site</SortHeader>,
+        cell: (c) => (
+          <span dir="auto" className="text-muted-foreground">
+            {c.getValue<string>() || "—"}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "doc_path",
+        header: ({ column }) => (
+          <SortHeader column={column}>Documentation</SortHeader>
+        ),
+        cell: (c) => (
+          <span
+            dir="ltr"
+            title={c.getValue<string | null>() ?? undefined}
+            className="block max-w-64 truncate font-mono text-muted-foreground"
+          >
+            {c.getValue<string | null>() ?? "—"}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "test_info",
+        header: ({ column }) => <SortHeader column={column}>Test</SortHeader>,
+        cell: (c) => (
+          <span dir="auto" className="text-muted-foreground">
+            {c.getValue<string | null>() ?? "—"}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "notes",
+        header: "Notes",
+        enableSorting: false,
+        cell: (c) => (
+          <span
+            dir="auto"
+            title={c.getValue<string | null>() ?? undefined}
+            className="block max-w-[220px] truncate text-muted-foreground"
+          >
+            {c.getValue<string | null>() ?? "—"}
+          </span>
+        ),
+      },
+      {
+        id: "actions",
+        header: () => <div className="text-right">Actions</div>,
+        enableSorting: false,
+        cell: (c) => (
+          <div className="flex justify-end gap-1">
+            {canWrite && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  setEditing(c.row.original);
+                  setDialogOpen(true);
+                }}
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+            )}
+            {canDelete && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setDeleting(c.row.original)}
+              >
+                <Trash2 className="h-4 w-4 text-rose-400" />
+              </Button>
+            )}
+          </div>
+        ),
+      },
+    ],
+    [siteName, canWrite, canDelete]
+  );
+
+  const table = useReactTable({
+    data: filtered,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    state: { sorting },
+    onSortingChange: setSorting,
   });
 
   const set = (k: keyof typeof EMPTY) => (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -131,74 +296,45 @@ export default function ServicesPage() {
         )}
       </div>
 
-      <Input
-        placeholder="Search services…"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        className="max-w-xs"
-      />
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          placeholder="Search services…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          className="max-w-xs"
+        />
+        <span className="ml-auto text-sm text-muted-foreground">
+          {table.getRowModel().rows.length} of {items.length}
+        </span>
+      </div>
 
       <div className="rounded-lg border">
         <Table>
           <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Beneficiary</TableHead>
-              <TableHead>Site code</TableHead>
-              <TableHead>Documentation</TableHead>
-              <TableHead>Test</TableHead>
-              <TableHead className="w-24 text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filtered.map((s) => (
-              <TableRow key={s.id}>
-                <TableCell dir="auto" className="font-medium">
-                  {s.name ?? "—"}
-                </TableCell>
-                <TableCell dir="auto" className="text-muted-foreground">
-                  {s.beneficiary ?? "—"}
-                </TableCell>
-                <TableCell dir="ltr" className="font-mono text-muted-foreground">
-                  {s.site_code ?? "—"}
-                </TableCell>
-                <TableCell dir="ltr" className="max-w-64 truncate font-mono text-muted-foreground">
-                  {s.doc_path ?? "—"}
-                </TableCell>
-                <TableCell dir="auto" className="text-muted-foreground">
-                  {s.test_info ?? "—"}
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-1">
-                    {canWrite && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => {
-                          setEditing(s);
-                          setDialogOpen(true);
-                        }}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                    )}
-                    {canDelete && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setDeleting(s)}
-                      >
-                        <Trash2 className="h-4 w-4 text-rose-400" />
-                      </Button>
-                    )}
-                  </div>
-                </TableCell>
+            {table.getHeaderGroups().map((hg) => (
+              <TableRow key={hg.id}>
+                {hg.headers.map((h) => (
+                  <TableHead key={h.id}>
+                    {flexRender(h.column.columnDef.header, h.getContext())}
+                  </TableHead>
+                ))}
               </TableRow>
             ))}
-            {filtered.length === 0 && (
+          </TableHeader>
+          <TableBody>
+            {table.getRowModel().rows.map((row) => (
+              <TableRow key={row.id}>
+                {row.getVisibleCells().map((cell) => (
+                  <TableCell key={cell.id}>
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))}
+            {table.getRowModel().rows.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={6}
+                  colSpan={8}
                   className="py-10 text-center text-muted-foreground"
                 >
                   No services found.
@@ -227,13 +363,34 @@ export default function ServicesPage() {
                 onChange={set("beneficiary")}
               />
             </div>
-            <div className="grid gap-1.5">
-              <Label>Site code</Label>
-              <Input
-                dir="ltr"
-                value={form.site_code}
-                onChange={set("site_code")}
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label>Site</Label>
+                <Select
+                  value={form.site_id}
+                  onValueChange={(v) => setForm({ ...form, site_id: v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="None" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {sites.map((s) => (
+                      <SelectItem key={s.id} value={String(s.id)}>
+                        <span dir="auto">{s.name}</span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Site code</Label>
+                <Input
+                  dir="ltr"
+                  value={form.site_code}
+                  onChange={set("site_code")}
+                />
+              </div>
             </div>
             <div className="grid gap-1.5">
               <Label>Documentation path</Label>

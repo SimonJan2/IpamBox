@@ -1,12 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+  type ColumnDef,
+  type SortingState,
+} from "@tanstack/react-table";
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
+import { foldHebrew } from "@/lib/utils";
+import { SortHeader } from "@/components/sort-header";
 import type { Certificate } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,6 +44,7 @@ const EMPTY = {
   server_name: "",
   cert_name: "",
   expires_on: "",
+  serial_raw: "",
   notes: "",
 };
 
@@ -61,6 +72,9 @@ export default function CertificatesPage() {
   const canDelete = can(PERM.DATA_DELETE);
   const [items, setItems] = useState<Certificate[]>([]);
   const [q, setQ] = useState("");
+  const [sorting, setSorting] = useState<SortingState>([
+    { id: "expires_on", desc: false },
+  ]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Certificate | null>(null);
   const [deleting, setDeleting] = useState<Certificate | null>(null);
@@ -85,6 +99,7 @@ export default function CertificatesPage() {
               server_name: editing.server_name ?? "",
               cert_name: editing.cert_name ?? "",
               expires_on: editing.expires_on ?? "",
+              serial_raw: editing.serial_raw ?? "",
               notes: editing.notes ?? "",
             }
           : EMPTY
@@ -129,14 +144,131 @@ export default function CertificatesPage() {
     }
   };
 
-  const filtered = items
-    .filter((c) => {
-      const s = q.toLowerCase();
-      return [c.platform, c.target, c.server_name, c.cert_name]
-        .filter(Boolean)
-        .some((v) => v!.toLowerCase().includes(s));
-    })
-    .sort((a, b) => (a.expires_on ?? "9999").localeCompare(b.expires_on ?? "9999"));
+  const filtered = useMemo(() => {
+    if (!q) return items;
+    const needle = foldHebrew(q.toLowerCase());
+    return items.filter((c) =>
+      [
+        c.platform,
+        c.target,
+        c.server_name,
+        c.cert_name,
+        c.serial_raw,
+        c.notes,
+      ].some((f) => f != null && foldHebrew(f.toLowerCase()).includes(needle))
+    );
+  }, [items, q]);
+
+  const columns = useMemo<ColumnDef<Certificate>[]>(
+    () => [
+      {
+        accessorKey: "cert_name",
+        header: ({ column }) => (
+          <SortHeader column={column}>Certificate</SortHeader>
+        ),
+        cell: (c) => (
+          <span dir="auto" className="font-medium">
+            {c.getValue<string | null>() ?? "—"}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "platform",
+        header: ({ column }) => (
+          <SortHeader column={column}>Platform</SortHeader>
+        ),
+        cell: (c) => (
+          <span dir="auto" className="text-muted-foreground">
+            {c.getValue<string | null>() ?? "—"}
+          </span>
+        ),
+      },
+      {
+        id: "server",
+        accessorFn: (c) =>
+          [c.server_name, c.target].filter(Boolean).join(" · "),
+        header: ({ column }) => (
+          <SortHeader column={column}>Server / VS</SortHeader>
+        ),
+        cell: (c) => (
+          <span dir="auto" className="text-muted-foreground">
+            {c.getValue<string>() || "—"}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "expires_on",
+        header: ({ column }) => (
+          <SortHeader column={column}>Expires</SortHeader>
+        ),
+        cell: (c) => (
+          <span dir="ltr" className="font-mono text-muted-foreground">
+            {c.getValue<string | null>() ?? "—"}
+          </span>
+        ),
+      },
+      {
+        id: "countdown",
+        header: "Countdown",
+        enableSorting: false,
+        cell: (c) => expiryBadge(c.row.original.expires_on),
+      },
+      {
+        accessorKey: "notes",
+        header: "Notes",
+        enableSorting: false,
+        cell: (c) => (
+          <span
+            dir="auto"
+            title={c.getValue<string | null>() ?? undefined}
+            className="block max-w-[220px] truncate text-muted-foreground"
+          >
+            {c.getValue<string | null>() ?? "—"}
+          </span>
+        ),
+      },
+      {
+        id: "actions",
+        header: () => <div className="text-right">Actions</div>,
+        enableSorting: false,
+        cell: (c) => (
+          <div className="flex justify-end gap-1">
+            {canWrite && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  setEditing(c.row.original);
+                  setDialogOpen(true);
+                }}
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+            )}
+            {canDelete && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setDeleting(c.row.original)}
+              >
+                <Trash2 className="h-4 w-4 text-rose-400" />
+              </Button>
+            )}
+          </div>
+        ),
+      },
+    ],
+    [canWrite, canDelete]
+  );
+
+  const table = useReactTable({
+    data: filtered,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    state: { sorting },
+    onSortingChange: setSorting,
+  });
 
   const set = (k: keyof typeof EMPTY) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm({ ...form, [k]: e.target.value });
@@ -158,72 +290,45 @@ export default function CertificatesPage() {
         )}
       </div>
 
-      <Input
-        placeholder="Search certificates…"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        className="max-w-xs"
-      />
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          placeholder="Search certificates…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          className="max-w-xs"
+        />
+        <span className="ml-auto text-sm text-muted-foreground">
+          {table.getRowModel().rows.length} of {items.length}
+        </span>
+      </div>
 
       <div className="rounded-lg border">
         <Table>
           <TableHeader>
-            <TableRow>
-              <TableHead>Certificate</TableHead>
-              <TableHead>Platform</TableHead>
-              <TableHead>Server / VS</TableHead>
-              <TableHead>Expires</TableHead>
-              <TableHead>Countdown</TableHead>
-              <TableHead className="w-24 text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filtered.map((c) => (
-              <TableRow key={c.id}>
-                <TableCell dir="auto" className="font-medium">
-                  {c.cert_name ?? "—"}
-                </TableCell>
-                <TableCell dir="auto" className="text-muted-foreground">
-                  {c.platform ?? "—"}
-                </TableCell>
-                <TableCell dir="auto" className="text-muted-foreground">
-                  {[c.server_name, c.target].filter(Boolean).join(" · ") || "—"}
-                </TableCell>
-                <TableCell dir="ltr" className="font-mono text-muted-foreground">
-                  {c.expires_on ?? "—"}
-                </TableCell>
-                <TableCell>{expiryBadge(c.expires_on)}</TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-1">
-                    {canWrite && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => {
-                          setEditing(c);
-                          setDialogOpen(true);
-                        }}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                    )}
-                    {canDelete && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setDeleting(c)}
-                      >
-                        <Trash2 className="h-4 w-4 text-rose-400" />
-                      </Button>
-                    )}
-                  </div>
-                </TableCell>
+            {table.getHeaderGroups().map((hg) => (
+              <TableRow key={hg.id}>
+                {hg.headers.map((h) => (
+                  <TableHead key={h.id}>
+                    {flexRender(h.column.columnDef.header, h.getContext())}
+                  </TableHead>
+                ))}
               </TableRow>
             ))}
-            {filtered.length === 0 && (
+          </TableHeader>
+          <TableBody>
+            {table.getRowModel().rows.map((row) => (
+              <TableRow key={row.id}>
+                {row.getVisibleCells().map((cell) => (
+                  <TableCell key={cell.id}>
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))}
+            {table.getRowModel().rows.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={6}
+                  colSpan={7}
                   className="py-10 text-center text-muted-foreground"
                 >
                   No certificates found.
@@ -262,14 +367,25 @@ export default function CertificatesPage() {
               <Label>Target / VS</Label>
               <Input dir="auto" value={form.target} onChange={set("target")} />
             </div>
-            <div className="grid gap-1.5">
-              <Label>Expires on</Label>
-              <Input
-                type="date"
-                dir="ltr"
-                value={form.expires_on}
-                onChange={set("expires_on")}
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label>Expires on</Label>
+                <Input
+                  type="date"
+                  dir="ltr"
+                  value={form.expires_on}
+                  onChange={set("expires_on")}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Serial</Label>
+                <Input
+                  dir="ltr"
+                  className="font-mono"
+                  value={form.serial_raw}
+                  onChange={set("serial_raw")}
+                />
+              </div>
             </div>
             <div className="grid gap-1.5">
               <Label>Notes</Label>

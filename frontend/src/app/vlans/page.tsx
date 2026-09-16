@@ -1,12 +1,22 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ListFilter, Pencil, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
+import {
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+  type ColumnDef,
+  type SortingState,
+} from "@tanstack/react-table";
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
+import { foldHebrew } from "@/lib/utils";
+import { SortHeader } from "@/components/sort-header";
 import type { Site, Vlan, VlanGroup, VlanStatus } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -285,6 +295,8 @@ export default function VlansPage() {
   const [vlans, setVlans] = useState<Vlan[]>([]);
   const [groups, setGroups] = useState<VlanGroup[]>([]);
   const [sites, setSites] = useState<Site[]>([]);
+  const [q, setQ] = useState("");
+  const [sorting, setSorting] = useState<SortingState>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Vlan | null>(null);
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
@@ -300,18 +312,145 @@ export default function VlansPage() {
 
   useEffect(refresh, [refresh]);
 
-  const groupName = Object.fromEntries(groups.map((g) => [g.id, g.name]));
-  const siteName = Object.fromEntries(sites.map((s) => [s.id, s.name]));
+  const groupName = useMemo(
+    () => Object.fromEntries(groups.map((g) => [g.id, g.name])),
+    [groups]
+  );
+  const siteName = useMemo(
+    () => Object.fromEntries(sites.map((s) => [s.id, s.name])),
+    [sites]
+  );
 
-  const remove = async (v: Vlan) => {
-    try {
-      await api.del(`/api/v1/vlans/${v.id}`);
-      toast.success(`Deleted VLAN ${v.vid}`);
-      refresh();
-    } catch (e) {
-      toast.error("Delete failed", { description: String(e) });
-    }
-  };
+  const remove = useCallback(
+    async (v: Vlan) => {
+      try {
+        await api.del(`/api/v1/vlans/${v.id}`);
+        toast.success(`Deleted VLAN ${v.vid}`);
+        refresh();
+      } catch (e) {
+        toast.error("Delete failed", { description: String(e) });
+      }
+    },
+    [refresh]
+  );
+
+  const filtered = useMemo(() => {
+    if (!q) return vlans;
+    const needle = foldHebrew(q.toLowerCase());
+    return vlans.filter((v) =>
+      [
+        String(v.vid),
+        v.name,
+        v.group_id ? groupName[v.group_id] : null,
+        v.site_id ? siteName[v.site_id] : null,
+        v.status,
+        v.description,
+      ].some((f) => f != null && foldHebrew(f.toLowerCase()).includes(needle))
+    );
+  }, [vlans, q, groupName, siteName]);
+
+  const columns = useMemo<ColumnDef<Vlan>[]>(
+    () => [
+      {
+        accessorKey: "vid",
+        header: ({ column }) => (
+          <SortHeader column={column}>VID</SortHeader>
+        ),
+        cell: (c) => (
+          <span className="font-mono font-medium">{c.getValue<number>()}</span>
+        ),
+      },
+      {
+        accessorKey: "name",
+        header: ({ column }) => <SortHeader column={column}>Name</SortHeader>,
+        cell: (c) => <span dir="auto">{c.getValue<string>()}</span>,
+      },
+      {
+        id: "group",
+        accessorFn: (v) => (v.group_id ? (groupName[v.group_id] ?? "") : ""),
+        header: ({ column }) => (
+          <SortHeader column={column}>Group</SortHeader>
+        ),
+        cell: (c) => (
+          <span dir="auto" className="text-muted-foreground">
+            {c.getValue<string>() || "—"}
+          </span>
+        ),
+      },
+      {
+        id: "site",
+        accessorFn: (v) => (v.site_id ? (siteName[v.site_id] ?? "") : ""),
+        header: ({ column }) => <SortHeader column={column}>Site</SortHeader>,
+        cell: (c) => (
+          <span dir="auto" className="text-muted-foreground">
+            {c.getValue<string>() || "—"}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "status",
+        header: ({ column }) => (
+          <SortHeader column={column}>Status</SortHeader>
+        ),
+        cell: (c) => (
+          <Badge variant="outline" className="capitalize">
+            {c.getValue<string>()}
+          </Badge>
+        ),
+      },
+      {
+        accessorKey: "description",
+        header: ({ column }) => (
+          <SortHeader column={column}>Description</SortHeader>
+        ),
+        cell: (c) => (
+          <span dir="auto" className="text-muted-foreground">
+            {c.getValue<string | null>() ?? "—"}
+          </span>
+        ),
+      },
+      {
+        id: "actions",
+        header: () => <div className="text-right">Actions</div>,
+        enableSorting: false,
+        cell: (c) => (
+          <div className="flex justify-end gap-1">
+            {canWrite && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  setEditing(c.row.original);
+                  setDialogOpen(true);
+                }}
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+            )}
+            {canDelete && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => remove(c.row.original)}
+              >
+                <Trash2 className="h-4 w-4 text-rose-400" />
+              </Button>
+            )}
+          </div>
+        ),
+      },
+    ],
+    [groupName, siteName, canWrite, canDelete, remove]
+  );
+
+  const table = useReactTable({
+    data: filtered,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    state: { sorting },
+    onSortingChange: setSorting,
+  });
 
   const removeGroup = async (g: VlanGroup) => {
     try {
@@ -417,79 +556,56 @@ export default function VlansPage() {
         </Table>
       </div>
 
-      {filterGroup !== null && (
-        <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          placeholder="Search VLANs…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          className="max-w-xs"
+        />
+        {filterGroup !== null && (
           <Badge variant="secondary" className="gap-1.5">
             Group: {groupName[filterGroup] ?? filterGroup}
             <button onClick={() => setFilterGroup(null)}>
               <X className="h-3 w-3" />
             </button>
           </Badge>
-        </div>
-      )}
+        )}
+        <span className="ml-auto text-sm text-muted-foreground">
+          {table.getRowModel().rows.length} of {vlans.length}
+        </span>
+      </div>
 
       <div className="rounded-lg border">
         <Table>
           <TableHeader>
-            <TableRow>
-              <TableHead className="w-20">VID</TableHead>
-              <TableHead>Name</TableHead>
-              <TableHead>Group</TableHead>
-              <TableHead>Site</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead className="w-24 text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {vlans.map((v) => (
-              <TableRow key={v.id}>
-                <TableCell className="font-mono font-medium">{v.vid}</TableCell>
-                <TableCell>{v.name}</TableCell>
-                <TableCell className="text-muted-foreground">
-                  {v.group_id ? groupName[v.group_id] : "—"}
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {v.site_id ? siteName[v.site_id] : "—"}
-                </TableCell>
-                <TableCell>
-                  <Badge variant="outline" className="capitalize">
-                    {v.status}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {v.description ?? "—"}
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-1">
-                    {canWrite && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => {
-                          setEditing(v);
-                          setDialogOpen(true);
-                        }}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                    )}
-                    {canDelete && (
-                      <Button variant="ghost" size="icon" onClick={() => remove(v)}>
-                        <Trash2 className="h-4 w-4 text-rose-400" />
-                      </Button>
-                    )}
-                  </div>
-                </TableCell>
+            {table.getHeaderGroups().map((hg) => (
+              <TableRow key={hg.id}>
+                {hg.headers.map((h) => (
+                  <TableHead key={h.id}>
+                    {flexRender(h.column.columnDef.header, h.getContext())}
+                  </TableHead>
+                ))}
               </TableRow>
             ))}
-            {vlans.length === 0 && (
+          </TableHeader>
+          <TableBody>
+            {table.getRowModel().rows.map((row) => (
+              <TableRow key={row.id}>
+                {row.getVisibleCells().map((cell) => (
+                  <TableCell key={cell.id}>
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))}
+            {table.getRowModel().rows.length === 0 && (
               <TableRow>
                 <TableCell
                   colSpan={7}
                   className="py-10 text-center text-muted-foreground"
                 >
-                  No VLANs yet.
+                  No VLANs found.
                 </TableCell>
               </TableRow>
             )}

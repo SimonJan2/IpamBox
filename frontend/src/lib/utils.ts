@@ -21,3 +21,17 @@ export function timeAgo(iso: string | null): string {
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
   return `${Math.floor(s / 86400)}d ago`;
 }
+
+// Hebrew final letters -> regular form, so search treats םןץףך == מנצפכ.
+// Mirrors backend fold_hebrew.
+const HE_FINALS: Record<string, string> = {
+  "ם": "מ",
+  "ן": "נ",
+  "ץ": "צ",
+  "ף": "פ",
+  "ך": "כ",
+};
+
+export function foldHebrew(s: string): string {
+  return s.replace(/[םןץףך]/g, (c) => HE_FINALS[c] ?? c);
+}
