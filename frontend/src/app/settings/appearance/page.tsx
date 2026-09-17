@@ -17,6 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { SettingField } from "@/components/settings/field";
 
 export default function AppearancePage() {
@@ -111,6 +112,16 @@ export default function AppearancePage() {
                 ))}
               </SelectContent>
             </Select>
+          </SettingField>
+
+          <SettingField
+            label="Show slugs"
+            hint="Show site/tag slugs next to names."
+          >
+            <Switch
+              checked={prefs.showSlugs}
+              onCheckedChange={(v) => setPrefs({ showSlugs: v })}
+            />
           </SettingField>
         </CardContent>
       </Card>

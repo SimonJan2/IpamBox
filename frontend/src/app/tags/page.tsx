@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { usePrefs } from "@/lib/prefs";
 import { PERM } from "@/lib/permissions";
 import type { Tag } from "@/types";
 import { TagDialog } from "@/components/tag-dialog";
@@ -22,6 +23,7 @@ import {
 
 export default function TagsPage() {
   const { can } = useAuth();
+  const [prefs] = usePrefs();
   const canWrite = can(PERM.DATA_WRITE);
   const canDelete = can(PERM.DATA_DELETE);
   const [tags, setTags] = useState<Tag[]>([]);
@@ -69,7 +71,7 @@ export default function TagsPage() {
           <TableHeader>
             <TableRow>
               <TableHead>Tag</TableHead>
-              <TableHead>Slug</TableHead>
+              {prefs.showSlugs && <TableHead>Slug</TableHead>}
               <TableHead>Description</TableHead>
               <TableHead className="w-24 text-right">Actions</TableHead>
             </TableRow>
@@ -80,9 +82,11 @@ export default function TagsPage() {
                 <TableCell>
                   <TagChip tag={t} />
                 </TableCell>
-                <TableCell className="font-mono text-xs text-muted-foreground">
-                  {t.slug}
-                </TableCell>
+                {prefs.showSlugs && (
+                  <TableCell className="font-mono text-xs text-muted-foreground">
+                    {t.slug}
+                  </TableCell>
+                )}
                 <TableCell className="text-muted-foreground">
                   {t.description ?? "—"}
                 </TableCell>
@@ -111,7 +115,7 @@ export default function TagsPage() {
             ))}
             {tags.length === 0 && (
               <TableRow>
-                <TableCell colSpan={4} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={prefs.showSlugs ? 4 : 3} className="py-10 text-center text-muted-foreground">
                   No tags yet.
                 </TableCell>
               </TableRow>
