@@ -15,7 +15,7 @@ _FAMILIES = (
     "site_sheet",
 )
 
-_IP_FRAG_RE = re.compile(r"^\d{1,3}\.\d{1,3}(?:\.\d{1,3})?\.?$")
+_IP_FRAG_RE = re.compile(r"^\d{1,3}(?:\.\d{1,3}){1,3}\.?$")
 
 
 def _has(headers: list[str], *needles: str) -> bool:
@@ -62,6 +62,10 @@ def classify_sheet(sheet) -> tuple[str, int, list[str]]:
         if _has(h, "guest os"):
             return "servers", idx, warnings
         if any(x in joined for x in ("ip address", "ip", "כתובת", "כתובת ip")):
+            return "site_sheet", idx, warnings
+        # sheets 035/037 leave the IP header cell blank — signature still
+        # recognizable from the neighboring columns
+        if _has(h, "subnet mask") and _has(h, "node name"):
             return "site_sheet", idx, warnings
 
     # headerless fallback: 3+ rows with an IP-fragment column -> site_sheet
