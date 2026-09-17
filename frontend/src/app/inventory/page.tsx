@@ -59,6 +59,12 @@ const EMPTY = {
   notes: "",
 };
 
+// Lookup names are baked into the row objects: TanStack caches accessorFn
+// results per row for the lifetime of `data`, so reading siteName inside
+// accessorFn leaves "" cached when the sites fetch resolves after the
+// assets fetch.
+type AssetRow = Asset & { site_name: string };
+
 export default function InventoryPage() {
   const { can } = useAuth();
   const canWrite = can(PERM.DATA_WRITE);
@@ -148,9 +154,18 @@ export default function InventoryPage() {
     [sites]
   );
 
+  const rows = useMemo<AssetRow[]>(
+    () =>
+      items.map((a) => ({
+        ...a,
+        site_name: a.site_id ? (siteName[a.site_id] ?? "") : "",
+      })),
+    [items, siteName]
+  );
+
   const filtered = useMemo(() => {
     const needle = foldHebrew(q.toLowerCase());
-    return items.filter((a) => {
+    return rows.filter((a) => {
       if (kindFilter !== "all" && a.kind !== kindFilter) return false;
       if (!q) return true;
       return [
@@ -162,10 +177,10 @@ export default function InventoryPage() {
         a.version,
         a.support_status,
         a.notes,
-        a.site_id ? siteName[a.site_id] : null,
+        a.site_name,
       ].some((f) => f != null && foldHebrew(f.toLowerCase()).includes(needle));
     });
-  }, [items, q, kindFilter, siteName]);
+  }, [rows, q, kindFilter]);
 
   const eolBadge = (eol: string | null) => {
     if (!eol) return <span className="text-muted-foreground">—</span>;
@@ -184,7 +199,7 @@ export default function InventoryPage() {
     );
   };
 
-  const columns = useMemo<ColumnDef<Asset>[]>(
+  const columns = useMemo<ColumnDef<AssetRow>[]>(
     () => [
       {
         id: "model",
@@ -227,7 +242,7 @@ export default function InventoryPage() {
       },
       {
         id: "site",
-        accessorFn: (a) => (a.site_id ? (siteName[a.site_id] ?? "") : ""),
+        accessorKey: "site_name",
         header: ({ column }) => <SortHeader column={column}>Site</SortHeader>,
         cell: (c) => (
           <span dir="auto" className="text-muted-foreground">
@@ -308,7 +323,7 @@ export default function InventoryPage() {
         ),
       },
     ],
-    [siteName, canWrite, canDelete]
+    [canWrite, canDelete]
   );
 
   const table = useReactTable({

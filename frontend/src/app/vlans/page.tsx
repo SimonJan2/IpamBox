@@ -47,6 +47,12 @@ import {
 
 const VLAN_STATUSES: VlanStatus[] = ["active", "reserved", "deprecated"];
 
+// Lookup names are baked into the row objects: TanStack caches accessorFn
+// results per row for the lifetime of `data`, so reading groupName/siteName
+// inside accessorFn leaves "" cached when the lookup fetch resolves after
+// the vlans fetch.
+type VlanRow = Vlan & { group_name: string; site_name: string };
+
 function VlanDialog({
   open,
   onOpenChange,
@@ -334,22 +340,32 @@ export default function VlansPage() {
     [refresh]
   );
 
+  const rows = useMemo<VlanRow[]>(
+    () =>
+      vlans.map((v) => ({
+        ...v,
+        group_name: v.group_id ? (groupName[v.group_id] ?? "") : "",
+        site_name: v.site_id ? (siteName[v.site_id] ?? "") : "",
+      })),
+    [vlans, groupName, siteName]
+  );
+
   const filtered = useMemo(() => {
-    if (!q) return vlans;
+    if (!q) return rows;
     const needle = foldHebrew(q.toLowerCase());
-    return vlans.filter((v) =>
+    return rows.filter((v) =>
       [
         String(v.vid),
         v.name,
-        v.group_id ? groupName[v.group_id] : null,
-        v.site_id ? siteName[v.site_id] : null,
+        v.group_name,
+        v.site_name,
         v.status,
         v.description,
       ].some((f) => f != null && foldHebrew(f.toLowerCase()).includes(needle))
     );
-  }, [vlans, q, groupName, siteName]);
+  }, [rows, q]);
 
-  const columns = useMemo<ColumnDef<Vlan>[]>(
+  const columns = useMemo<ColumnDef<VlanRow>[]>(
     () => [
       {
         accessorKey: "vid",
@@ -367,7 +383,7 @@ export default function VlansPage() {
       },
       {
         id: "group",
-        accessorFn: (v) => (v.group_id ? (groupName[v.group_id] ?? "") : ""),
+        accessorKey: "group_name",
         header: ({ column }) => (
           <SortHeader column={column}>Group</SortHeader>
         ),
@@ -379,7 +395,7 @@ export default function VlansPage() {
       },
       {
         id: "site",
-        accessorFn: (v) => (v.site_id ? (siteName[v.site_id] ?? "") : ""),
+        accessorKey: "site_name",
         header: ({ column }) => <SortHeader column={column}>Site</SortHeader>,
         cell: (c) => (
           <span dir="auto" className="text-muted-foreground">
@@ -440,7 +456,7 @@ export default function VlansPage() {
         ),
       },
     ],
-    [groupName, siteName, canWrite, canDelete, remove]
+    [canWrite, canDelete, remove]
   );
 
   const table = useReactTable({
