@@ -279,6 +279,19 @@ class _Planner:
                     description="from sites master list",
                 )
 
+    @staticmethod
+    def _sheet_octets(records: list[dict]) -> Counter:
+        """Second-octet histogram of a sheet's 10.x addresses.
+        site_number is only meaningful inside the 10.0.0.0/8 plan —
+        172.17.x.x must not match site 17."""
+        return Counter(
+            n
+            for r in records
+            for n in [nz.second_octet(r.get("address") or "")]
+            if r.get("address") and n is not None
+            and str(r["address"]).split(".")[0] == "10"
+        )
+
     def resolve_sheet_site(self, sheet_name: str, octets: Counter) -> tuple[str, str | None]:
         """site_key, matched_by for a site_sheet."""
         override = self.opt.site_overrides.get(sheet_name)
@@ -295,9 +308,10 @@ class _Planner:
             for key, s in self._sites.items():
                 if s.get("site_number") == number:
                     return key, "octet"
-            return self._new_site(
-                f"Site 10.{number}.x", number=number
-            ), "octet-new"
+            # name the new site after the sheet rather than a bare number —
+            # 'רמון' tells the user far more than 'Site 10.100.x'
+            title_name = nz.clean(sheet_name)[:255] or f"Site 10.{number}.x"
+            return self._new_site(title_name, number=number), "octet-new"
         # name/code fragment match against sheet title
         title = nz.fold_hebrew(sheet_name).lower()
         for site in self.st.sites_by_id.values():
@@ -316,7 +330,10 @@ class _Planner:
             )
         for r in records:
             if r["kind"] == "invalid":
-                self.report(sheet_name, r["row"], "error", r["detail"])
+                self.report(
+                    sheet_name, r["row"], "skip",
+                    f"needs review: {r['detail']}",
+                )
                 continue
             if r["kind"] == "skip":
                 self.report(sheet_name, r["row"], "skip", r["detail"])
@@ -475,15 +492,39 @@ class _Planner:
 
     # -- entity families -------------------------------------------------
 
+    def _planned_site(self, *, number=None, code=None, name=None) -> str | None:
+        """Match a site among pre-existing DB rows AND sites already planned
+        in this batch — the first import has every site only in _sites."""
+        if number is not None:
+            s = self.st.site_by_number.get(number)
+            if s is not None:
+                return self._register_site(s)
+            for key, p in self._sites.items():
+                if p.get("site_number") == number:
+                    return key
+        if code:
+            s = self.st.site_by_code.get(nz.fold_hebrew(code).lower())
+            if s is not None:
+                return self._register_site(s)
+            folded = nz.fold_hebrew(code).lower()
+            for key, p in self._sites.items():
+                if p.get("code") and nz.fold_hebrew(p["code"]).lower() == folded:
+                    return key
+        if name:
+            s = self.st.site_by_name.get(nz.fold_hebrew(name).lower())
+            if s is not None:
+                return self._register_site(s)
+            folded = nz.fold_hebrew(name).lower()
+            for key, p in self._sites.items():
+                if p.get("name") and nz.fold_hebrew(p["name"]).lower() == folded:
+                    return key
+        return None
+
     def add_circuits(self, records: list[dict]):
         for r in records:
-            site_key = None
-            if r.get("site_number") is not None:
-                s = self.st.site_by_number.get(r["site_number"])
-                site_key = self._register_site(s) if s else None
-            if site_key is None and r.get("site_code"):
-                s = self.st.site_by_code.get(nz.fold_hebrew(r["site_code"]).lower())
-                site_key = self._register_site(s) if s else None
+            site_key = self._planned_site(number=r.get("site_number"))
+            if site_key is None:
+                site_key = self._planned_site(code=r.get("site_code"))
             self.plan["circuits"].append({**r, "site_key": site_key})
             self.report(
                 r["sheet"], r["row"], "create",
@@ -500,10 +541,7 @@ class _Planner:
 
     def add_assets(self, records: list[dict]):
         for r in records:
-            site_key = None
-            if r.get("site_name"):
-                s = self.st.site_by_name.get(nz.fold_hebrew(r["site_name"]).lower())
-                site_key = self._register_site(s) if s else None
+            site_key = self._planned_site(name=r.get("site_name"))
             self.plan["assets"].append({**r, "site_key": site_key})
             self.report(
                 r["sheet"], r["row"], "create",
@@ -514,10 +552,9 @@ class _Planner:
         for r in records:
             site_key = None
             if r.get("site_code"):
-                s = self.st.site_by_code.get(nz.fold_hebrew(r["site_code"]).lower())
-                if s is None and r["site_code"].isdigit():
-                    s = self.st.site_by_number.get(int(r["site_code"]))
-                site_key = self._register_site(s) if s else None
+                site_key = self._planned_site(code=r["site_code"])
+                if site_key is None and r["site_code"].isdigit():
+                    site_key = self._planned_site(number=int(r["site_code"]))
             self.plan["services"].append({**r, "site_key": site_key})
             self.report(r["sheet"], r["row"], "create", r.get("name") or "service")
 
@@ -541,6 +578,14 @@ class _Planner:
                 self.add_sites_master(records)
                 parsed[sm.name] = (family, hidx, records, warns + pw)
 
+        # pre-pass: resolve every address sheet's site BEFORE entity families
+        # run — a circuits sheet early in the workbook must still see sites
+        # created by site sheets at the end of it
+        for sm in sheets:
+            family, _hidx, records, _warns = parsed[sm.name]
+            if family in ("site_sheet", "servers") and sm.name not in self.opt.skip_sheets:
+                self.resolve_sheet_site(sm.name, self._sheet_octets(records))
+
         for sm in sheets:
             family, _hidx, records, warns = parsed[sm.name]
             if family == "empty" or sm.name in self.opt.skip_sheets:
@@ -549,12 +594,7 @@ class _Planner:
                 )
                 continue
             if family == "site_sheet":
-                octets = Counter(
-                    n
-                    for r in records
-                    for n in [nz.second_octet(r.get("address") or "")]
-                    if r.get("address") and n is not None
-                )
+                octets = self._sheet_octets(records)
                 site_key, how = self.resolve_sheet_site(sm.name, octets)
                 self.add_site_records(sm.name, site_key, records)
                 site = self._sites[site_key]
@@ -575,12 +615,7 @@ class _Planner:
                 self.add_services(records)
                 self.sheet_previews.append(_preview(sm, family, len(records), warns, None, None, None))
             elif family == "servers":
-                octets = Counter(
-                    n
-                    for r in records
-                    for n in [nz.second_octet(r.get("address") or "")]
-                    if r.get("address") and n is not None
-                )
+                octets = self._sheet_octets(records)
                 site_key, how = self.resolve_sheet_site(sm.name, octets)
                 self.add_site_records(sm.name, site_key, records)
                 site = self._sites[site_key]

@@ -53,27 +53,105 @@ def _map_columns(header_row) -> dict[str, list[int]]:
     return mapping
 
 
+_FRAG_RE = re.compile(r"^\d{1,3}(?:\.\d{1,3}){1,3}\.?$")
+_MASK_RE = re.compile(r"^255\.\d{1,3}\.\d{1,3}\.\d{1,3}$")
+_VLANISH_RE = re.compile(r"^(vlan\s*\d*|loopback|\d+\s*bit|lan|mgmt|users?)$", re.I)
+_MACISH_RE = re.compile(r"^[0-9A-Fa-f]{2}([:\-.][0-9A-Fa-f]{2,4}){2,5}$")
+
+
+_MODELISH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_./+\-]{1,30}$")
+
+
+def _col_class(values: list[str]) -> str:
+    """Dominant content class of a column sample."""
+    vals = [v for v in values if v]
+    if not vals:
+        return "empty"
+    def frac(pred):
+        return sum(1 for v in vals if pred(v)) / len(vals)
+    if frac(lambda v: bool(_MASK_RE.match(v))) > 0.5:
+        return "mask"
+    if frac(lambda v: bool(_MACISH_RE.match(v))) > 0.5:
+        return "mac"
+    if frac(lambda v: bool(_VLANISH_RE.match(v))) > 0.5:
+        return "vlan"
+    if frac(lambda v: bool(_FRAG_RE.match(v))) > 0.5:
+        return "ip"
+    # short ASCII tokens (hostnames, model names) vs free text/Hebrew notes
+    if frac(lambda v: bool(_MODELISH_RE.match(v))) > 0.5:
+        return "modelish"
+    return "text"
+
+
+_ENDISH_RE = re.compile(r"^\d{1,3}$")
+
+
 def _positional_columns(sheet) -> dict[str, list[int]]:
-    """Headerless sheet: find the IP-fragment column, map the canonical
-    layout starting there (100_* has a leading empty col)."""
-    frag_re = re.compile(r"^\d{1,3}\.\d{1,3}(?:\.\d{1,3})?\.?$")
-    best, best_n = -1, 0
+    """Headerless sheet: locate the IP column, then assign the remaining
+    canonical fields by column CONTENT, not fixed offsets — sheets deviate
+    from the canonical layout (034 drops the VLAN column, 031 adds a pad
+    column, 063 carries full IPs)."""
+    def _is_ipfrag(v: str) -> bool:
+        # a mask column (255.x.x.x) must never be mistaken for the IP column
+        return bool(_FRAG_RE.match(v)) and not _MASK_RE.match(v)
+
+    best, best_score = -1, -1.0
     for ci in range(4):
-        n = sum(
+        frag = sum(
             1
             for r in sheet.rows[:30]
-            if ci < len(r) and frag_re.match(nz.clean(r[ci]))
+            if ci < len(r) and _is_ipfrag(nz.clean(r[ci]))
         )
-        if n > best_n:
-            best, best_n = ci, n
+        if frag == 0:
+            continue
+        # the 'end ip' slot sits directly right: a column of bare last
+        # octets is the signature of the split-base layout
+        end_n = sum(
+            1
+            for r in sheet.rows[:30]
+            if ci + 1 < len(r) and _ENDISH_RE.match(nz.clean(r[ci + 1]))
+        )
+        score = frag + min(end_n, frag) * 0.5
+        if score > best_score:
+            best, best_score = ci, score
     if best < 0:
         return {}
-    cols: dict[str, list[int]] = {}
-    offset = 0
-    # a column left of the IP column is always empty decoration in this file
-    for name in _SITE_POSITIONAL:
-        cols[name] = [best + offset]
-        offset += 1
+
+    cols: dict[str, list[int]] = {"ip": [best]}
+    # the 'end ip' slot sits directly right — but only claim it when the
+    # column really holds bare octets; on full-IP sheets (063) that column
+    # may be a mask and must stay available for content classification
+    if best + 1 < 12:
+        nxt = [nz.clean(r[best + 1]) for r in sheet.rows[:30] if best + 1 < len(r)]
+        filled = [v for v in nxt if v]
+        if not filled or sum(1 for v in filled if _ENDISH_RE.match(v)) / len(filled) > 0.5:
+            cols["end"] = [best + 1]
+
+    # classify the next columns by content and fill canonical slots in order
+    classes = {}
+    for ci in range(best + 2, min(best + 9, 12)):
+        sample = [
+            nz.clean(r[ci]) for r in sheet.rows[:30] if ci < len(r)
+        ]
+        classes[ci] = _col_class(sample)
+
+    taken = {best} | set(cols.get("end", []))
+    def take(*want: str) -> int | None:
+        for ci in sorted(classes):
+            if ci in taken or classes[ci] not in want:
+                continue
+            taken.add(ci)
+            return ci
+        return None
+
+    for field, want in (
+        ("mask", ("mask",)), ("vlan", ("vlan",)),
+        ("node", ("modelish", "text")), ("mac", ("mac",)),
+        ("model", ("modelish",)), ("description", ("text", "modelish")),
+    ):
+        ci = take(*want)
+        if ci is not None:
+            cols[field] = [ci]
     return cols
 
 
@@ -108,6 +186,13 @@ def parse_site_sheet(sheet, hidx: int) -> tuple[list[dict], list[str]]:
     warnings: list[str] = []
     if hidx >= 0:
         mapping = _map_columns(sheet.rows[hidx])
+        if "ip" not in mapping:
+            # blank 'IP Address' header cell (035/037): keep the named
+            # columns, take ip/end positionally
+            pos = _positional_columns(sheet)
+            for f in ("ip", "end"):
+                if f in pos:
+                    mapping[f] = pos[f]
     else:
         mapping = _positional_columns(sheet)
     if "ip" not in mapping:
@@ -232,6 +317,16 @@ def _site_row(sheet, ri, row, block, header_names, used_idx, prev_base):
         "_base": base,
     }
     vid, vname = nz.parse_vlan(nz.clean(cell("vlan")))
+    if vname and (
+        _MASK_RE.match(vname) or _FRAG_RE.match(vname)
+        or re.match(r"(?i)^(loopback\d*|\d+\s*bit)$", vname)
+        or (" " in vname and re.search(r"[֐-׿]", vname))
+    ):
+        # link-type labels ('loopback', '30bit'), stray masks and Hebrew
+        # note sentences are not VLANs — keep the raw text instead of
+        # fabricating a VLAN record
+        cf.setdefault("vlan_raw", vname)
+        vid, vname = None, None
     rec["vlan_vid"], rec["vlan_name"] = vid, vname
     return rec
 
@@ -281,6 +376,14 @@ def parse_sites_master(sheet, hidx: int) -> tuple[list[dict], list[str]]:
                 number = int(cidr.split(".")[1])
             except (IndexError, ValueError):
                 pass
+        elif frags and frags[0].isdigit():
+            # partial subnet ('10,86' / ',87' / ',46,0,x' with no full CIDR)
+            # — the site number IS the second octet in this address plan;
+            # a lone leading fragment is that octet itself
+            if frags[0] == "10" and len(frags) >= 2 and frags[1].isdigit():
+                number = int(frags[1])
+            elif len(frags) == 1 or frags[1] in ("0", "x"):
+                number = int(frags[0])
         records.append(
             {
                 "sheet": sheet.name,
