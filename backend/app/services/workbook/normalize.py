@@ -37,9 +37,15 @@ def fold_hebrew(v: str) -> str:
     return (v or "").translate(_FINALS)
 
 
+_HDR_EDGE = "'\"׳״`"
+
+
 def norm_header(v) -> str:
-    """Header cell -> lowercase, single-spaced, for signature matching."""
-    return _WS_RE.sub(" ", clean(v)).strip().lower()
+    """Header cell -> lowercase, single-spaced, for signature matching.
+    Edge quotes/apostrophes are stripped — real headers like
+    'שם לקוח באפל'' carry a trailing gershayim that must not break aliases."""
+    s = _WS_RE.sub(" ", clean(v)).strip().lower()
+    return s.strip(_HDR_EDGE).strip()
 
 
 # ---------------------------------------------------------------------------
