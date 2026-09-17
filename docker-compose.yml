@@ -24,7 +24,7 @@ services:
     volumes:
       - redisdata:/data
     ports:
-      - "127.0.0.1:6378:6379"
+      - "127.0.0.1:${REDIS_PORT:-6378}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -82,7 +82,7 @@ services:
       - NET_RAW
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ipam}:${POSTGRES_PASSWORD:-ipam}@127.0.0.1:5432/${POSTGRES_DB:-ipam}
-      REDIS_URL: redis://127.0.0.1:6379/0
+      REDIS_URL: redis://127.0.0.1:${REDIS_PORT:-6378}/0
       SCAN_INTERFACE: ${SCAN_INTERFACE:-}
       SCAN_NETWORKS: ${SCAN_NETWORKS:-}
       SCAN_EXCLUDE_NETWORKS: ${SCAN_EXCLUDE_NETWORKS:-}
