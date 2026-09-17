@@ -426,6 +426,12 @@ function DeletePrefixDialog({
   );
 }
 
+// Lookup names are baked into the row objects: TanStack caches accessorFn
+// results per row for the lifetime of `data`, so reading vrfName/siteName
+// inside accessorFn leaves "" cached when the lookup fetch resolves after
+// the prefixes fetch.
+type PrefixRow = Prefix & { vrf_name: string; site_name: string };
+
 export default function PrefixesPage() {
   const router = useRouter();
   const { can } = useAuth();
@@ -461,7 +467,7 @@ export default function PrefixesPage() {
     [sites]
   );
 
-  const columns = useMemo<ColumnDef<Prefix>[]>(
+  const columns = useMemo<ColumnDef<PrefixRow>[]>(
     () => [
       {
         accessorKey: "prefix",
@@ -478,13 +484,13 @@ export default function PrefixesPage() {
       },
       {
         id: "vrf",
-        accessorFn: (p) => vrfName[p.vrf_id] ?? "",
+        accessorKey: "vrf_name",
         header: ({ column }) => <SortHeader column={column}>VRF</SortHeader>,
         cell: (c) => c.getValue<string>(),
       },
       {
         id: "site",
-        accessorFn: (p) => (p.site_id ? (siteName[p.site_id] ?? "") : ""),
+        accessorKey: "site_name",
         header: ({ column }) => <SortHeader column={column}>Site</SortHeader>,
         cell: (c) => c.getValue<string>() || "—",
       },
@@ -591,12 +597,22 @@ export default function PrefixesPage() {
         ),
       },
     ],
-    [vrfName, siteName, tags, prefixTags, refreshTags, canWrite, canDelete]
+    [tags, prefixTags, refreshTags, canWrite, canDelete]
+  );
+
+  const rows = useMemo<PrefixRow[]>(
+    () =>
+      prefixes.map((p) => ({
+        ...p,
+        vrf_name: vrfName[p.vrf_id] ?? "",
+        site_name: p.site_id ? (siteName[p.site_id] ?? "") : "",
+      })),
+    [prefixes, vrfName, siteName]
   );
 
   const filtered = useMemo(
-    () => (vrfFilter === "all" ? prefixes : prefixes.filter((p) => String(p.vrf_id) === vrfFilter)),
-    [prefixes, vrfFilter]
+    () => (vrfFilter === "all" ? rows : rows.filter((p) => String(p.vrf_id) === vrfFilter)),
+    [rows, vrfFilter]
   );
 
   const table = useReactTable({

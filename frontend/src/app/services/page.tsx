@@ -54,6 +54,12 @@ const EMPTY = {
   notes: "",
 };
 
+// Lookup names are baked into the row objects: TanStack caches accessorFn
+// results per row for the lifetime of `data`, so reading siteName inside
+// accessorFn leaves "" cached when the sites fetch resolves after the
+// services fetch.
+type ServiceRow = Service & { site_name: string };
+
 export default function ServicesPage() {
   const { can } = useAuth();
   const canWrite = can(PERM.DATA_WRITE);
@@ -136,10 +142,19 @@ export default function ServicesPage() {
     [sites]
   );
 
+  const rows = useMemo<ServiceRow[]>(
+    () =>
+      items.map((s) => ({
+        ...s,
+        site_name: s.site_id ? (siteName[s.site_id] ?? "") : "",
+      })),
+    [items, siteName]
+  );
+
   const filtered = useMemo(() => {
-    if (!q) return items;
+    if (!q) return rows;
     const needle = foldHebrew(q.toLowerCase());
-    return items.filter((s) =>
+    return rows.filter((s) =>
       [
         s.name,
         s.beneficiary,
@@ -147,12 +162,12 @@ export default function ServicesPage() {
         s.doc_path,
         s.test_info,
         s.notes,
-        s.site_id ? siteName[s.site_id] : null,
+        s.site_name,
       ].some((f) => f != null && foldHebrew(f.toLowerCase()).includes(needle))
     );
-  }, [items, q, siteName]);
+  }, [rows, q]);
 
-  const columns = useMemo<ColumnDef<Service>[]>(
+  const columns = useMemo<ColumnDef<ServiceRow>[]>(
     () => [
       {
         accessorKey: "name",
@@ -187,7 +202,7 @@ export default function ServicesPage() {
       },
       {
         id: "site",
-        accessorFn: (s) => (s.site_id ? (siteName[s.site_id] ?? "") : ""),
+        accessorKey: "site_name",
         header: ({ column }) => <SortHeader column={column}>Site</SortHeader>,
         cell: (c) => (
           <span dir="auto" className="text-muted-foreground">
@@ -264,7 +279,7 @@ export default function ServicesPage() {
         ),
       },
     ],
-    [siteName, canWrite, canDelete]
+    [canWrite, canDelete]
   );
 
   const table = useReactTable({
