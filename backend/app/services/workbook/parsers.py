@@ -15,9 +15,9 @@ _SITE_COLS = {
     "mask": {"subnet mask", "subnet", "subet", "mask"},
     "gateway": {"defult gatway", "default gateway", "gatway", "gateway", "dg"},
     "vlan": {"vlan/lan", "vlan", "lan"},
-    "node": {"node name", "server name", "hostname", "host"},
+    "node": {"node name", "server name", "hostname", "host", "name"},
     "counter": {"counter/location", "location", "מס דלפק באפלקציה"},
-    "mac": {"mac"},
+    "mac": {"mac", "mac address", "mac-address", "mac add"},
     "model": {"model"},
     "description": {"description", "discription", "desc", "תיאור"},
     "serial": {"serial number", "serial", "s.n", "sn"},
@@ -267,8 +267,11 @@ def _site_row(sheet, ri, row, block, header_names, used_idx, prev_base):
         return None
 
     cf: dict = {}
-    # unmapped, non-empty named columns -> custom_fields (junk cols dropped
-    # when the header is empty and no mapped sibling uses the slot)
+    # unmapped, non-empty columns -> custom_fields. Named columns keep their
+    # header as the key; unnamed ones pile into a deduped 'extra' string so
+    # real data (ISP names, serial blobs, notes) survives instead of
+    # vanishing — 'yes'/'no ping' are known junk markers.
+    extra: list[str] = []
     for i, v in enumerate(row):
         s = nz.clean(v)
         if not s or i in used_idx or i in (block.get("ip"), block.get("end")):
@@ -278,6 +281,10 @@ def _site_row(sheet, ri, row, block, header_names, used_idx, prev_base):
             cf[name[:64]] = s[:255]
         elif s.lower() in ("yes", "no ping"):
             continue  # known junk markers
+        elif s not in extra:
+            extra.append(s)
+    if extra:
+        cf["extra"] = " | ".join(extra)[:1000]
     for f in ("env", "lev_dr", "gateway"):
         s = nz.clean(cell(f))
         if s:
@@ -331,23 +338,72 @@ def _site_row(sheet, ri, row, block, header_names, used_idx, prev_base):
     return rec
 
 
+_RANGE_FRAG_RE = re.compile(r"^(\d{1,3})\s*-\s*(\d{1,3})$")
+# 'היה "מטה ארצי" בעבר' — "was X formerly" — the only identity an anonymous
+# master row carries
+_FORMER_RE = re.compile(r"היה\s+[\"'״]?([^\"'״]+?)[\"'״]?\s+בעבר")
+
+
+def _leftover_bits(row, header_row, used: set[int]) -> list[str]:
+    """'header: value' strings for named columns no field claimed — keeps
+    legacy/extra columns (VPI/VCI, כמות קווים, logs …) in notes instead of
+    dropping them. '#' row-number columns are skipped."""
+    out = []
+    for ci, c in enumerate(row):
+        if ci in used:
+            continue
+        s = nz.clean(c)
+        h = nz.clean(header_row[ci]) if ci < len(header_row) else ""
+        if s and h and h != "#":
+            out.append(f"{h}: {s}")
+    return out
+
+
+def _master_blocks(frags: list[str], cidr: str) -> set[tuple[int, int]]:
+    """(first, second) octet pairs a master row declares — lets sheet->site
+    matching work outside the 10.x plan (e.g. Integration Site's 172.20-21.x).
+    A lone leading fragment or a '0'/'x' second fragment means the '10' prefix
+    was simply omitted ('46,0,x' -> 10.46)."""
+    if cidr:
+        a, b = cidr.split(".")[:2]
+        return {(int(a), int(b))}
+    if not frags or not frags[0].isdigit():
+        return set()
+    if frags[0] == "10":
+        if len(frags) >= 2 and frags[1].isdigit():
+            return {(10, int(frags[1]))}
+        if len(frags) == 1 or frags[1] in ("0", "x"):
+            return {(10, 10)}
+        return set()
+    if len(frags) == 1 or frags[1] in ("0", "x"):
+        return {(10, int(frags[0]))}
+    m = _RANGE_FRAG_RE.match(frags[1])
+    if m:
+        lo, hi = int(m.group(1)), int(m.group(2))
+        return {(int(frags[0]), n) for n in range(lo, min(hi, lo + 64) + 1)}
+    if frags[1].isdigit():
+        return {(int(frags[0]), int(frags[1]))}
+    return set()
+
+
 def parse_sites_master(sheet, hidx: int) -> tuple[list[dict], list[str]]:
     header = [nz.norm_header(c) for c in sheet.rows[hidx]]
     idx = {h: i for i, h in enumerate(header) if h}
 
     def col(row, *names):
+        # the header row can repeat a name ('הערות' twice) — scan all matches
+        # so the first non-empty value wins instead of the last column's
         for n in names:
-            i = idx.get(n)
-            if i is not None and i < len(row):
-                s = nz.clean(row[i])
-                if s:
-                    return s
+            for i, h in enumerate(header):
+                if h == n and i < len(row):
+                    s = nz.clean(row[i])
+                    if s:
+                        return s
         return ""
 
     records = []
     for ri, row in enumerate(sheet.rows[hidx + 1 :], start=hidx + 2):
-        name = col(row, "name")
-        if not name:
+        if not any(nz.clean(c) for c in row):
             continue
         # subnet fragments live in the columns between 'type' and the mask
         # column ('subet'): '10','2','.0.','0/24' -> '10.2.0.0/24'
@@ -373,17 +429,40 @@ def parse_sites_master(sheet, hidx: int) -> tuple[list[dict], list[str]]:
         number = None
         if cidr:
             try:
-                number = int(cidr.split(".")[1])
+                # site_number is only meaningful inside the 10.x plan —
+                # a non-10 CIDR must not claim a 10.{N} slot
+                if cidr.split(".")[0] == "10":
+                    number = int(cidr.split(".")[1])
             except (IndexError, ValueError):
                 pass
-        elif frags and frags[0].isdigit():
+        elif frags and frags[0].isdigit() and (
+            frags[0] == "10" or len(frags) == 1 or frags[1] in ("0", "x")
+        ):
             # partial subnet ('10,86' / ',87' / ',46,0,x' with no full CIDR)
             # — the site number IS the second octet in this address plan;
-            # a lone leading fragment is that octet itself
+            # a lone leading fragment is that octet itself. A non-10 leading
+            # fragment (Integration's '172,20-21,1') carries no site_number.
             if frags[0] == "10" and len(frags) >= 2 and frags[1].isdigit():
                 number = int(frags[1])
             elif len(frags) == 1 or frags[1] in ("0", "x"):
                 number = int(frags[0])
+        name = col(row, "name")
+        synthetic = False
+        if not name:
+            # nameless rows still carry a block + notes — keep them under a
+            # synthesized name instead of losing the site (10.22/35/37/39).
+            # 'היה "X" בעבר' notes carry the site's former name — use it,
+            # suffixed so it can't collide with the real site that took over.
+            former = _FORMER_RE.search(notes or "")
+            if former:
+                name = f"{former.group(1).strip()} (לשעבר)"
+            elif number is not None:
+                name = f"Site 10.{number}"
+            elif cidr:
+                name = f"Site {cidr.split('/')[0]}"
+            else:
+                continue
+            synthetic = True
         records.append(
             {
                 "sheet": sheet.name,
@@ -396,6 +475,8 @@ def parse_sites_master(sheet, hidx: int) -> tuple[list[dict], list[str]]:
                 "mask": col(row, "subet") or None,
                 "notes": notes or None,
                 "is_active": "לא פעיל" not in notes,
+                "blocks": _master_blocks(frags, cidr),
+                "synthetic_name": synthetic,
             }
         )
     return records, []
@@ -406,19 +487,19 @@ def parse_circuits(sheet, hidx: int) -> tuple[list[dict], list[str]]:
     aliases = {
         "env": {"סביבת חיבור"},
         "site_name": {"מאתר"},
-        "site_type": {"סוג האתר"},
+        "site_type": {"סוג האתר", "סוג אתר"},
         "site_number": {"מספר אתר"},
         "site_code": {"קידומת האתר"},
         "line_type": {"סוג הקו"},
         "bezeq_circuit_id": {"קוד בבזק"},
         "node": {"צומת"},
-        "bw_down": {"רוחב פס download"},
+        "bw_down": {"רוחב פס download", "רוחב פס"},
         "bw_up": {"רוחב פס upload"},
         "wan_ip": {"כתובת wan"},
         "app_client_num": {"מספר קוד באפלקציה"},
-        "app_client_name": {"שם לקוח באפל"},
+        "app_client_name": {"שם לקוח באפל", "שם לקוח באפלקציה"},
         "app_service_type": {"סוג שירות באפלקציה"},
-        "contact": {"איש קשר וכתובת האתר"},
+        "contact": {"איש קשר וכתובת האתר", "איש קשר", "הערות + איש קשר"},
         "notes": {"הערות"},
     }
     idx = {}
@@ -459,7 +540,12 @@ def parse_circuits(sheet, hidx: int) -> tuple[list[dict], list[str]]:
             "app_service_type": cell("app_service_type")[:255] or None,
             "contact": cell("contact") or None,
             "status": cell("site_type")[:64] or None,
-            "notes": cell("notes") or None,
+            "notes": " | ".join(
+                b
+                for b in (cell("notes"), *_leftover_bits(row, sheet.rows[hidx], set(idx.values())))
+                if b
+            )
+            or None,
         }
         if wan and rec["wan_ip"] is None:
             rec["notes"] = (rec["notes"] or "") + f" [wan_ip raw: {wan}]"
@@ -479,6 +565,7 @@ def parse_certificates(sheet, hidx: int) -> tuple[list[dict], list[str]]:
             continue
         platform, target, server, cert, expiry = vals
         raw = nz.clean(expiry)
+        extra = [nz.clean(row[i]) for i in range(5, len(row)) if nz.clean(row[i])]
         records.append(
             {
                 "sheet": sheet.name,
@@ -491,6 +578,7 @@ def parse_certificates(sheet, hidx: int) -> tuple[list[dict], list[str]]:
                 if nz.excel_date(expiry)
                 else None,
                 "serial_raw": raw[:64] or None,
+                "notes": " | ".join(extra) or None,
             }
         )
     return records, []
@@ -535,7 +623,12 @@ def parse_services(sheet, hidx: int) -> tuple[list[dict], list[str]]:
                 "site_code": cell("site_code")[:16] or None,
                 "doc_path": cell("doc_path") or None,
                 "test_info": cell("test_info") or None,
-                "notes": cell("notes") or None,
+                "notes": " | ".join(
+                    b
+                    for b in (cell("notes"), *_leftover_bits(row, sheet.rows[hidx], set(idx.values())))
+                    if b
+                )
+                or None,
             }
         )
     return records, []
@@ -575,7 +668,11 @@ def parse_assets(sheet, hidx: int) -> tuple[list[dict], list[str]]:
         eol_cell = cell("eol")
         notes_bits = [
             b
-            for b in (nz.clean(cell("contact")), nz.clean(cell("sw_name")))
+            for b in (
+                nz.clean(cell("contact")),
+                nz.clean(cell("sw_name")),
+                *_leftover_bits(row, sheet.rows[hidx], set(idx.values())),
+            )
             if b
         ]
         records.append(

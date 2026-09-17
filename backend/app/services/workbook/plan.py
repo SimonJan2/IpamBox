@@ -3,6 +3,7 @@ dedupe against the DB and within the batch. Pure in-memory output stored in
 import_batches.stats — commit executes exactly what was previewed.
 """
 import ipaddress
+import re
 from collections import Counter, defaultdict
 
 from sqlalchemy import select
@@ -22,6 +23,7 @@ from app.services.workbook.parsers import PARSERS
 
 HOLDING_SLUG = "imported-unmatched"
 HOLDING_NAME = "Imported (unmatched)"
+_WORD_RE = re.compile(r"[0-9a-z\u0590-\u05ff]+")
 
 
 class DbState:
@@ -104,6 +106,9 @@ class _Planner:
         self._planned_addrs: dict[tuple[str, str], dict] = {}
         self._planned_nets: dict[str, list[tuple[object, str]]] = {}
         self._existing_vrf_for_site: dict[str, VRF] = {}
+        # (first, second) octet pair -> site_key, seeded by sites-master rows
+        # so non-10.x networks (Integration's 172.20-21.x) resolve correctly
+        self._block_site: dict[tuple[int, int], str] = {}
 
     # -- reporting ------------------------------------------------------
 
@@ -265,12 +270,64 @@ class _Planner:
                 key = self._register_site(existing)
                 action, detail = "exists", f"site exists: {existing.name}"
             else:
+                slug = r["code"] or (
+                    f"num{r['site_number']}"
+                    if r["site_number"] is not None
+                    else slugify(r["name"])
+                )
+                prior = self._sites.get(f"new:{slug}")
                 key = self._new_site(
                     r["name"], code=r["code"], number=r["site_number"],
                     size=r["size"], is_active=r["is_active"], notes=r["notes"],
                 )
-                action, detail = "create", f"new site: {r['name']}"
+                if prior is None and r.get("synthetic_name"):
+                    # name was synthesized from the row's block — a matching
+                    # sheet may claim its real title later (Site 35 -> ג'למה)
+                    self._sites[key]["synthetic"] = True
+                if prior is not None and prior["name"] != r["name"]:
+                    # e.g. Mashapan TA + MATPASH both number 200 — merging
+                    # loses a name, so surface it instead of hiding it
+                    action, detail = "conflict", (
+                        f"{r['name']}: same site key as "
+                        f"{prior['name']} — merged into it"
+                    )
+                elif prior is not None:
+                    if prior.get("site_number") != r["site_number"]:
+                        # same code/name but different number (Tarkumia 32/51)
+                        # — a real ambiguity, not a clean duplicate
+                        action, detail = "conflict", (
+                            f"{r['name']} (site {r['site_number']}): same "
+                            f"code/name as {prior['name']} (site "
+                            f"{prior.get('site_number')}) — merged"
+                        )
+                    else:
+                        action, detail = "exists", f"duplicate master row: {r['name']}"
+                else:
+                    for s in self._sites.values():
+                        if (
+                            s["key"] != key
+                            and nz.fold_hebrew(s.get("name") or "").lower()
+                            == nz.fold_hebrew(r["name"]).lower()
+                        ):
+                            action, detail = "conflict", (
+                                f"{r['name']}: duplicate site name "
+                                f"(also site {s.get('site_number')})"
+                            )
+                            break
+                    else:
+                        action, detail = "create", f"new site: {r['name']}"
             self.report(r["sheet"], r["row"], action, detail)
+            # non-10.x blocks (and 10.x pairs) let sheet octets find this site
+            for pair in r.get("blocks") or ():
+                claimant = self._block_site.get(pair)
+                if claimant is not None and claimant != key:
+                    self.report(
+                        r["sheet"], r["row"], "conflict",
+                        f"block {pair[0]}.{pair[1]}.x also claimed by "
+                        f"{self._sites[claimant]['name']} — first wins",
+                    )
+                else:
+                    self._block_site[pair] = key
             # sites-master subnet becomes a real prefix under the site's VRF
             if r.get("cidr"):
                 vrf_key = self._vrf_key(key)
@@ -281,16 +338,69 @@ class _Planner:
 
     @staticmethod
     def _sheet_octets(records: list[dict]) -> Counter:
-        """Second-octet histogram of a sheet's 10.x addresses.
-        site_number is only meaningful inside the 10.0.0.0/8 plan —
-        172.17.x.x must not match site 17."""
-        return Counter(
-            n
-            for r in records
-            for n in [nz.second_octet(r.get("address") or "")]
-            if r.get("address") and n is not None
-            and str(r["address"]).split(".")[0] == "10"
-        )
+        """(first, second) octet-pair histogram of a sheet's addresses.
+        Counting full pairs keeps non-10.x networks visible — INTEGRATION is
+        mostly 172.20/21.x and must not collapse onto site 10 just because a
+        few 10.10.x rows exist."""
+        c: Counter = Counter()
+        for r in records:
+            ip = str(r.get("address") or r.get("network_base") or "")
+            parts = ip.split(".")
+            if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
+                c[(int(parts[0]), int(parts[1]))] += 1
+        return c
+
+    @staticmethod
+    def _title_hits(title: str, name: str | None, code: str | None) -> bool:
+        """Folded sheet title vs site name/code — word-boundary matching so
+        'int' doesn't match 'maintenence rehvt'."""
+        words = set(_WORD_RE.findall(title))
+        c = nz.fold_hebrew(code or "").lower()
+        if c and c in words:
+            return True
+        n = nz.fold_hebrew(name or "").lower()
+        if n and n in title:
+            return True
+        return any(len(w) >= 4 and w in words for w in _WORD_RE.findall(n))
+
+    def _match_site_title(self, title: str) -> str | None:
+        """Sheet title -> site key via code/name. Checks DB sites first, then
+        sites planned earlier in this batch (fresh import has only those)."""
+        for site in self.st.sites_by_id.values():
+            if self._title_hits(title, site.name, site.code):
+                return self._register_site(site)
+        for key, s in self._sites.items():
+            if self._title_hits(title, s.get("name"), s.get("code")):
+                return key
+        return None
+
+    def _claim_synthetic_name(self, site_key: str, sheet_name: str) -> None:
+        """A sheet that octet-matches a master row with no real name gives
+        the site its title — 'Site 35' becomes 'ג'למה' so users can find it.
+        First claimant wins; the flag clears so later sheets don't rename."""
+        s = self._sites.get(site_key)
+        title = nz.clean(sheet_name)[:255]
+        if s is not None and s.get("synthetic") and title:
+            s["name"] = title
+            s["synthetic"] = False
+            self.report(
+                sheet_name, 0, "update",
+                "master row had no name — site named from this sheet's title",
+            )
+
+    def _site_for_10x(self, second: int, sheet_name: str) -> tuple[str, str]:
+        """Resolve a 10.{second}.x sheet — site_number is only meaningful
+        inside the 10.0.0.0/8 plan. Falls back to a new site named after the
+        sheet ('רמון' says more than 'Site 10.100.x')."""
+        site = self.st.site_by_number.get(second)
+        if site is not None:
+            return self._register_site(site), "octet"
+        for key, s in self._sites.items():
+            if s.get("site_number") == second:
+                self._claim_synthetic_name(key, sheet_name)
+                return key, "octet"
+        title_name = nz.clean(sheet_name)[:255] or f"Site 10.{second}.x"
+        return self._new_site(title_name, number=second), "octet-new"
 
     def resolve_sheet_site(self, sheet_name: str, octets: Counter) -> tuple[str, str | None]:
         """site_key, matched_by for a site_sheet."""
@@ -299,25 +409,32 @@ class _Planner:
             site = self.st.sites_by_id.get(override)
             if site is not None:
                 return self._register_site(site), "override"
-        if octets:
-            number = octets.most_common(1)[0][0]
-            site = self.st.site_by_number.get(number)
-            if site is not None:
-                return self._register_site(site), "octet"
-            # octet known but no such site yet — check planned sites
-            for key, s in self._sites.items():
-                if s.get("site_number") == number:
-                    return key, "octet"
-            # name the new site after the sheet rather than a bare number —
-            # 'רמון' tells the user far more than 'Site 10.100.x'
-            title_name = nz.clean(sheet_name)[:255] or f"Site 10.{number}.x"
-            return self._new_site(title_name, number=number), "octet-new"
-        # name/code fragment match against sheet title
         title = nz.fold_hebrew(sheet_name).lower()
-        for site in self.st.sites_by_id.values():
-            for token in (site.code, site.name):
-                if token and nz.fold_hebrew(token).lower() in title:
-                    return self._register_site(site), "name"
+        if octets:
+            first, second = octets.most_common(1)[0][0]
+            block_key = self._block_site.get((first, second))
+            if block_key is not None:
+                self._claim_synthetic_name(block_key, sheet_name)
+                return block_key, "octet"
+            if first == 10:
+                return self._site_for_10x(second, sheet_name)
+            # non-10.x dominant block, undeclared (Cellular's 172.30.x,
+            # Sapiens' 172.16.x): try the title, then let a minority 10.x
+            # pair anchor the site before giving up to the holding site
+            hit = self._match_site_title(title)
+            if hit is not None:
+                return hit, "name"
+            ten = next((p for p, _n in octets.most_common() if p[0] == 10), None)
+            if ten is not None:
+                block_key = self._block_site.get(ten)
+                if block_key is not None:
+                    self._claim_synthetic_name(block_key, sheet_name)
+                    return block_key, "octet"
+                return self._site_for_10x(ten[1], sheet_name)
+            return self._holding_site(), None
+        hit = self._match_site_title(title)
+        if hit is not None:
+            return hit, "name"
         return self._holding_site(), None
 
     def add_site_records(self, sheet_name: str, site_key: str, records: list[dict]):
@@ -351,28 +468,46 @@ class _Planner:
                 self.report(sheet_name, r["row"], "create", f"prefix {net}")
                 continue
             if r["kind"] == "host_no_ip":
+                # keep the row as a hardware/server asset rather than losing
+                # hostname, guest OS, cert, license and owner entirely
+                cf = dict(r.get("custom_fields") or {})
+                bits = [
+                    b
+                    for b in (
+                        cf.get("guest_os"), cf.get("cert"),
+                        cf.get("license"), cf.get("owner"),
+                    )
+                    if b
+                ]
+                self.plan["assets"].append(
+                    {
+                        "sheet": sheet_name, "row": r["row"],
+                        "site_key": site_key, "kind": "hardware",
+                        "category": "server", "vendor": None,
+                        "model": (r.get("hostname") or "server")[:255],
+                        "purpose": cf.get("guest_os"), "version": None,
+                        "eol_on": None, "support_status": None,
+                        "serial_number": None, "site_name": None,
+                        "notes": " | ".join(bits) or None,
+                    }
+                )
                 self.report(
-                    sheet_name, r["row"], "skip",
-                    f"{r['hostname']}: no IP — fields dropped",
+                    sheet_name, r["row"], "create",
+                    f"{r['hostname']}: server asset (no IP)",
                 )
                 continue
-            # 'מוגדר תחת אתר' may reassign the row to another site
+            # 'מוגדר תחת אתר' may reassign the row — by site name/code first;
+            # a bare number only. Digits inside names ('טרמינל 3 כניסה')
+            # must NOT reassign the row to site 3.
             row_vrf = vrf_key
             row_site = site_key
             if r.get("under_site"):
-                num = nz.parse_site_number(r["under_site"])
-                alt = self.st.site_by_number.get(num) if num is not None else None
-                if alt is None and num is not None:
-                    for key, s in self._sites.items():
-                        if s.get("site_number") == num:
-                            alt_key = key
-                            break
-                    else:
-                        alt_key = None
-                    if alt_key is not None:
-                        row_site = alt_key
-                elif alt is not None:
-                    row_site = self._register_site(alt)
+                u = nz.clean(r["under_site"])
+                alt_key = self._planned_site(name=u) or self._planned_site(code=u)
+                if alt_key is None and u.isdigit():
+                    alt_key = self._planned_site(number=int(u))
+                if alt_key is not None:
+                    row_site = alt_key
                 row_vrf = self._vrf_key(row_site)
 
             if r["kind"] == "range":
@@ -424,6 +559,10 @@ class _Planner:
         cf = dict(r.get("custom_fields") or {})
         if raw:
             cf["status_raw"] = raw
+        if r.get("mask") and nz.mask_to_prefixlen(r["mask"]) is None:
+            # unparseable mask fell back to /24 in network_of — keep the raw
+            # value visible instead of silently discarding it
+            cf.setdefault("mask_raw", r["mask"])
         if r.get("mac_raw"):
             cf["mac_raw"] = r["mac_raw"]
         if r.get("model"):
@@ -558,6 +697,34 @@ class _Planner:
             self.plan["services"].append({**r, "site_key": site_key})
             self.report(r["sheet"], r["row"], "create", r.get("name") or "service")
 
+    def _site_warnings(self, sheet_name: str, site: dict, how: str | None) -> list[str]:
+        """Honesty checks on an octet/name match — inactive sites and
+        title/site disagreements surface as warnings, not silent picks."""
+        out = []
+        title = nz.fold_hebrew(sheet_name).lower()
+        if how == "octet":
+            if site.get("is_active") is False:
+                out.append("matched site is marked inactive in the master list")
+            if re.search(r"[a-zA-Z]", sheet_name) and not self._title_hits(
+                title, site.get("name"), site.get("code")
+            ):
+                out.append(
+                    f"sheet title doesn't resemble matched site "
+                    f"'{site.get('name')}' — verify assignment"
+                )
+        if how == "name":
+            # full name-in-title or a code word is solid; a lone shared word
+            # ('Sapiens (Holon)' -> 'Sapiens(Rehovot)') is worth flagging
+            n = nz.fold_hebrew(site.get("name") or "").lower()
+            c = nz.fold_hebrew(site.get("code") or "").lower()
+            if n not in title and c not in set(_WORD_RE.findall(title)):
+                out.append(
+                    f"partial name match to '{site.get('name')}' — verify"
+                )
+        if how is None:
+            out.append("no site match — landed in Imported (unmatched)")
+        return out
+
     # -- driver ------------------------------------------------------------
 
     def build(self, sheets) -> dict:
@@ -599,7 +766,8 @@ class _Planner:
                 self.add_site_records(sm.name, site_key, records)
                 site = self._sites[site_key]
                 self.sheet_previews.append(
-                    _preview(sm, family, len(records), warns,
+                    _preview(sm, family, len(records),
+                             warns + self._site_warnings(sm.name, site, how),
                              site.get("site_id"), site.get("name"), how)
                 )
             elif family == "circuits":
@@ -620,7 +788,8 @@ class _Planner:
                 self.add_site_records(sm.name, site_key, records)
                 site = self._sites[site_key]
                 self.sheet_previews.append(
-                    _preview(sm, "servers", len(records), warns,
+                    _preview(sm, "servers", len(records),
+                             warns + self._site_warnings(sm.name, site, how),
                              site.get("site_id"), site.get("name"), how)
                 )
             elif family == "sites_master":
