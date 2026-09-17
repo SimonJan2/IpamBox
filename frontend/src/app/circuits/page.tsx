@@ -212,13 +212,11 @@ export default function CircuitsPage() {
   const columns = useMemo<ColumnDef<Circuit>[]>(
     () => [
       {
-        accessorKey: "site_number",
-        header: ({ column }) => (
-          <SortHeader column={column}>Site #</SortHeader>
-        ),
+        accessorKey: "env",
+        header: ({ column }) => <SortHeader column={column}>Env</SortHeader>,
         cell: (c) => (
-          <span className="font-mono text-muted-foreground">
-            {c.getValue<number | null>() ?? "—"}
+          <span dir="auto" className="text-muted-foreground">
+            {c.getValue<string | null>() ?? "—"}
           </span>
         ),
       },
@@ -237,11 +235,13 @@ export default function CircuitsPage() {
         ),
       },
       {
-        accessorKey: "env",
-        header: ({ column }) => <SortHeader column={column}>Env</SortHeader>,
+        accessorKey: "site_number",
+        header: ({ column }) => (
+          <SortHeader column={column}>Site #</SortHeader>
+        ),
         cell: (c) => (
-          <span dir="auto" className="text-muted-foreground">
-            {c.getValue<string | null>() ?? "—"}
+          <span className="font-mono text-muted-foreground">
+            {c.getValue<number | null>() ?? "—"}
           </span>
         ),
       },
