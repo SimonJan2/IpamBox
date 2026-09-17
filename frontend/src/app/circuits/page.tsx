@@ -226,11 +226,17 @@ export default function CircuitsPage() {
         cell: (c) => (
           <span dir="auto" className="font-medium">
             {c.getValue<string | null>() ?? "—"}
-            {c.row.original.site_code && (
-              <span className="ml-1 text-xs text-muted-foreground">
-                {c.row.original.site_code}
-              </span>
-            )}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "site_code",
+        header: ({ column }) => (
+          <SortHeader column={column}>Site code</SortHeader>
+        ),
+        cell: (c) => (
+          <span dir="ltr" className="font-mono text-muted-foreground">
+            {c.getValue<string | null>() ?? "—"}
           </span>
         ),
       },
@@ -508,7 +514,7 @@ export default function CircuitsPage() {
             {table.getRowModel().rows.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={12}
+                  colSpan={columns.length}
                   className="py-10 text-center text-muted-foreground"
                 >
                   No circuits found.
