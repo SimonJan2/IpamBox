@@ -14,6 +14,7 @@ import {
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { usePrefs } from "@/lib/prefs";
 import { PERM } from "@/lib/permissions";
 import { foldHebrew } from "@/lib/utils";
 import { SortHeader } from "@/components/sort-header";
@@ -256,6 +257,7 @@ function DeleteDialog({
 
 export default function SitesPage() {
   const { can } = useAuth();
+  const [prefs] = usePrefs();
   const canWrite = can(PERM.DATA_WRITE);
   const canDelete = can(PERM.DATA_DELETE);
   const [sites, setSites] = useState<Site[]>([]);
@@ -291,9 +293,11 @@ export default function SitesPage() {
         cell: (c) => (
           <span dir="auto" className="font-medium">
             {c.getValue<string>()}
-            <span className="ml-2 font-mono text-xs text-muted-foreground">
-              {c.row.original.slug}
-            </span>
+            {prefs.showSlugs && (
+              <span className="ml-2 font-mono text-xs text-muted-foreground">
+                {c.row.original.slug}
+              </span>
+            )}
           </span>
         ),
       },
@@ -384,7 +388,7 @@ export default function SitesPage() {
         ),
       },
     ],
-    [canWrite, canDelete]
+    [canWrite, canDelete, prefs.showSlugs]
   );
 
   const table = useReactTable({

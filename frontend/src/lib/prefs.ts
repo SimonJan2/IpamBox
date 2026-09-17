@@ -16,6 +16,7 @@ export interface Prefs {
   landing: string;
   tsFormat: TsFormat;
   addrMapView: AddrMapView;
+  showSlugs: boolean;
 }
 
 export const DEFAULT_PREFS: Prefs = {
@@ -25,6 +26,7 @@ export const DEFAULT_PREFS: Prefs = {
   landing: "/",
   tsFormat: "local",
   addrMapView: "grid",
+  showSlugs: false,
 };
 
 const KEY = "ipambox:prefs";
