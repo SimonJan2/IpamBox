@@ -34,6 +34,12 @@ async def _get_or_create_site(session, entry, ids) -> int:
     if entry["action"] == "exists" and entry.get("site_id"):
         site = await session.get(Site, entry["site_id"])
         if site is not None:
+            # circuit-sheet enrichment may have filled gaps — never
+            # overwrite values the site already has
+            if not site.code and entry.get("code"):
+                site.code = entry["code"]
+            if site.site_number is None and entry.get("site_number") is not None:
+                site.site_number = entry["site_number"]
             ids[entry["key"]] = site.id
             return site.id
     slug_base = entry.get("slug") or slugify(entry["name"])
@@ -134,6 +140,8 @@ async def _get_or_create_prefix(session, entry, vrf_ids, site_ids, ids) -> int:
 
 
 async def _insert_address(session, row, vrf_ids, prefix_ids, batch_id):
+    if row["action"] == "skip":
+        return "skip"
     if row["action"] == "update" and row.get("target_id"):
         addr = await session.get(IPAddress, row["target_id"])
         if addr is not None:
@@ -277,7 +285,7 @@ async def execute_plan(
             "app_client_name": r.get("app_client_name"),
             "app_service_type": r.get("app_service_type"),
             "contact": r.get("contact"), "status": r.get("status"),
-            "notes": r.get("notes"),
+            "notes": r.get("notes"), "is_retired": r.get("is_retired", False),
         }),
         ("certificates", Certificate, lambda r: {
             "platform": r.get("platform"), "target": r.get("target"),

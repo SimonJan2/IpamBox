@@ -29,15 +29,18 @@ class SheetPreview(BaseModel):
     # site_sheet only: site suggested by 2nd-octet/name match
     site_id: int | None = None
     site_name: str | None = None
-    matched_by: str | None = None  # "octet" | "code" | "name" | "override" | None
+    # "octet" | "octet-new" | "title" | "name" | "override" | None
+    matched_by: str | None = None
     warnings: list[str] = []
 
 
 class PreviewOptions(BaseModel):
     """User-confirmed mapping choices applied before building the plan."""
 
-    # sheet name -> site_id (overrides auto-matching)
-    site_overrides: dict[str, int] = Field(default_factory=dict)
+    # sheet name -> site_id (overrides auto-matching), or a string to create
+    # a new site: "__new__" names it after the sheet, any other string is
+    # used as the new site's name
+    site_overrides: dict[str, int | str] = Field(default_factory=dict)
     # sheet names to exclude entirely
     skip_sheets: list[str] = Field(default_factory=list)
     # create a 10.{N}.0.0/16 container prefix per numbered site

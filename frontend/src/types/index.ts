@@ -315,6 +315,7 @@ export interface SettingsValues {
   backup_interval_minutes: number;
   backup_keep: number;
   ipambox_session_hours: number;
+  site_code_follow_site: boolean;
 }
 
 export interface SettingsOut {
@@ -409,6 +410,7 @@ export interface Circuit {
   contact: string | null;
   status: string | null;
   notes: string | null;
+  is_retired: boolean;
   import_batch_id: number | null;
   created_at: string;
 }

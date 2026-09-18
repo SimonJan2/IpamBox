@@ -6,7 +6,9 @@ import { toast } from "sonner";
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useFeatureFlag } from "@/lib/features";
 import { PERM } from "@/lib/permissions";
+import { slugify } from "@/lib/utils";
 import type { Site, Vrf } from "@/types";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,6 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -36,17 +39,25 @@ import {
 
 const NONE = "__none__";
 
+// Same convention as the workbook importer (_vrf_name_for): the site code,
+// then site-N, then a slug of the name.
+const vrfNameFor = (s: Site) =>
+  s.code ??
+  (s.site_number != null ? `site-${s.site_number}` : slugify(s.name));
+
 function VrfDialog({
   open,
   onOpenChange,
   vrf,
   sites,
+  followSiteCode,
   onSaved,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   vrf: Vrf | null;
   sites: Site[];
+  followSiteCode: boolean;
   onSaved: () => void;
 }) {
   const [form, setForm] = useState({
@@ -55,18 +66,45 @@ function VrfDialog({
     site_id: NONE,
     description: "",
   });
+  const [autoName, setAutoName] = useState(true);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (open) {
+      const site = sites.find((s) => s.id === vrf?.site_id);
+      const stale = site != null && vrf != null && vrf.name !== vrfNameFor(site);
       setForm({
-        name: vrf?.name ?? "",
+        name: followSiteCode && stale ? vrfNameFor(site) : (vrf?.name ?? ""),
         rd: vrf?.rd ?? "",
         site_id: vrf?.site_id ? String(vrf.site_id) : NONE,
         description: vrf?.description ?? "",
       });
+      // Only assume the convention when the existing name already matches
+      // what the site would produce — protects Global/custom names.
+      // followSiteCode (Settings > Features) treats the mismatch as stale
+      // instead: re-derive the name and keep the toggle on.
+      setAutoName(
+        vrf == null ? true : site != null && (followSiteCode || vrf.name === vrfNameFor(site))
+      );
     }
-  }, [open, vrf]);
+  }, [open, vrf, sites, followSiteCode]);
+
+  const onSiteChange = (v: string) => {
+    const site = sites.find((s) => String(s.id) === v);
+    setForm({
+      ...form,
+      site_id: v,
+      ...(autoName ? { name: site ? vrfNameFor(site) : "" } : {}),
+    });
+  };
+
+  const onAutoName = (on: boolean) => {
+    setAutoName(on);
+    if (on) {
+      const site = sites.find((s) => String(s.id) === form.site_id);
+      setForm({ ...form, name: site ? vrfNameFor(site) : "" });
+    }
+  };
 
   const submit = async () => {
     setBusy(true);
@@ -101,10 +139,36 @@ function VrfDialog({
         </DialogHeader>
         <div className="grid gap-3">
           <div className="grid gap-1.5">
-            <Label>Name</Label>
+            <Label>Site</Label>
+            <Select value={form.site_id} onValueChange={onSiteChange}>
+              <SelectTrigger>
+                <SelectValue placeholder="None" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>None</SelectItem>
+                {sites.map((s) => (
+                  <SelectItem key={s.id} value={String(s.id)}>
+                    <span dir="auto">
+                      {s.code ? `${s.code} — ` : ""}
+                      {s.name}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-1.5">
+            <div className="flex items-center justify-between">
+              <Label>Name</Label>
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Switch checked={autoName} onCheckedChange={onAutoName} />
+                from site code
+              </label>
+            </div>
             <Input
-              placeholder="production"
+              placeholder={autoName ? "select a site" : "production"}
               value={form.name}
+              disabled={autoName}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
             />
           </div>
@@ -115,25 +179,6 @@ function VrfDialog({
               value={form.rd}
               onChange={(e) => setForm({ ...form, rd: e.target.value })}
             />
-          </div>
-          <div className="grid gap-1.5">
-            <Label>Site</Label>
-            <Select
-              value={form.site_id}
-              onValueChange={(v) => setForm({ ...form, site_id: v })}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="None" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NONE}>None</SelectItem>
-                {sites.map((s) => (
-                  <SelectItem key={s.id} value={String(s.id)}>
-                    {s.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </div>
           <div className="grid gap-1.5">
             <Label>Description</Label>
@@ -207,6 +252,7 @@ export default function VrfsPage() {
   const { can } = useAuth();
   const canWrite = can(PERM.DATA_WRITE);
   const canDelete = can(PERM.DATA_DELETE);
+  const followSiteCode = useFeatureFlag("site_code_follow_site");
   const [vrfs, setVrfs] = useState<Vrf[]>([]);
   const [sites, setSites] = useState<Site[]>([]);
   const [q, setQ] = useState("");
@@ -329,6 +375,7 @@ export default function VrfsPage() {
         onOpenChange={setDialogOpen}
         vrf={editing}
         sites={sites}
+        followSiteCode={followSiteCode}
         onSaved={refresh}
       />
       <DeleteDialog

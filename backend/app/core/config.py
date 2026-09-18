@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     import_dir: str = ""             # empty -> <backup_dir>/imports
     import_keep: int = 20            # stored workbooks retained on disk
 
+    # Feature toggles — runtime-editable behavior switches (Settings > Features)
+    site_code_follow_site: bool = False  # treat mismatched stored site codes as stale
+
     # Auth settings (env vars are IPAMBOX_*)
     ipambox_password: str = ""  # pre-provision the admin password
     ipambox_password_file: str = ""  # path to a file holding the password (wins over above)

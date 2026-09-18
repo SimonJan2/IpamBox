@@ -15,10 +15,11 @@ import {
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useFeatureFlag } from "@/lib/features";
 import { PERM } from "@/lib/permissions";
-import { foldHebrew } from "@/lib/utils";
+import { cn, foldHebrew } from "@/lib/utils";
 import { SortHeader } from "@/components/sort-header";
-import type { Circuit } from "@/types";
+import type { Circuit, Site } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,6 +38,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -46,8 +48,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+const NONE = "__none__";
+
 const EMPTY = {
   env: "",
+  site_id: NONE,
   site_number: "",
   site_name: "",
   site_code: "",
@@ -66,25 +71,48 @@ function CircuitDialog({
   open,
   onOpenChange,
   circuit,
+  sites,
+  defaultRetired,
+  followSiteCode,
   onSaved,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   circuit: Circuit | null;
+  sites: Site[];
+  defaultRetired: boolean;
+  followSiteCode: boolean;
   onSaved: () => void;
 }) {
   const [form, setForm] = useState(EMPTY);
+  const [codeManual, setCodeManual] = useState(false);
+  const [retired, setRetired] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (open) {
+      const site = sites.find((s) => s.id === circuit?.site_id);
+      // A stored code that disagrees with the linked site (or exists with no
+      // site) is a deliberate override — don't clobber it on open. With
+      // site_code_follow_site (Settings > Features) it's treated as stale.
+      const manual =
+        !followSiteCode &&
+        Boolean(circuit?.site_code) &&
+        circuit?.site_code !== site?.code;
       setForm(
         circuit
           ? {
               env: circuit.env ?? "",
-              site_number: circuit.site_number?.toString() ?? "",
-              site_name: circuit.site_name ?? "",
-              site_code: circuit.site_code ?? "",
+              site_id: circuit.site_id ? String(circuit.site_id) : NONE,
+              // fill empty site fields from the link; keep stored values
+              site_number:
+                circuit.site_number?.toString() ??
+                site?.site_number?.toString() ??
+                "",
+              site_name: circuit.site_name || site?.name || "",
+              site_code: manual
+                ? circuit.site_code ?? ""
+                : site?.code || circuit.site_code || "",
               line_type: circuit.line_type ?? "",
               bezeq_circuit_id: circuit.bezeq_circuit_id ?? "",
               node: circuit.node ?? "",
@@ -97,8 +125,33 @@ function CircuitDialog({
             }
           : EMPTY
       );
+      setCodeManual(manual);
+      setRetired(circuit?.is_retired ?? defaultRetired);
     }
-  }, [open, circuit]);
+  }, [open, circuit, sites, defaultRetired, followSiteCode]);
+
+  const site = sites.find((s) => String(s.id) === form.site_id);
+  const codeLocked = Boolean(site?.code) && !codeManual;
+
+  const onSiteChange = (v: string) => {
+    const s = sites.find((x) => String(x.id) === v);
+    setForm({
+      ...form,
+      site_id: v,
+      ...(s
+        ? {
+            ...(codeManual ? {} : { site_code: s.code ?? "" }),
+            site_name: s.name,
+            site_number: s.site_number?.toString() ?? "",
+          }
+        : {}),
+    });
+  };
+
+  const onCodeAuto = (on: boolean) => {
+    setCodeManual(!on);
+    if (on && site) setForm({ ...form, site_code: site.code ?? "" });
+  };
 
   const set = (k: keyof typeof EMPTY) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm({ ...form, [k]: e.target.value });
@@ -106,12 +159,21 @@ function CircuitDialog({
   const submit = async () => {
     setBusy(true);
     try {
-      const body = Object.fromEntries(
+      const body: Record<string, unknown> = Object.fromEntries(
         Object.entries(form).map(([k, v]) => [
           k,
-          k === "site_number" ? (v ? parseInt(v, 10) : null) : v || null,
+          k === "site_id"
+            ? v === NONE
+              ? null
+              : Number(v)
+            : k === "site_number"
+              ? v
+                ? parseInt(v, 10)
+                : null
+              : v || null,
         ])
       );
+      body.is_retired = retired;
       if (circuit) {
         await api.patch(`/api/v1/circuits/${circuit.id}`, body);
         toast.success("Circuit updated");
@@ -130,9 +192,6 @@ function CircuitDialog({
 
   const fields: [keyof typeof EMPTY, string][] = [
     ["env", "Environment"],
-    ["site_number", "Site #"],
-    ["site_name", "Site name"],
-    ["site_code", "Site code"],
     ["line_type", "Line type"],
     ["bezeq_circuit_id", "Bezeq circuit ID"],
     ["node", "Node"],
@@ -150,17 +209,72 @@ function CircuitDialog({
         <DialogHeader>
           <DialogTitle>{circuit ? "Edit circuit" : "New circuit"}</DialogTitle>
         </DialogHeader>
-        <div className="grid grid-cols-2 gap-3">
-          {fields.map(([k, label]) => (
-            <div key={k} className={k === "notes" ? "col-span-2" : "grid gap-1.5"}>
-              <Label>{label}</Label>
+        <div className="grid gap-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-1.5">
+              <Label>Site</Label>
+              <Select value={form.site_id} onValueChange={onSiteChange}>
+                <SelectTrigger>
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>None</SelectItem>
+                  {sites.map((s) => (
+                    <SelectItem key={s.id} value={String(s.id)}>
+                      <span dir="auto">
+                        {s.code ? `${s.code} — ` : ""}
+                        {s.name}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-1.5">
+              <div className="flex items-center justify-between">
+                <Label>Site code</Label>
+                {site?.code && (
+                  <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Switch checked={!codeManual} onCheckedChange={onCodeAuto} />
+                    from site
+                  </label>
+                )}
+              </div>
               <Input
-                dir={k === "wan_ip" || k === "bezeq_circuit_id" ? "ltr" : "auto"}
-                value={form[k]}
-                onChange={set(k)}
+                dir="ltr"
+                value={form.site_code}
+                disabled={codeLocked}
+                onChange={set("site_code")}
               />
             </div>
-          ))}
+            <div className="grid gap-1.5">
+              <Label>Site name</Label>
+              <Input dir="auto" value={form.site_name} onChange={set("site_name")} />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Site #</Label>
+              <Input dir="ltr" value={form.site_number} onChange={set("site_number")} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {fields.map(([k, label]) => (
+              <div
+                key={k}
+                className={k === "notes" ? "col-span-2" : "grid gap-1.5"}
+              >
+                <Label>{label}</Label>
+                <Input
+                  dir={k === "wan_ip" || k === "bezeq_circuit_id" ? "ltr" : "auto"}
+                  value={form[k]}
+                  onChange={set(k)}
+                />
+              </div>
+            ))}
+          </div>
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Switch checked={retired} onCheckedChange={setRetired} />
+            Retired — shown under Retired Circuits
+          </label>
         </div>
         <DialogFooter>
           <Button onClick={submit} disabled={busy}>
@@ -176,7 +290,10 @@ export default function CircuitsPage() {
   const { can } = useAuth();
   const canWrite = can(PERM.DATA_WRITE);
   const canDelete = can(PERM.DATA_DELETE);
+  const followSiteCode = useFeatureFlag("site_code_follow_site");
   const [items, setItems] = useState<Circuit[]>([]);
+  const [sites, setSites] = useState<Site[]>([]);
+  const [tab, setTab] = useState<"active" | "retired">("active");
   const [q, setQ] = useState("");
   const [envFilter, setEnvFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -188,25 +305,31 @@ export default function CircuitsPage() {
 
   const refresh = () => {
     api.get<Circuit[]>("/api/v1/circuits").then(setItems).catch(() => {});
+    api.get<Site[]>("/api/v1/sites").then(setSites).catch(() => {});
   };
   useEffect(refresh, []);
 
+  // legacy imports (קוי בזק ישן) live in the Retired Circuits tab
+  const activeItems = useMemo(() => items.filter((c) => !c.is_retired), [items]);
+  const retiredItems = useMemo(() => items.filter((c) => c.is_retired), [items]);
+  const scopedItems = tab === "retired" ? retiredItems : activeItems;
+
   // distinct values for the filter dropdowns, built from the data itself
   const distinct = (k: keyof Circuit) =>
-    [...new Set(items.map((c) => c[k]).filter(Boolean) as string[])].sort();
-  const envs = useMemo(() => distinct("env"), [items]);
-  const types = useMemo(() => distinct("line_type"), [items]);
-  const statuses = useMemo(() => distinct("status"), [items]);
+    [...new Set(scopedItems.map((c) => c[k]).filter(Boolean) as string[])].sort();
+  const envs = useMemo(() => distinct("env"), [scopedItems]);
+  const types = useMemo(() => distinct("line_type"), [scopedItems]);
+  const statuses = useMemo(() => distinct("status"), [scopedItems]);
 
   const filtered = useMemo(
     () =>
-      items.filter(
+      scopedItems.filter(
         (c) =>
           (envFilter === "all" || c.env === envFilter) &&
           (typeFilter === "all" || c.line_type === typeFilter) &&
           (statusFilter === "all" || c.status === statusFilter)
       ),
-    [items, envFilter, typeFilter, statusFilter]
+    [scopedItems, envFilter, typeFilter, statusFilter]
   );
 
   const columns = useMemo<ColumnDef<Circuit>[]>(
@@ -410,7 +533,40 @@ export default function CircuitsPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Circuits</h1>
+        <div className="flex items-center gap-4">
+          <h1 className="text-xl font-semibold">Circuits</h1>
+          <div className="inline-flex h-8 items-center rounded-lg border bg-muted/50 p-0.5 text-muted-foreground">
+            {(
+              [
+                ["active", "Circuits", activeItems.length],
+                ["retired", "Retired Circuits", retiredItems.length],
+              ] as const
+            ).map(([key, label, count]) => (
+              <button
+                key={key}
+                onClick={() => setTab(key)}
+                className={cn(
+                  "inline-flex h-full items-center gap-1.5 rounded-md px-3 text-sm font-medium transition-colors",
+                  tab === key
+                    ? "bg-background text-foreground shadow-sm"
+                    : "hover:text-foreground"
+                )}
+              >
+                {label}
+                <span
+                  className={cn(
+                    "rounded-full px-1.5 text-xs tabular-nums",
+                    tab === key
+                      ? "bg-muted text-muted-foreground"
+                      : "text-muted-foreground/70"
+                  )}
+                >
+                  {count}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
         {canWrite && (
           <Button
             size="sm"
@@ -484,7 +640,7 @@ export default function CircuitsPage() {
           </Button>
         )}
         <span className="ml-auto text-sm text-muted-foreground">
-          {table.getRowModel().rows.length} of {items.length}
+          {table.getRowModel().rows.length} of {scopedItems.length}
         </span>
       </div>
 
@@ -517,7 +673,9 @@ export default function CircuitsPage() {
                   colSpan={columns.length}
                   className="py-10 text-center text-muted-foreground"
                 >
-                  No circuits found.
+                  {tab === "retired"
+                    ? "No retired circuits."
+                    : "No circuits found."}
                 </TableCell>
               </TableRow>
             )}
@@ -529,6 +687,9 @@ export default function CircuitsPage() {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         circuit={editing}
+        sites={sites}
+        defaultRetired={tab === "retired"}
+        followSiteCode={followSiteCode}
         onSaved={refresh}
       />
       <Dialog open={deleting !== null} onOpenChange={() => setDeleting(null)}>

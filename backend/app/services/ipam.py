@@ -316,6 +316,15 @@ async def dashboard_stats(session: AsyncSession) -> dict:
     }
 
 
+def vrf_name_for(site_name: str, code: str | None, number: int | None) -> str:
+    """VRF naming convention: the site code, then site-N, then a name slug."""
+    if code:
+        return code
+    if number is not None:
+        return f"site-{number}"
+    return slugify(site_name)[:60]
+
+
 def slugify(name: str) -> str:
     import re
     import unicodedata

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import INET
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -8,7 +8,11 @@ from app.models.base import Base
 
 
 class Circuit(Base):
-    """WAN circuit row from the קוי-SDH-IPVPN sheet (Bezeq IPVPN/SDH/Metro…)."""
+    """WAN circuit row from the קוי-SDH-IPVPN sheet (Bezeq IPVPN/SDH/Metro…).
+
+    Legacy sheets such as קוי בזק ישן set ``is_retired`` so old circuits stay
+    separate from the live inventory.
+    """
 
     __tablename__ = "circuits"
 
@@ -32,6 +36,10 @@ class Circuit(Base):
     contact: Mapped[str | None] = mapped_column(Text)  # איש קשר וכתובת האתר
     status: Mapped[str | None] = mapped_column(String(64))  # raw Hebrew status
     notes: Mapped[str | None] = mapped_column(Text)
+    # True for rows imported from legacy sheets (e.g. קוי בזק ישן)
+    is_retired: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", index=True
+    )
     import_batch_id: Mapped[int | None] = mapped_column(
         ForeignKey("import_batches.id", ondelete="SET NULL"), index=True
     )

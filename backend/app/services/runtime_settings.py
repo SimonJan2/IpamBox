@@ -125,6 +125,7 @@ EDITABLE: dict[str, SettingSpec] = {
     "scan_icmp_timeout": SettingSpec("scan_icmp_timeout", _v_float(0.1, 10.0)),
     "scan_tcp_timeout": SettingSpec("scan_tcp_timeout", _v_float(0.1, 10.0)),
     "scan_concurrency": SettingSpec("scan_concurrency", _v_int(1, 1024)),
+    "site_code_follow_site": SettingSpec("site_code_follow_site", _v_bool),
     "backup_interval_minutes": SettingSpec(
         "backup_interval_minutes", _v_int(0, 10080)
     ),

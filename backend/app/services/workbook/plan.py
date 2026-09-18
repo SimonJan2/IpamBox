@@ -16,13 +16,14 @@ from app.models.site import Site
 from app.models.vlan import VLAN
 from app.models.vrf import VRF
 from app.services import prefix_math
-from app.services.ipam import slugify
+from app.services.ipam import slugify, vrf_name_for
 from app.services.workbook import normalize as nz
 from app.services.workbook.classify import classify_sheet
 from app.services.workbook.parsers import PARSERS
 
 HOLDING_SLUG = "imported-unmatched"
 HOLDING_NAME = "Imported (unmatched)"
+NEW_SITE_OVERRIDE = "__new__"  # site_overrides sentinel: create site from title
 _WORD_RE = re.compile(r"[0-9a-z\u0590-\u05ff]+")
 
 
@@ -35,6 +36,7 @@ class DbState:
         self.site_by_code: dict[str, Site] = {}
         self.site_by_name: dict[str, Site] = {}
         self.vrf_by_name: dict[str, VRF] = {}
+        self.vrf_by_site: dict[int, VRF] = {}
         self.prefix_by_key: dict[tuple[int, str], Prefix] = {}
         self.prefix_nets: dict[int, list[tuple[object, Prefix]]] = {}
         self.vlan_by_key: dict[tuple[int | None, int], VLAN] = {}
@@ -53,6 +55,8 @@ async def load_state(session: AsyncSession) -> DbState:
         st.site_by_name[nz.fold_hebrew(s.name).lower()] = s
     for v in (await session.execute(select(VRF))).scalars():
         st.vrf_by_name[v.name.lower()] = v
+        if v.site_id is not None and v.site_id not in st.vrf_by_site:
+            st.vrf_by_site[v.site_id] = v
     for p in (await session.execute(select(Prefix))).scalars():
         net = prefix_math.to_network(p.prefix)
         st.prefix_by_key[(p.vrf_id, str(net))] = p
@@ -77,12 +81,7 @@ def _site_key(site: Site | None, fallback: str) -> str:
     return f"id:{site.id}"
 
 
-def _vrf_name_for(site_name: str, code: str | None, number: int | None) -> str:
-    if code:
-        return code
-    if number is not None:
-        return f"site-{number}"
-    return slugify(site_name)[:60]
+_vrf_name_for = vrf_name_for
 
 
 class _Planner:
@@ -160,6 +159,16 @@ class _Planner:
         if site_key in self._vrfs:
             return site_key
         site = self._sites[site_key]
+        # a site keeps its existing VRF even when its name doesn't follow
+        # the convention — enrichment may set a code after the VRF exists
+        if site.get("site_id"):
+            owned = self.st.vrf_by_site.get(site["site_id"])
+            if owned is not None:
+                self._vrfs[site_key] = {
+                    "key": site_key, "site_key": site_key, "name": owned.name,
+                    "action": "exists", "vrf_id": owned.id,
+                }
+                return site_key
         name = _vrf_name_for(site["name"], site.get("code"), site.get("site_number"))
         existing = self.st.vrf_by_name.get(name.lower())
         if existing is not None:
@@ -388,24 +397,61 @@ class _Planner:
                 "master row had no name — site named from this sheet's title",
             )
 
+    def _retired_anchor(self, inactive_name: str | None,
+                        sheet_name: str) -> tuple[str, str]:
+        """The octet block belongs to an inactive (closed) site, which must
+        not claim new data — address blocks get reused after closure
+        (מודיעין and Thil'a share Eilat's retired 10.10.x). A matching title
+        still wins — 'Kunetra' really is Kunetra's sheet. Otherwise the
+        sheet becomes a new site named after itself, without the number:
+        that stays with the closed site's block."""
+        hit = self._match_site_title(nz.fold_hebrew(sheet_name).lower())
+        if hit is not None:
+            return hit, "title"
+        title_name = nz.clean(sheet_name)[:255] or "Unnamed site"
+        key = self._new_site(title_name)
+        self._sites[key]["anchor_inactive"] = inactive_name
+        return key, "octet-new"
+
     def _site_for_10x(self, second: int, sheet_name: str) -> tuple[str, str]:
         """Resolve a 10.{second}.x sheet — site_number is only meaningful
         inside the 10.0.0.0/8 plan. Falls back to a new site named after the
         sheet ('רמון' says more than 'Site 10.100.x')."""
         site = self.st.site_by_number.get(second)
         if site is not None:
-            return self._register_site(site), "octet"
+            if site.is_active:
+                return self._register_site(site), "octet"
+            return self._retired_anchor(site.name, sheet_name)
         for key, s in self._sites.items():
             if s.get("site_number") == second:
+                if s.get("is_active") is False:
+                    return self._retired_anchor(s.get("name"), sheet_name)
                 self._claim_synthetic_name(key, sheet_name)
                 return key, "octet"
         title_name = nz.clean(sheet_name)[:255] or f"Site 10.{second}.x"
         return self._new_site(title_name, number=second), "octet-new"
 
+    def _block_anchor(self, block_key: str,
+                      sheet_name: str) -> tuple[str, str]:
+        """A declared octet block claims the sheet — unless its site is
+        inactive, in which case the retired-anchor rule applies."""
+        if self._sites[block_key].get("is_active") is False:
+            return self._retired_anchor(
+                self._sites[block_key].get("name"), sheet_name
+            )
+        self._claim_synthetic_name(block_key, sheet_name)
+        return block_key, "octet"
+
     def resolve_sheet_site(self, sheet_name: str, octets: Counter) -> tuple[str, str | None]:
         """site_key, matched_by for a site_sheet."""
         override = self.opt.site_overrides.get(sheet_name)
         if override is not None:
+            if isinstance(override, str):
+                name = (
+                    nz.clean(sheet_name) if override == NEW_SITE_OVERRIDE
+                    else nz.clean(override)
+                )[:255]
+                return self._new_site(name or "Unnamed site"), "override"
             site = self.st.sites_by_id.get(override)
             if site is not None:
                 return self._register_site(site), "override"
@@ -414,8 +460,7 @@ class _Planner:
             first, second = octets.most_common(1)[0][0]
             block_key = self._block_site.get((first, second))
             if block_key is not None:
-                self._claim_synthetic_name(block_key, sheet_name)
-                return block_key, "octet"
+                return self._block_anchor(block_key, sheet_name)
             if first == 10:
                 return self._site_for_10x(second, sheet_name)
             # non-10.x dominant block, undeclared (Cellular's 172.30.x,
@@ -428,8 +473,7 @@ class _Planner:
             if ten is not None:
                 block_key = self._block_site.get(ten)
                 if block_key is not None:
-                    self._claim_synthetic_name(block_key, sheet_name)
-                    return block_key, "octet"
+                    return self._block_anchor(block_key, sheet_name)
                 return self._site_for_10x(ten[1], sheet_name)
             return self._holding_site(), None
         hit = self._match_site_title(title)
@@ -659,12 +703,43 @@ class _Planner:
                     return key
         return None
 
+    def _enrich_site(self, site_key: str, r: dict):
+        """The circuits sheet doubles as a site directory (מאתר ->
+        מספר אתר + קידומת האתר). Its codebook is close to Site.code but
+        not identical (HAFA vs NHFS) — fill gaps only, never overwrite,
+        and never steal a code another site already claims."""
+        s = self._sites[site_key]
+        if not s.get("code") and r.get("site_code"):
+            claimed = self._planned_site(code=r["site_code"])
+            if claimed is None or claimed == site_key:
+                s["code"] = r["site_code"]
+                self.report(
+                    r["sheet"], r["row"], "update",
+                    f"{s['name']}: site code '{r['site_code']}' from circuits",
+                )
+        if s.get("site_number") is None and r.get("site_number") is not None:
+            s["site_number"] = r["site_number"]
+            self.report(
+                r["sheet"], r["row"], "update",
+                f"{s['name']}: site number {r['site_number']} from circuits",
+            )
+
     def add_circuits(self, records: list[dict]):
         for r in records:
-            site_key = self._planned_site(number=r.get("site_number"))
-            if site_key is None:
-                site_key = self._planned_site(code=r.get("site_code"))
-            self.plan["circuits"].append({**r, "site_key": site_key})
+            # name first — the circuits' number codebook collides with
+            # closed sites (מודיעין is site 10, same as inactive Eilat)
+            site_key = (
+                self._planned_site(name=r.get("site_name"))
+                or self._planned_site(code=r.get("site_code"))
+                or self._planned_site(number=r.get("site_number"))
+            )
+            if site_key is not None:
+                self._enrich_site(site_key, r)
+            # legacy sheets (קוי בזק ישן) feed the Retired Circuits view
+            self.plan["circuits"].append({
+                **r, "site_key": site_key,
+                "is_retired": "ישן" in (r.get("sheet") or ""),
+            })
             self.report(
                 r["sheet"], r["row"], "create",
                 r.get("bezeq_circuit_id") or r.get("site_name") or "circuit",
@@ -702,9 +777,15 @@ class _Planner:
         title/site disagreements surface as warnings, not silent picks."""
         out = []
         title = nz.fold_hebrew(sheet_name).lower()
+        if site.get("is_active") is False:
+            out.append("matched site is marked inactive in the master list")
+        if site.get("anchor_inactive"):
+            out.append(
+                f"dominant block belongs to inactive site "
+                f"'{site['anchor_inactive']}' — new site created from the "
+                f"sheet title; verify assignment"
+            )
         if how == "octet":
-            if site.get("is_active") is False:
-                out.append("matched site is marked inactive in the master list")
             if re.search(r"[a-zA-Z]", sheet_name) and not self._title_hits(
                 title, site.get("name"), site.get("code")
             ):
@@ -712,7 +793,7 @@ class _Planner:
                     f"sheet title doesn't resemble matched site "
                     f"'{site.get('name')}' — verify assignment"
                 )
-        if how == "name":
+        if how in ("name", "title"):
             # full name-in-title or a code word is solid; a lone shared word
             # ('Sapiens (Holon)' -> 'Sapiens(Rehovot)') is worth flagging
             n = nz.fold_hebrew(site.get("name") or "").lower()

@@ -35,3 +35,14 @@ const HE_FINALS: Record<string, string> = {
 export function foldHebrew(s: string): string {
   return s.replace(/[םןץףך]/g, (c) => HE_FINALS[c] ?? c);
 }
+
+// Mirrors backend slugify (app/services/ipam.py): NFKC + lowercase,
+// non-word runs -> "-", keeps Hebrew letters; "site" when empty.
+export function slugify(name: string): string {
+  const slug = name
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}_]+/gu, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || "site";
+}

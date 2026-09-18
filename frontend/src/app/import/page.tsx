@@ -36,6 +36,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+const NEW_SITE = "__new__"; // backend sentinel: create site from sheet title
+
 const FAMILY_LABEL: Record<string, string> = {
   sites_master: "Sites",
   site_sheet: "Site sheet",
@@ -178,7 +180,9 @@ export default function ImportPage() {
   const [batch, setBatch] = useState<ImportBatch | null>(null);
   const [sheets, setSheets] = useState<SheetPreview[]>([]);
   const [skipped, setSkipped] = useState<Set<string>>(new Set());
-  const [overrides, setOverrides] = useState<Record<string, number>>({});
+  const [overrides, setOverrides] = useState<Record<string, number | string>>(
+    {}
+  );
   const [sites, setSites] = useState<Site[]>([]);
   const [preview, setPreview] = useState<PreviewResp | null>(null);
   const [commitResult, setCommitResult] = useState<CommitResp | null>(null);
@@ -369,13 +373,19 @@ export default function ImportPage() {
                               ""
                             }
                             onValueChange={(v) =>
-                              setOverrides({ ...overrides, [s.sheet]: +v })
+                              setOverrides({
+                                ...overrides,
+                                [s.sheet]: v === NEW_SITE ? NEW_SITE : +v,
+                              })
                             }
                           >
                             <SelectTrigger className="h-8 w-48">
                               <SelectValue placeholder="auto" />
                             </SelectTrigger>
                             <SelectContent>
+                              <SelectItem value={NEW_SITE}>
+                                + New site (from sheet title)
+                              </SelectItem>
                               {sites.map((site) => (
                                 <SelectItem
                                   key={site.id}
