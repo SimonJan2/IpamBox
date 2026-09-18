@@ -21,6 +21,7 @@ class SettingsPatch(BaseModel):
     backup_interval_minutes: int | None = None
     backup_keep: int | None = None
     ipambox_session_hours: int | None = None
+    site_code_follow_site: bool | None = None
 
 
 class LanInfo(BaseModel):

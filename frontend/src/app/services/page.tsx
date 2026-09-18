@@ -14,6 +14,7 @@ import {
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useFeatureFlag } from "@/lib/features";
 import { PERM } from "@/lib/permissions";
 import { foldHebrew } from "@/lib/utils";
 import { SortHeader } from "@/components/sort-header";
@@ -35,6 +36,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -71,7 +73,9 @@ export default function ServicesPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Service | null>(null);
   const [deleting, setDeleting] = useState<Service | null>(null);
+  const followSiteCode = useFeatureFlag("site_code_follow_site");
   const [form, setForm] = useState(EMPTY);
+  const [codeManual, setCodeManual] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const refresh = () => {
@@ -82,21 +86,32 @@ export default function ServicesPage() {
 
   useEffect(() => {
     if (dialogOpen) {
+      const site = sites.find((s) => s.id === editing?.site_id);
+      // A stored code that disagrees with the linked site (or exists with no
+      // site) is a deliberate override — don't clobber it on open. With
+      // site_code_follow_site (Settings > Features) it's treated as stale.
+      const manual =
+        !followSiteCode &&
+        Boolean(editing?.site_code) &&
+        editing?.site_code !== site?.code;
       setForm(
         editing
           ? {
               name: editing.name ?? "",
               beneficiary: editing.beneficiary ?? "",
               site_id: editing.site_id ? String(editing.site_id) : "none",
-              site_code: editing.site_code ?? "",
+              site_code: manual
+                ? editing.site_code ?? ""
+                : site?.code || editing.site_code || "",
               doc_path: editing.doc_path ?? "",
               test_info: editing.test_info ?? "",
               notes: editing.notes ?? "",
             }
           : EMPTY
       );
+      setCodeManual(manual);
     }
-  }, [dialogOpen, editing]);
+  }, [dialogOpen, editing, sites, followSiteCode]);
 
   const submit = async () => {
     setBusy(true);
@@ -141,6 +156,23 @@ export default function ServicesPage() {
     () => Object.fromEntries(sites.map((s) => [s.id, s.name])),
     [sites]
   );
+
+  const formSite = sites.find((s) => String(s.id) === form.site_id);
+  const codeLocked = Boolean(formSite?.code) && !codeManual;
+
+  const onSiteChange = (v: string) => {
+    const s = sites.find((x) => String(x.id) === v);
+    setForm({
+      ...form,
+      site_id: v,
+      ...(s && !codeManual ? { site_code: s.code ?? "" } : {}),
+    });
+  };
+
+  const onCodeAuto = (on: boolean) => {
+    setCodeManual(!on);
+    if (on && formSite) setForm({ ...form, site_code: formSite.code ?? "" });
+  };
 
   const rows = useMemo<ServiceRow[]>(
     () =>
@@ -381,10 +413,7 @@ export default function ServicesPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="grid gap-1.5">
                 <Label>Site</Label>
-                <Select
-                  value={form.site_id}
-                  onValueChange={(v) => setForm({ ...form, site_id: v })}
-                >
+                <Select value={form.site_id} onValueChange={onSiteChange}>
                   <SelectTrigger>
                     <SelectValue placeholder="None" />
                   </SelectTrigger>
@@ -392,17 +421,32 @@ export default function ServicesPage() {
                     <SelectItem value="none">None</SelectItem>
                     {sites.map((s) => (
                       <SelectItem key={s.id} value={String(s.id)}>
-                        <span dir="auto">{s.name}</span>
+                        <span dir="auto">
+                          {s.code ? `${s.code} — ` : ""}
+                          {s.name}
+                        </span>
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="grid gap-1.5">
-                <Label>Site code</Label>
+                <div className="flex items-center justify-between">
+                  <Label>Site code</Label>
+                  {formSite?.code && (
+                    <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Switch
+                        checked={!codeManual}
+                        onCheckedChange={onCodeAuto}
+                      />
+                      from site
+                    </label>
+                  )}
+                </div>
                 <Input
                   dir="ltr"
                   value={form.site_code}
+                  disabled={codeLocked}
                   onChange={set("site_code")}
                 />
               </div>
