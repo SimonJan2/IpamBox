@@ -59,12 +59,6 @@
       "input_tokens": 0,
       "output_tokens": 0,
       "files": 32
-    },
-    {
-      "date": "2026-09-19T11:16:03.542841+00:00",
-      "input_tokens": 0,
-      "output_tokens": 0,
-      "files": 195
     }
   ],
   "total_input_tokens": 6800,

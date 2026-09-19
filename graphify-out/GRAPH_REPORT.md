@@ -1,26 +1,19 @@
-# Graph Report - IpamBox  (2026-09-18)
+# Graph Report - IpamBox  (2026-09-19)
 
 ## Corpus Check
-- 32 files · ~203,003 words
+- 195 files · ~205,757 words
 - Verdict: corpus is large enough that graph structure adds value.
+- Unclassified: 13 file(s) not represented in the graph (top: (none) 7, .ini 2, .example 1)
 
 ## Summary
-- 1638 nodes · 5063 edges · 100 communities (71 shown, 11 thin omitted)
-- Extraction: 93% EXTRACTED · 7% INFERRED · 0% AMBIGUOUS · INFERRED: 370 edges (avg confidence: 0.93)
+- 1703 nodes · 5255 edges · 95 communities (72 shown, 5 thin omitted)
+- Extraction: 92% EXTRACTED · 8% INFERRED · 0% AMBIGUOUS · INFERRED: 398 edges (avg confidence: 0.94)
 - Token cost: 0 input · 0 output
 
 ## Community Hubs (Navigation)
 - IPAM Frontend Pages
 - Backup API
-- Dashboard & Settings Pages
-- Circuits & Inventory Pages
-- Sites API
-- Login & Settings Pages
-- Backup File Management
-- Changelog & Data Models
-- Workbook Import API
-- Prefixes API
-- Certificates & Scans Pages
+- Import Page
 - Addresses API
 - Auth API
 - Entity Models & IPAM
@@ -30,6 +23,7 @@
 - Entities API
 - Settings & Scans Pages
 - CRUD Router & VRFs
+- Dashboard & Settings Pages
 - Ranges API
 - VLANs API
 - Redis & Runtime Settings
@@ -37,73 +31,75 @@
 - Tags API
 - Scan VRF Inference
 - Settings API
-- Session Security
-- RBAC & User Model
+- Ranges API
 - Workbook Parsing
-- Frontend Package Config
-- NPM Dependencies
-- Prefix Math
-- Test Fixtures
-- TypeScript Config
+- Circuits & Inventory Pages
 - IP & Site Models
-- Workbook Normalization
 - Site Plan Parsing
-- Project Documentation
 - Workbook Import Tests
-- Users API
-- Python Dependencies
+- Sites API
+- Backup API
 - Settings Tests
 - Appearance & Prefs
-- Entity Parser Tests
-- Import Page
-- App Config & Migrations
+- Workbook Import API
+- Prefix Hierarchy Tree
+- Sites API
 - Normalize Tests
 - Site Sheet Parser Tests
 - Sheet Classification
+- Login & Settings Pages
 - IPAM Extras Tests
-- Changelog Flush Hooks
-- Infrastructure Docs
 - Discovery API
+- Backup API
+- IPAM Service Layer
+- Changelog & Data Models
+- Workbook Import API
+- Workbook Parsing
+- Prefixes API
+- Session Security
+- Prefix Math
+- Test Fixtures
+- Workbook Normalization
+- Changelog Flush Hooks
 - App Layout & Config
 - Auth Tests
 - Prefix API Tests
-- Docker Services
-- Dev Dependencies
-- Compose Services
+- Backup File Management
 - Health & Metrics
 - RBAC Test Fixtures
-- User Tests
-- Scan Reconciliation
 - Entity CRUD Tests
-- Docs & Security Policy
 - Auth Dependency Guard
 - Changelog Tests
+- Workbook Parsing
+- Doc File Nodes
+- Frontend Package Config
+- NPM Dependencies
+- TypeScript Config
+- Project Documentation
+- Dev Dependencies
+- Docs & Security Policy
 - Backup Docs
 - NPM Scripts
 - README Features
-- Env Password
-- Backup Serialization
-- Inflight Scan Cleanup
 - Next Env Types
-- Tailwind Config
-- Doc File Nodes
-- AsyncSession Stub
-- Exception Stub
+- Python Dependencies
+- Infrastructure Docs
+- Docker Services
+- Compose Services
 - App Icon
 - Root Layout
-- Site Stub
 
 ## God Nodes (most connected - your core abstractions)
-1. `cn()` - 74 edges
-2. `User` - 57 edges
-3. `react` - 55 edges
-4. `get_or_404()` - 51 edges
-5. `IPAMError` - 50 edges
-6. `IPAddress` - 48 edges
-7. `Base` - 41 edges
-8. `lucide-react` - 41 edges
-9. `useAuth()` - 38 edges
-10. `_matrix()` - 38 edges
+1. `cn()` - 76 edges
+2. `User` - 56 edges
+3. `react` - 56 edges
+4. `IPAddress` - 54 edges
+5. `get_or_404()` - 51 edges
+6. `IPAMError` - 50 edges
+7. `useAuth()` - 47 edges
+8. `Base` - 43 edges
+9. `lucide-react` - 42 edges
+10. `Prefix` - 41 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `pydantic-settings==2.6.1` --semantically_similar_to--> `Hybrid settings model (.env defaults + runtime overrides in app_settings)`  [INFERRED] [semantically similar]
@@ -121,279 +117,275 @@
 - None detected.
 
 ## Hyperedges (group relationships)
+- **Shared Backup Subsystem** — ipambox_docker_compose_api_service, ipambox_docker_compose_scanner_service, ipambox_docker_compose_backupdata_volume [EXTRACTED 1.00]
 - **Healthcheck-Gated Startup Ordering** — ipambox_docker_compose_db_service, ipambox_docker_compose_redis_service, ipambox_docker_compose_api_service, ipambox_docker_compose_scanner_service, ipambox_docker_compose_web_service [EXTRACTED 1.00]
 - **Single Backend Image, Two Runtimes (api + scanner)** — ipambox_docker_compose_api_service, ipambox_docker_compose_scanner_service [EXTRACTED 1.00]
-- **Shared Backup Subsystem** — ipambox_docker_compose_api_service, ipambox_docker_compose_scanner_service, ipambox_docker_compose_backupdata_volume [EXTRACTED 1.00]
 
-## Communities (100 total, 11 thin omitted)
+## Communities (95 total, 5 thin omitted)
 
 ### Community 0 - "IPAM Frontend Pages"
 Cohesion: 0.07
-Nodes (57): ChangelogPage(), DiscoveryPage(), IP_ROLES, IP_STATUSES, PrefixDetailPage(), RANGE_ROLES, toggleIn(), AddressList() (+49 more)
+Nodes (58): Row, SortKey, CellState, AddressPage, IpAddress, IpRange, IpRole, IpStatus (+50 more)
 
 ### Community 1 - "Backup API"
-Cohesion: 0.06
-Nodes (60): download_backup(), download_scheduled_backup(), list_scheduled_backups(), AsyncSession, get, post, Request, Restore a backup file (raw .json.gz body). Wipes every data table (users are… (+52 more)
+Cohesion: 0.09
+Nodes (28): BackupError, BackupPreview, BackupTable, restore(), build_backup(), _from_json(), _gunzip(), _has_serial_id() (+20 more)
 
-### Community 2 - "Dashboard & Settings Pages"
-Cohesion: 0.04
-Nodes (50): ACTION_STYLES, DashboardPage(), downloadUrl(), fmtSize(), fmtTs(), SettingsPage(), PrefixTreeNode(), expiryBadge() (+42 more)
-
-### Community 3 - "Circuits & Inventory Pages"
-Cohesion: 0.11
-Nodes (41): CircuitsPage(), EMPTY, AssetRow, EMPTY, InventoryPage(), PrefixesPage(), PrefixRow, utilColor() (+33 more)
-
-### Community 4 - "Sites API"
-Cohesion: 0.07
-Nodes (38): Any, _cascade_site_fields(), create_site(), delete_site(), get_site(), list_sites(), AsyncSession, delete (+30 more)
-
-### Community 5 - "Login & Settings Pages"
+### Community 10 - "Import Page"
 Cohesion: 0.13
-Nodes (31): BackupSettingsPage(), downloadUrl(), fmtSize(), DataPage(), download(), FEATURES, Key, Key (+23 more)
-
-### Community 6 - "Backup File Management"
-Cohesion: 0.10
-Nodes (43): delete_scheduled_backup(), delete, backup_dir(), delete_backup_file(), list_backup_files(), prune_backups(), Path, Fetch a scheduled backup by file name (path-traversal safe). (+35 more)
-
-### Community 7 - "Changelog & Data Models"
-Cohesion: 0.16
-Nodes (18): Audit trail via session flush hooks. before_flush collects (object, action,…, AppSetting, Runtime-editable setting override. Absent row -> env var -> default., Base, Certificate, Certificate-expiry row from the תוקף תעודות sheet., ChangeLog, NetBox-style audit trail: who changed what, when, and the field diff. (+10 more)
-
-### Community 8 - "Workbook Import API"
-Cohesion: 0.10
-Nodes (35): commit_import(), delete_import(), get_import(), _import_dir(), list_imports(), _load_sheets(), preview_import(), AsyncSession (+27 more)
-
-### Community 9 - "Prefixes API"
-Cohesion: 0.13
-Nodes (36): allocate_next_available(), create_prefix(), delete_prefix(), export_prefixes(), get_prefix(), list_prefixes(), prefix_addresses(), prefix_tree() (+28 more)
-
-### Community 10 - "Certificates & Scans Pages"
-Cohesion: 0.18
-Nodes (21): EMPTY, ACTION_STYLES, ChangeSummary(), fmt(), fmtAgo(), SecurityPage(), Badge(), BadgeProps (+13 more)
+Nodes (24): CommitResp, Counts, PreviewResp, UploadResp, CheckboxProps, ImportBatch, RowResult, SheetPreview (+16 more)
 
 ### Community 11 - "Addresses API"
-Cohesion: 0.12
-Nodes (30): bulk_addresses(), BulkBody, create_address(), delete_address(), export_addresses(), get_address(), import_addresses(), ImportRow (+22 more)
+Cohesion: 0.13
+Nodes (31): BulkBody, ImportRow, IPAddress, IPRole, IPStatus, IPAddressCreate, IPAddressOut, IPAddressPage (+23 more)
 
 ### Community 12 - "Auth API"
-Cohesion: 0.19
-Nodes (32): auth_status(), change_password(), _current_user(), ensure_env_password_user(), login(), _login_session(), logout(), me() (+24 more)
+Cohesion: 0.06
+Nodes (98): UserCreate, UserUpdate, User, UserRole, AuthStatus, LoginBody, SetupBody, auth_status() (+90 more)
 
 ### Community 13 - "Entity Models & IPAM"
 Cohesion: 0.11
-Nodes (27): Asset, SW/HW catalog rows (תוכנות וחומרות) and serial-number inventory…, Circuit, build_tree(), prefix_node(), site_node(), vrf_node(), ConflictError (+19 more)
+Nodes (21): Certificate, Circuit, IPRange, Service, PlanError, metrics(), execute_plan(), _get_or_create_prefix() (+13 more)
+
+### Community 14 - "Workbook Import Planner"
+Cohesion: 0.11
+Nodes (14): _Planner, _preview(), Counter, (first, second) octet-pair histogram of a sheet's addresses. Counting full…, Folded sheet title vs site name/code — word-boundary matching so 'int' doesn't…, Sheet title -> site key via code/name. Checks DB sites first, then sites…, A sheet that octet-matches a master row with no real name gives the site its…, The octet block belongs to an inactive (closed) site, which must not claim new… (+6 more)
 
 ### Community 15 - "Changelog & Dashboard API"
-Cohesion: 0.10
-Nodes (21): list_changelog(), AsyncSession, get, AsyncSession, get, stats(), ConfirmBody, BaseModel (+13 more)
+Cohesion: 0.13
+Nodes (15): ChangeField, ChangeLogOut, list_changelog(), stats(), get_session(), require_perm(), lifespan(), AsyncSession (+7 more)
 
 ### Community 16 - "Scans API"
 Cohesion: 0.14
-Nodes (27): cancel_scan(), _check_cidr_allowed(), create_scan(), get_scan(), _job_payload(), list_scans(), AsyncSession, get (+19 more)
+Nodes (27): ScanJob, ScanStatus, ScanConfigOut, ScanCreate, ScanJobOut, cancel_scan(), _check_cidr_allowed(), create_scan() (+19 more)
 
 ### Community 17 - "Entities API"
 Cohesion: 0.14
-Nodes (21): CRUD routers for the workbook-imported entity families. Circuits, certificates,…, AssetKind, str, AssetCreate, AssetOut, AssetUpdate, BaseModel, CertificateCreate (+13 more)
+Nodes (20): Asset, AssetKind, AssetCreate, AssetOut, AssetUpdate, CertificateCreate, CertificateOut, CertificateUpdate (+12 more)
 
 ### Community 18 - "Settings & Scans Pages"
-Cohesion: 0.09
-Nodes (24): CertificatesPage(), expiryBadge(), fmtEta(), ScansPage(), ScanningPage(), UsersPage(), AddressFilterPanel(), AppShell() (+16 more)
+Cohesion: 0.14
+Nodes (15): AuthCtx, AuthStatus, RoleName, AppShell(), SettingsNav(), authCtxValue(), AUTH_ROUTES, NAV (+7 more)
 
 ### Community 19 - "CRUD Router & VRFs"
-Cohesion: 0.13
-Nodes (22): _crud_router(), delete_item(), get_item(), update_item(), create_vrf(), delete_vrf(), get_vrf(), list_vrfs() (+14 more)
+Cohesion: 0.20
+Nodes (14): VRFCreate, VRFOut, VRFUpdate, create_vrf(), delete_vrf(), get_vrf(), list_vrfs(), update_vrf() (+6 more)
+
+### Community 2 - "Dashboard & Settings Pages"
+Cohesion: 0.06
+Nodes (41): BadgeProps, Asset, AssetKind, BackupFileInfo, Certificate, ChangeField, ChangeLogEntry, Circuit (+33 more)
 
 ### Community 20 - "Ranges API"
 Cohesion: 0.12
-Nodes (21): _check_range_overlap(), create_range(), delete_range(), list_ranges(), AsyncSession, delete, get, post (+13 more)
+Nodes (17): IPRangeRole, CircuitCreate, CircuitOut, CircuitUpdate, IPRangeCreate, IPRangeOut, IPRangeUpdate, ip_display() (+9 more)
 
 ### Community 21 - "VLANs API"
-Cohesion: 0.19
-Nodes (25): _check_duplicate_vid(), create_vlan(), create_vlan_group(), delete_vlan(), delete_vlan_group(), list_vlan_groups(), list_vlans(), AsyncSession (+17 more)
+Cohesion: 0.18
+Nodes (25): VLAN, VLANGroup, VLANStatus, VLANCreate, VLANGroupCreate, VLANGroupOut, VLANGroupUpdate, VLANOut (+17 more)
 
 ### Community 22 - "Redis & Runtime Settings"
-Cohesion: 0.14
-Nodes (26): ArqRedis, get_arq_pool(), redis_settings_from_url(), set_actor(), get_effective(), detect_interface(), detect_local_cidr(), CIDR of the default-route interface, e.g. '192.168.1.0/24'. (+18 more)
+Cohesion: 0.11
+Nodes (31): WorkerSettings, _lan_info(), get_arq_pool(), redis_settings_from_url(), set_actor(), get_effective(), detect_interface(), detect_local_cidr() (+23 more)
 
 ### Community 23 - "Scanner & OUI Lookup"
 Cohesion: 0.12
-Nodes (22): Longest-prefix OUI lookup (handles MA-L/MA-M/MA-S blocks)., _table(), vendor_for(), _arp_scan(), HostResult, _icmp_sweep(), infer_device_type(), _ptr_lookup() (+14 more)
+Nodes (21): ScanCancelled, _table(), vendor_for(), _arp_scan(), _icmp_sweep(), infer_device_type(), _ptr_lookup(), scan_cidr() (+13 more)
 
 ### Community 24 - "Tags API"
 Cohesion: 0.18
-Nodes (20): assign_tag(), create_tag(), delete_tag(), get_tag(), list_assignments(), list_tags(), AsyncSession, delete (+12 more)
+Nodes (17): AssignBody, TagAssignmentOut, TagCreate, TagOut, TagUpdate, assign_tag(), create_tag(), get_tag() (+9 more)
 
 ### Community 25 - "Scan VRF Inference"
-Cohesion: 0.15
-Nodes (17): _infer_scan_vrf(), Pick the VRF for a scan that didn't specify one. An exact-match prefix living…, _scan_vrf(), _extra_vrf(), fake_arq(), _pool(), _FakeArqJob, _FakePool (+9 more)
+Cohesion: 0.14
+Nodes (18): _FakeArqJob, _FakePool, _global_vrf_id(), _infer_scan_vrf(), _scan_vrf(), _extra_vrf(), fake_arq(), _pool() (+10 more)
 
 ### Community 26 - "Settings API"
-Cohesion: 0.17
-Nodes (20): _build_out(), _lan_info(), _mask_url(), AsyncSession, get, Hide the password in a scheme://user:pass@host URL., LAN identity detected by the host-networked worker (written to Redis). Falls…, read_settings() (+12 more)
+Cohesion: 0.15
+Nodes (22): ChangePasswordBody, LanInfo, SessionOut, SettingsOut, SettingsPatch, SystemInfo, UserOut, SettingsValidationError (+14 more)
 
-### Community 27 - "Session Security"
-Cohesion: 0.16
-Nodes (22): get_redis(), clear_login_failures(), destroy_other_sessions(), destroy_session(), destroy_session_by_suffix(), _fails_key(), get_session_user_id(), is_locked_out() (+14 more)
-
-### Community 28 - "RBAC & User Model"
-Cohesion: 0.34
-Nodes (22): str, UserRole, login(), mkuser(), other_client(), AsyncClient, AsyncSession, allow_insecure keeps full access (existing behavior preserved). (+14 more)
+### Community 28 - "Ranges API"
+Cohesion: 0.14
+Nodes (23): IPAMError, _crud_router(), delete_item(), get_item(), list_items(), update_item(), _check_range_overlap(), create_range() (+15 more)
 
 ### Community 29 - "Workbook Parsing"
-Cohesion: 0.13
-Nodes (13): norm_header(), parse_site_number(), _blocks(), _col_class(), _is_header_echo(), _leftover_bits(), _map_columns(), _master_blocks() (+5 more)
-
-### Community 30 - "Frontend Package Config"
-Cohesion: 0.09
-Nodes (21): name, private, version, autoprefixer, clsx, postcss, @radix-ui/react-dropdown-menu, @radix-ui/react-label (+13 more)
-
-### Community 31 - "NPM Dependencies"
-Cohesion: 0.10
-Nodes (21): dependencies, class-variance-authority, clsx, lucide-react, next, @radix-ui/react-dialog, @radix-ui/react-dropdown-menu, @radix-ui/react-label (+13 more)
-
-### Community 32 - "Prefix Math"
-Cohesion: 0.21
-Nodes (18): children(), lowest_free(), parent_chain(), Inclusive [first, last] integer range of host-usable addresses., True when network/broadcast addresses are unusable for hosts (IPv4 <= /30)., Lowest usable address integer not in `taken` or any excluded range., Split `net` into children of `new_prefix` length., The smallest candidate network that strictly contains `net`. (+10 more)
-
-### Community 33 - "Test Fixtures"
-Cohesion: 0.17
-Nodes (17): _base_dsn(), client(), engine(), _prepare_test_db(), fixture, Split 'postgresql://host/db?params' into ('postgresql://host', '?params')., Create the test database (if missing) and run migrations against it., sf() (+9 more)
-
-### Community 34 - "TypeScript Config"
 Cohesion: 0.11
-Nodes (18): compilerOptions, allowJs, esModuleInterop, incremental, isolatedModules, jsx, lib, module (+10 more)
+Nodes (19): TestServersParser, _has(), _looks_like_header(), norm_header(), _blocks(), _is_header_echo(), _leftover_bits(), _map_columns() (+11 more)
+
+### Community 3 - "Circuits & Inventory Pages"
+Cohesion: 0.12
+Nodes (38): AssetRow, PrefixRow, ServiceRow, VlanRow, SwitchProps, Site, Vlan, Vrf (+30 more)
 
 ### Community 35 - "IP & Site Models"
-Cohesion: 0.18
-Nodes (13): IPAddress, Site, fake_arq(), _pool(), _FakeArqJob, _FakePool, AsyncClient, fixture (+5 more)
-
-### Community 36 - "Workbook Normalization"
-Cohesion: 0.25
-Nodes (15): assemble_ip(), clean(), _clean_octets(), fold_hebrew(), map_status(), mask_to_prefixlen(), network_of(), norm_mac() (+7 more)
+Cohesion: 0.21
+Nodes (11): _FakeArqJob, _FakePool, fake_arq(), _pool(), test_backup_now_enqueues(), test_clear_discovery(), test_factory_reset(), test_purge_changelog() (+3 more)
 
 ### Community 37 - "Site Plan Parsing"
-Cohesion: 0.16
-Nodes (9): parse_sites_master(), build_import_plan(), DbState, load_state(), parse_sites_master_records(), _preview(), AsyncSession, _site_key() (+1 more)
-
-### Community 38 - "Project Documentation"
-Cohesion: 0.12
-Nodes (18): bcrypt==4.3.0, Architecture, Configuration, Development, Extended entities (WAN circuits, certificates, inventory, service catalog), First-run auth, session cookies, bcrypt hashing, IP lockout, Hebrew data support (final-letter folding, RTL rendering), IpamBox (+10 more)
+Cohesion: 0.17
+Nodes (9): TestSitesMasterParser, _master_blocks(), parse_sites_master(), parse_sites_master_records(), (first, second) octet pairs a master row declares — lets sheet->site matching…, Integration Site's '172,20-21' fragments -> octet-pair blocks, no 10.x…, Nameless master rows (10.22/35/37/39) become 'Site N' instead of being dropped…, היה "מטה ארצי" בעבר' -> 'מטה ארצי (לשעבר)' — the historical name, suffixed so… (+1 more)
 
 ### Community 39 - "Workbook Import Tests"
-Cohesion: 0.37
-Nodes (6): _master_row(), _matrix(), _plan(), _preview_of(), _site_key_by_name(), TestPlanSiteResolution
+Cohesion: 0.21
+Nodes (13): TestPlanSiteResolution, _master_row(), _matrix(), _plan(), _preview_of(), _site_key_by_name(), INTEGRATION: mostly 172.20/21.x + a few 10.10.x -> Integration Site via its…, טרמינל 3 כניסה' must NOT reassign rows to site 3 — under_site matches… (+5 more)
 
-### Community 40 - "Users API"
-Cohesion: 0.24
-Nodes (16): _admin_count(), create_user(), delete_user(), list_users(), _out(), AsyncSession, BaseModel, delete (+8 more)
+### Community 4 - "Sites API"
+Cohesion: 0.11
+Nodes (17): Settings, Effective, SettingSpec, _env_sourced(), _v_bool(), _v_cidr_list(), _v_float(), _v_int() (+9 more)
 
-### Community 41 - "Python Dependencies"
-Cohesion: 0.15
-Nodes (16): alembic==1.14.0, fastapi==0.115.6, httpx==0.28.1, openpyxl==3.1.5, pydantic==2.10.3, pydantic-settings==2.6.1, pytest==8.3.4, pytest-asyncio==0.25.0 (+8 more)
+### Community 40 - "Backup API"
+Cohesion: 0.21
+Nodes (19): PurgeBody, ResetBody, _audit(), backup_now(), clear_discovery(), factory_reset(), purge_changelog(), purge_scans() (+11 more)
 
 ### Community 42 - "Settings Tests"
 Cohesion: 0.19
-Nodes (13): fake_arq(), _pool(), _FakeArqJob, _FakePool, AsyncClient, fixture, test_backup_files_report_effective_schedule(), test_internal_keys_hidden() (+5 more)
+Nodes (13): _FakeArqJob, _FakePool, fake_arq(), _pool(), test_backup_files_report_effective_schedule(), test_internal_keys_hidden(), test_scan_guards_use_db_settings(), test_settings_changes_audited() (+5 more)
 
 ### Community 43 - "Appearance & Prefs"
-Cohesion: 0.18
-Nodes (15): AppearancePage(), TagsPage(), AddrMapView, applyPrefs(), DEFAULT_PREFS, DensityChoice, fmtTs(), getPrefs() (+7 more)
+Cohesion: 0.11
+Nodes (27): AddrMapView, DensityChoice, Prefs, ThemeChoice, TsFormat, CircuitsPage(), InventoryPage(), PrefixesPage() (+19 more)
 
-### Community 44 - "Entity Parser Tests"
-Cohesion: 0.21
-Nodes (8): parse_certificates(), parse_servers(), test_commit_twice_rejected(), test_import_e2e(), TestAssetsParser, TestCertificatesParser, TestServersParser, _xlsx_bytes()
+### Community 44 - "Workbook Import API"
+Cohesion: 0.17
+Nodes (11): SheetMatrix, TestAssetsParser, load_workbook_bytes(), test_commit_twice_rejected(), test_import_e2e(), _xlsx_bytes(), Network_Address.xlsx ingestion. Pipeline: reader (xlsx -> matrices) -> classify…, XLSX -> sheet matrices via openpyxl (read_only streams, values only). (+3 more)
 
-### Community 45 - "Import Page"
-Cohesion: 0.22
-Nodes (9): ACTION_STYLE, CommitResp, Counts, FAMILY_LABEL, PreviewResp, UploadResp, ImportBatch, RowResult (+1 more)
+### Community 45 - "Prefix Hierarchy Tree"
+Cohesion: 0.24
+Nodes (17): TreeRow, PrefixNode, SiteNode, VrfNode, prefixText(), siteText(), TreePage(), vrfText() (+9 more)
 
-### Community 46 - "App Config & Migrations"
-Cohesion: 0.21
-Nodes (7): do_run_migrations(), run_migrations_online(), VRF, slugify(), main(), Seed sample data: a Site, the Global VRF, and the auto-detected LAN prefix. Run…, _global_vrf_id()
+### Community 46 - "Sites API"
+Cohesion: 0.12
+Nodes (29): Site, VRF, SiteCreate, SiteOut, SiteUpdate, DbState, _cascade_site_fields(), create_site() (+21 more)
 
 ### Community 47 - "Normalize Tests"
-Cohesion: 0.17
-Nodes (3): excel_date(), TestNormalize, date
+Cohesion: 0.12
+Nodes (7): TestCertificatesParser, TestNormalize, excel_date(), parse_certificates(), date, datetime/date passthrough; int/float serial (20000-80000) -> date; 'd/m/yy'…, Positional 5-col layout: platform, target/VS, server, cert, expiry.
 
 ### Community 48 - "Site Sheet Parser Tests"
-Cohesion: 0.27
-Nodes (3): parse_site_sheet(), TestSiteSheetExtras, TestSiteSheetParser
+Cohesion: 0.20
+Nodes (6): TestSiteSheetExtras, TestSiteSheetParser, parse_site_sheet(), MAC ADDRESS' (חיפה נמל / HAf old) is a mac column, not cf., Bare 'Name' (Cellular) maps to the hostname field., Non-empty unnamed columns pile into cf['extra'] instead of vanishing (Pelephone…
 
 ### Community 49 - "Sheet Classification"
-Cohesion: 0.31
-Nodes (4): classify_sheet(), _has(), _looks_like_header(), TestClassify
+Cohesion: 0.36
+Nodes (3): TestClassify, classify_sheet(), (family, header_row_index, warnings). header_row_index = index of the row…
+
+### Community 5 - "Login & Settings Pages"
+Cohesion: 0.11
+Nodes (35): Key, Key, ButtonProps, BackupFilesOut, BackupPreview, RestoreReport, SettingsOut, SettingsValues (+27 more)
 
 ### Community 50 - "IPAM Extras Tests"
-Cohesion: 0.40
-Nodes (10): _prefix(), test_address_role_nat_and_bulk(), test_container_move_with_children_rejected(), test_csv_export_import(), test_dashboard_attention_fields(), test_ip_ranges_exclude_allocator(), test_prefix_move_vrf(), test_tags_crud_and_assignment() (+2 more)
-
-### Community 51 - "Changelog Flush Hooks"
-Cohesion: 0.29
-Nodes (10): after_flush(), before_flush(), _columns(), _create_changes(), _delete_changes(), register(), _repr(), _ser() (+2 more)
-
-### Community 52 - "Infrastructure Docs"
-Cohesion: 0.24
-Nodes (10): arq==0.26.1, asyncpg==0.30.0, psutil==6.1.0, redis==5.2.0 (Python client), scapy==2.6.1, sqlalchemy[asyncio]==2.0.36, scanner service (ARQ worker, network_mode: host, NET_ADMIN/NET_RAW), Discovery Inbox and drift reconciliation (+2 more)
+Cohesion: 0.22
+Nodes (17): HostResult, reconcile(), _prefix(), test_address_role_nat_and_bulk(), test_container_move_with_children_rejected(), test_csv_export_import(), test_dashboard_attention_fields(), test_ip_ranges_exclude_allocator() (+9 more)
 
 ### Community 53 - "Discovery API"
 Cohesion: 0.22
-Nodes (9): confirm_discovered(), list_discovered(), AsyncSession, get, post, Unconfirmed hosts found by scanners, pending admin review., Unconfirmed hosts found by scanners, pending admin review., One-click confirm a discovered host (default -> Active). (+1 more)
+Nodes (9): ConfirmBody, confirm_discovered(), list_discovered(), AsyncSession, BaseModel, get, post, Unconfirmed hosts found by scanners, pending admin review. (+1 more)
+
+### Community 62 - "Backup API"
+Cohesion: 0.23
+Nodes (14): BackupFileInfo, BackupFilesOut, BackupPreviewOut, RestoreReport, download_backup(), download_scheduled_backup(), list_scheduled_backups(), has_perm() (+6 more)
+
+### Community 63 - "IPAM Service Layer"
+Cohesion: 0.20
+Nodes (15): ConflictError, NotFoundError, build_tree(), site_node(), vrf_node(), vrf_prefix_tree(), prefix_node(), dashboard_stats() (+7 more)
+
+### Community 7 - "Changelog & Data Models"
+Cohesion: 0.18
+Nodes (14): AppSetting, Base, ChangeLog, ImportBatch, Tag, TagAssignment, _fail_inflight_scans(), DeclarativeBase (+6 more)
+
+### Community 8 - "Workbook Import API"
+Cohesion: 0.12
+Nodes (33): ImportBatchStatus, CommitOptions, ImportBatchOut, PreviewOptions, RowResult, SheetPreview, commit_import(), delete_import() (+25 more)
+
+### Community 83 - "Workbook Parsing"
+Cohesion: 0.29
+Nodes (5): TestCircuitsParser, parse_site_number(), parse_circuits(), קוי בזק ישן (029) — bandwidth/contact map to real fields, the rest of the…, שם לקוח באפל'' (trailing gershayim) still hits the alias.
+
+### Community 9 - "Prefixes API"
+Cohesion: 0.14
+Nodes (34): Prefix, PrefixStatus, AllocateIPRequest, AvailableIPOut, PrefixCreate, PrefixOut, PrefixSplitOut, PrefixUpdate (+26 more)
+
+### Community 27 - "Session Security"
+Cohesion: 0.18
+Nodes (21): get_redis(), clear_login_failures(), create_session(), destroy_other_sessions(), destroy_session(), destroy_session_by_suffix(), _fails_key(), get_session_user_id() (+13 more)
+
+### Community 32 - "Prefix Math"
+Cohesion: 0.21
+Nodes (18): children(), lowest_free(), parent_chain(), reserves_boundaries(), to_network(), usable_bounds(), usable_count(), test_children_split() (+10 more)
+
+### Community 33 - "Test Fixtures"
+Cohesion: 0.17
+Nodes (17): _base_dsn(), client(), engine(), _prepare_test_db(), sf(), _split_dsn(), test_url(), _mk_prefix() (+9 more)
+
+### Community 36 - "Workbook Normalization"
+Cohesion: 0.11
+Nodes (28): assemble_ip(), clean(), _clean_octets(), map_status(), mask_to_prefixlen(), network_of(), norm_mac(), parse_range_end() (+20 more)
+
+### Community 51 - "Changelog Flush Hooks"
+Cohesion: 0.35
+Nodes (11): after_flush(), before_flush(), _columns(), _create_changes(), _delete_changes(), register(), _repr(), _ser() (+3 more)
 
 ### Community 54 - "App Layout & Config"
-Cohesion: 0.25
-Nodes (5): nextConfig, metadata, PrefsInit(), TooltipProvider, next
+Cohesion: 0.20
+Nodes (8): PrefsInit(), applyPrefs(), resolveTheme(), useApplyPrefs(), nextConfig, metadata, TooltipProvider, next
 
 ### Community 55 - "Auth Tests"
-Cohesion: 0.32
-Nodes (7): auth_on(), AsyncClient, fixture, Turn auth on for a test, restore insecure mode after, and flush session/lockout…, test_endpoints_require_auth(), test_login_lockout(), test_setup_login_flow()
+Cohesion: 0.13
+Nodes (18): do_run_migrations(), run_migrations_online(), get_settings(), env_password(), auth_on(), test_endpoints_require_auth(), test_login_lockout(), test_setup_login_flow() (+10 more)
 
 ### Community 56 - "Prefix API Tests"
 Cohesion: 0.46
 Nodes (7): _global_vrf_id(), test_overlap_same_vrf_rejected(), test_prefix_stats_fields(), test_same_cidr_allowed_across_vrfs(), test_split_endpoint(), test_tree_endpoint(), test_unknown_vlan_rejected()
 
-### Community 57 - "Docker Services"
-Cohesion: 0.32
-Nodes (8): db service (postgres:16-alpine), pgdata volume, redis service (redis:7-alpine, appendonly), redisdata volume, Atomic next-available-IP allocation (SELECT FOR UPDATE + UNIQUE), PostgreSQL GiST exclusion constraint for CIDR overlap safety, Site -> VRF -> Prefix -> IP address hierarchy, Loopback-only Postgres/Redis binding (not exposed to LAN)
-
-### Community 58 - "Dev Dependencies"
-Cohesion: 0.25
-Nodes (8): devDependencies, autoprefixer, postcss, tailwindcss, @types/node, @types/react, @types/react-dom, typescript
-
-### Community 59 - "Compose Services"
-Cohesion: 0.36
-Nodes (8): api — FastAPI Backend Service, backupdata Volume, db — PostgreSQL 16 Database Service, pgdata Volume, redis — Redis 7 Queue/Cache Service, redisdata Volume, scanner — Network Scan Worker Service, web — Next.js Frontend Service
+### Community 6 - "Backup File Management"
+Cohesion: 0.19
+Nodes (15): delete_scheduled_backup(), backup_dir(), backup_filename(), delete_backup_file(), list_backup_files(), prune_backups(), read_backup_file(), write_backup_file() (+7 more)
 
 ### Community 60 - "Health & Metrics"
-Cohesion: 0.29
-Nodes (7): healthz(), metrics(), get, Readiness probe: verifies DB + Redis connectivity., Prometheus-style text exposition of object + scan counters., readyz(), JSONResponse
+Cohesion: 0.40
+Nodes (5): healthz(), readyz(), get, JSONResponse, Readiness probe: verifies DB + Redis connectivity.
 
 ### Community 61 - "RBAC Test Fixtures"
 Cohesion: 0.29
 Nodes (4): auth_on(), fake_arq(), fixture, Turn auth on for a test, restore insecure mode after, and flush session/lockout…
 
-### Community 62 - "User Tests"
-Cohesion: 0.38
-Nodes (6): auth_on(), AsyncClient, fixture, test_change_password_and_sessions(), test_revoke_session_endpoint(), test_users_crud_and_guards()
+### Community 66 - "Auth Dependency Guard"
+Cohesion: 0.50
+Nodes (4): require_auth(), AsyncSession, Request, Guard for every API route. Returns the User, or None in allow_insecure mode.
 
-### Community 63 - "Scan Reconciliation"
-Cohesion: 0.33
-Nodes (6): AsyncSession, Merge scan results into the address table. Existing rows: refresh…, reconcile(), A stored (e.g. imported) MAC that differs from the scan is flagged in…, test_reconcile_flags_mac_mismatch(), test_reconcile_persists_ports_and_type()
+### Community 67 - "Changelog Tests"
+Cohesion: 0.60
+Nodes (4): test_changelog_captures_ip_status_change(), test_changelog_records_crud(), test_changelog_scoped_filters(), AsyncClient
+
+### Community 84 - "Workbook Parsing"
+Cohesion: 0.29
+Nodes (4): _col_class(), _positional_columns(), Dominant content class of a column sample., Headerless sheet: locate the IP column, then assign the remaining canonical…
+
+### Community 30 - "Frontend Package Config"
+Cohesion: 0.08
+Nodes (22): name, private, version, autoprefixer, clsx, postcss, @radix-ui/react-dropdown-menu, @radix-ui/react-label (+14 more)
+
+### Community 31 - "NPM Dependencies"
+Cohesion: 0.10
+Nodes (21): dependencies, class-variance-authority, clsx, lucide-react, next, @radix-ui/react-dialog, @radix-ui/react-dropdown-menu, @radix-ui/react-label (+13 more)
+
+### Community 34 - "TypeScript Config"
+Cohesion: 0.11
+Nodes (18): compilerOptions, allowJs, esModuleInterop, incremental, isolatedModules, jsx, lib, module (+10 more)
+
+### Community 38 - "Project Documentation"
+Cohesion: 0.12
+Nodes (18): Architecture, Configuration, Development, IpamBox, License, Operations, Pages, Quick start (+10 more)
+
+### Community 58 - "Dev Dependencies"
+Cohesion: 0.25
+Nodes (8): devDependencies, autoprefixer, postcss, tailwindcss, @types/node, @types/react, @types/react-dom, typescript
 
 ### Community 65 - "Docs & Security Policy"
 Cohesion: 0.33
 Nodes (4): Deployment notes, Reporting a vulnerability, Security Policy, Supported versions
 
-### Community 66 - "Auth Dependency Guard"
-Cohesion: 0.40
-Nodes (5): AsyncSession, Request, Guard for every API route. Returns the User, or None in allow_insecure mode., Guard for every API route. Returns the User, or None in allow_insecure mode., require_auth()
-
-### Community 67 - "Changelog Tests"
-Cohesion: 0.60
-Nodes (4): AsyncClient, test_changelog_captures_ip_status_change(), test_changelog_records_crud(), test_changelog_scoped_filters()
-
 ### Community 68 - "Backup Docs"
 Cohesion: 0.40
-Nodes (5): backupdata volume (/backups), Backup file format, Backup & Restore, Restore, Take a backup
+Nodes (5): Backup file format, Backup & Restore, Restore, Take a backup, backupdata volume (/backups)
 
 ### Community 69 - "NPM Scripts"
 Cohesion: 0.40
@@ -403,33 +395,41 @@ Nodes (5): scripts, build, dev, lint, start
 Cohesion: 0.50
 Nodes (4): Features, IPAM, Platform, Scanner
 
-### Community 83 - "Env Password"
-Cohesion: 0.67
-Nodes (3): env_password(), Password provisioned via IPAMBOX_PASSWORD_FILE / IPAMBOX_PASSWORD., Password provisioned via IPAMBOX_PASSWORD_FILE / IPAMBOX_PASSWORD.
+### Community 41 - "Python Dependencies"
+Cohesion: 0.15
+Nodes (16): alembic==1.14.0, fastapi==0.115.6, httpx==0.28.1, openpyxl==3.1.5, pydantic==2.10.3, pydantic-settings==2.6.1, pytest==8.3.4, pytest-asyncio==0.25.0 (+8 more)
 
-### Community 84 - "Backup Serialization"
-Cohesion: 1.00
-Nodes (3): Any, _serialize_row(), _to_json()
+### Community 52 - "Infrastructure Docs"
+Cohesion: 0.24
+Nodes (10): arq==0.26.1, asyncpg==0.30.0, psutil==6.1.0, redis==5.2.0 (Python client), scapy==2.6.1, sqlalchemy[asyncio]==2.0.36, scanner service (ARQ worker, network_mode: host, NET_ADMIN/NET_RAW), Discovery Inbox and drift reconciliation (+2 more)
+
+### Community 57 - "Docker Services"
+Cohesion: 0.32
+Nodes (8): db service (postgres:16-alpine), pgdata volume, redis service (redis:7-alpine, appendonly), redisdata volume, Site -> VRF -> Prefix -> IP address hierarchy, Atomic next-available-IP allocation (SELECT FOR UPDATE + UNIQUE), PostgreSQL GiST exclusion constraint for CIDR overlap safety, Loopback-only Postgres/Redis binding (not exposed to LAN)
+
+### Community 59 - "Compose Services"
+Cohesion: 0.36
+Nodes (8): scanner — Network Scan Worker Service, api — FastAPI Backend Service, web — Next.js Frontend Service, db — PostgreSQL 16 Database Service, redis — Redis 7 Queue/Cache Service, backupdata Volume, redisdata Volume, pgdata Volume
 
 ## Knowledge Gaps
-- **171 isolated node(s):** `Row`, `SortKey`, `CellState`, `BadgeProps`, `CheckboxProps` (+166 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 473 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **11 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **169 isolated node(s):** `Row`, `SortKey`, `CellState`, `Counts`, `CheckboxProps` (+164 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 530 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **5 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `ScanJob` connect `Dashboard & Settings Pages` to `Scans API`, `Certificates & Scans Pages`, `Circuits & Inventory Pages`, `Redis & Runtime Settings`?**
-  _High betweenness centrality (0.131) - this node is a cross-community bridge._
-- **Why does `create_site()` connect `Sites API` to `IP & Site Models`, `Circuits & Inventory Pages`, `App Config & Migrations`?**
-  _High betweenness centrality (0.116) - this node is a cross-community bridge._
-- **Why does `Site` connect `Circuits & Inventory Pages` to `Certificates & Scans Pages`, `Dashboard & Settings Pages`, `Sites API`, `Import Page`?**
-  _High betweenness centrality (0.115) - this node is a cross-community bridge._
-- **Are the 30 inferred relationships involving `User` (e.g. with `bulk_addresses()` and `auth_status()`) actually correct?**
+- **Why does `IPAddress` connect `Addresses API` to `Sites API`, `Changelog & Data Models`, `Prefixes API`, `Entity Models & IPAM`, `Changelog & Dashboard API`, `Scans API`, `Ranges API`, `Redis & Runtime Settings`, `Scanner & OUI Lookup`, `Scan VRF Inference`, `Ranges API`, `Prefix Math`, `IP & Site Models`, `Workbook Normalization`, `Backup API`, `Sites API`, `IPAM Extras Tests`, `Changelog Flush Hooks`, `Discovery API`, `IPAM Service Layer`?**
+  _High betweenness centrality (0.075) - this node is a cross-community bridge._
+- **Why does `User` connect `Auth API` to `Backup API`, `Auth Dependency Guard`, `Backup File Management`, `Changelog & Data Models`, `Workbook Import API`, `Backup API`, `Addresses API`, `Entity Models & IPAM`, `Changelog & Dashboard API`, `Changelog Flush Hooks`, `Backup API`?**
+  _High betweenness centrality (0.028) - this node is a cross-community bridge._
+- **Why does `Site` connect `Sites API` to `IP & Site Models`, `Changelog & Data Models`, `Prefixes API`, `Entity Models & IPAM`, `Workbook Import Planner`, `Changelog Flush Hooks`, `VLANs API`, `IPAM Service Layer`?**
+  _High betweenness centrality (0.027) - this node is a cross-community bridge._
+- **Are the 30 inferred relationships involving `User` (e.g. with `bulk_addresses()` and `change_password()`) actually correct?**
   _`User` has 30 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 35 inferred relationships involving `IPAMError` (e.g. with `create_address()` and `delete_address()`) actually correct?**
-  _`IPAMError` has 35 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 19 inferred relationships involving `IPAddress` (e.g. with `bulk_addresses()` and `create_address()`) actually correct?**
+  _`IPAddress` has 19 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `Row`, `SortKey`, `CellState` to the rest of the system?**
-  _171 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _169 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `IPAM Frontend Pages` be split into smaller, more focused modules?**
-  _Cohesion score 0.07039337474120083 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.0654490106544901 - nodes in this community are weakly interconnected._
