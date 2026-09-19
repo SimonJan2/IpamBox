@@ -133,49 +133,86 @@ async def build_tree(session: AsyncSession) -> list[dict]:
     prefixes = (
         await session.execute(select(Prefix).options(selectinload(Prefix.vlan)))
     ).scalars().all()
+    used_counts = dict(
+        (
+            await session.execute(
+                select(IPAddress.prefix_id, func.count(IPAddress.id)).group_by(
+                    IPAddress.prefix_id
+                )
+            )
+        ).all()
+    )
 
-    def prefix_node(p: Prefix, siblings: list[Prefix], nets: dict[int, object]) -> dict:
-        net = nets[p.id]
-        children = []
-        for c in siblings:
-            cnet = nets[c.id]
-            if cnet.version != net.version or cnet.prefixlen <= net.prefixlen:
-                continue
-            if cnet.subnet_of(net):
-                # direct child if no intermediate sibling contains it
-                if not any(
-                    cnet.subnet_of(nets[o.id])
-                    for o in siblings
-                    if o.id != c.id
-                    and nets[o.id].prefixlen > net.prefixlen
-                    and nets[o.id].prefixlen < cnet.prefixlen
-                    and cnet.subnet_of(nets[o.id])
-                ):
-                    children.append(prefix_node(c, siblings, nets))
-        children.sort(key=lambda n: int(prefix_math.to_network(n["prefix"]).network_address))
-        return {
-            "id": p.id,
-            "prefix": str(net),
-            "status": p.status.value,
-            "vlan_id": p.vlan_id,
-            "vlan_name": p.vlan.name if p.vlan else None,
-            "description": p.description,
-            "children": children,
-        }
+    def vrf_prefix_tree(vps: list[Prefix]) -> list[dict]:
+        """Parent = deepest network that strictly contains the prefix.
+
+        Sorted by (version, network address, prefixlen), a stack of containing
+        ancestors yields each parent in O(n log n) overall.
+        """
+        nets = {p.id: prefix_math.to_network(p.prefix) for p in vps}
+        ordered = sorted(
+            vps,
+            key=lambda p: (
+                nets[p.id].version,
+                int(nets[p.id].network_address),
+                nets[p.id].prefixlen,
+            ),
+        )
+        children_of: dict[int, list[Prefix]] = {p.id: [] for p in vps}
+        roots: list[Prefix] = []
+        stack: list[Prefix] = []
+        for p in ordered:
+            net = nets[p.id]
+            end = int(net.broadcast_address)
+            while stack:
+                top = nets[stack[-1].id]
+                if int(top.broadcast_address) < end or top.prefixlen >= net.prefixlen:
+                    stack.pop()
+                else:
+                    break
+            if stack and nets[stack[-1].id].version == net.version:
+                children_of[stack[-1].id].append(p)
+            else:
+                roots.append(p)
+            stack.append(p)
+
+        def prefix_node(p: Prefix) -> dict:
+            net = nets[p.id]
+            kids = [prefix_node(c) for c in children_of[p.id]]
+            usable = prefix_math.usable_count(net)
+            used = int(used_counts.get(p.id, 0))
+            return {
+                "id": p.id,
+                "prefix": str(net),
+                "status": p.status.value,
+                "vlan_id": p.vlan_id,
+                "vlan_vid": p.vlan.vid if p.vlan else None,
+                "vlan_name": p.vlan.name if p.vlan else None,
+                "description": p.description,
+                "used_ips": used,
+                "usable_ips": usable,
+                "utilization_pct": round(100.0 * used / usable, 1) if usable else 0.0,
+                "descendant_count": sum(1 + k["descendant_count"] for k in kids),
+                "agg_used_ips": used + sum(k["agg_used_ips"] for k in kids),
+                "allocated_pct": round(
+                    min(
+                        100.0,
+                        100.0
+                        * sum(nets[c.id].num_addresses for c in children_of[p.id])
+                        / net.num_addresses,
+                    ),
+                    1,
+                )
+                if kids
+                else 0.0,
+                "children": kids,
+            }
+
+        return [prefix_node(p) for p in roots]
 
     def vrf_node(v: VRF) -> dict:
         vps = [p for p in prefixes if p.vrf_id == v.id]
-        nets = {p.id: prefix_math.to_network(p.prefix) for p in vps}
-        roots = [
-            p
-            for p in vps
-            if prefix_math.parent_chain(nets[p.id], [nets[o.id] for o in vps]) is None
-        ]
-        tree = sorted(
-            (prefix_node(p, vps, nets) for p in roots),
-            key=lambda n: (":" in n["prefix"], int(prefix_math.to_network(n["prefix"]).network_address)),
-        )
-        return {"id": v.id, "name": v.name, "rd": v.rd, "prefixes": tree}
+        return {"id": v.id, "name": v.name, "rd": v.rd, "prefixes": vrf_prefix_tree(vps)}
 
     def site_node(s: Site | None) -> dict:
         sid = s.id if s else None
