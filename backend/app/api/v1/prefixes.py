@@ -1,8 +1,9 @@
 import ipaddress
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -32,6 +33,7 @@ from app.services.ipam import (
     check_overlap,
     get_or_404,
     prefix_stats,
+    prefix_stats_dict,
     reserve_next_available,
 )
 
@@ -80,9 +82,11 @@ async def list_prefixes(
     status: PrefixStatus | None = None,
     tag_id: int | None = None,
     q: str | None = Query(default=None, description="substring match on CIDR"),
+    order_by: Literal["prefix", "utilization"] = "prefix",
+    limit: int | None = Query(default=None, ge=1, le=1000),
     session: AsyncSession = Depends(get_session),
 ):
-    q_stmt = select(Prefix).options(selectinload(Prefix.vlan)).order_by(Prefix.prefix)
+    q_stmt = select(Prefix).options(selectinload(Prefix.vlan))
     if vrf_id is not None:
         q_stmt = q_stmt.where(Prefix.vrf_id == vrf_id)
     if site_id is not None:
@@ -101,9 +105,38 @@ async def list_prefixes(
     rows = (await session.execute(q_stmt)).scalars().all()
     if q:
         rows = [p for p in rows if q.lower() in str(p.prefix)]
-    # order by network address integer for a natural hierarchy view
-    rows.sort(key=lambda p: int(prefix_math.to_network(p.prefix).network_address))
-    return [await _with_stats(session, p) for p in rows]
+
+    # One grouped COUNT covers every returned prefix — not a per-prefix
+    # round-trip (utilization ordering needs the counts up front anyway).
+    used_counts: dict[int, int] = {}
+    if rows:
+        used_counts = {
+            pid: int(n)
+            for pid, n in (
+                await session.execute(
+                    select(IPAddress.prefix_id, func.count(IPAddress.id))
+                    .where(IPAddress.prefix_id.in_([p.id for p in rows]))
+                    .group_by(IPAddress.prefix_id)
+                )
+            ).all()
+        }
+    pairs = [
+        (p, prefix_stats_dict(p, used_counts.get(p.id, 0))) for p in rows
+    ]
+
+    def _net_key(p: Prefix) -> int:
+        return int(prefix_math.to_network(p.prefix).network_address)
+
+    if order_by == "utilization":
+        pairs.sort(key=lambda t: (-t[1]["utilization_pct"], _net_key(t[0])))
+    else:
+        # order by network address integer for a natural hierarchy view
+        pairs.sort(key=lambda t: _net_key(t[0]))
+    if limit is not None:
+        pairs = pairs[:limit]
+    return [
+        PrefixOut.model_validate(p).model_copy(update=s) for p, s in pairs
+    ]
 
 
 @router.post(

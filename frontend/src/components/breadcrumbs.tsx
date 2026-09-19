@@ -93,7 +93,9 @@ export function PrefixBreadcrumbs({ prefixId }: { prefixId: number }) {
     api
       .get<SiteNode[]>("/api/v1/prefixes/tree")
       .then(setTree)
-      .catch(() => {});
+      // On failure degrade to "no breadcrumb" — leaving tree null would
+      // spin the skeleton forever; the page's own panel surfaces the error.
+      .catch(() => setTree([]));
   }, []);
 
   const chain = useMemo(() => findChain(tree, prefixId), [tree, prefixId]);

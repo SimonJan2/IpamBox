@@ -136,6 +136,67 @@ async def test_address_role_nat_and_bulk(client):
     assert rows == []
 
 
+async def test_bulk_reports_real_counts(client):
+    p = await _prefix(client, "10.99.0.0/24")
+    ids = []
+    for i in (5, 6):
+        r = await client.post(
+            "/api/v1/addresses",
+            json={"address": f"10.99.0.{i}", "prefix_id": p["id"]},
+        )
+        ids.append(r.json()["id"])
+    stale = 999999
+
+    # set_status with a stale id — affected counts rows actually changed
+    r = await client.post(
+        "/api/v1/addresses/bulk",
+        json={
+            "ids": [ids[0], ids[1], stale],
+            "action": "set_status",
+            "status": "reserved",
+        },
+    )
+    body = r.json()
+    assert body["affected"] == 2
+    assert body["not_found"] == [stale]
+
+    # delete reports the real rowcount, not the requested count
+    r = await client.post(
+        "/api/v1/addresses/bulk",
+        json={"ids": [ids[0], stale], "action": "delete"},
+    )
+    body = r.json()
+    assert body["affected"] == 1
+    assert body["not_found"] == [stale]
+    rows = (
+        await client.get("/api/v1/addresses", params={"prefix_id": p["id"]})
+    ).json()
+    assert [x["id"] for x in rows] == [ids[1]]
+
+    # tag actions skip ghosts and count only real assignments
+    tag = (
+        await client.post("/api/v1/tags", json={"name": "t1", "color": "#3B82F6"})
+    ).json()
+    r = await client.post(
+        "/api/v1/addresses/bulk",
+        json={"ids": [ids[1], stale], "action": "add_tag", "tag_id": tag["id"]},
+    )
+    body = r.json()
+    assert body["affected"] == 1
+    assert body["not_found"] == [stale]
+    # re-adding the same tag is a no-op, not another "affected"
+    r = await client.post(
+        "/api/v1/addresses/bulk",
+        json={"ids": [ids[1]], "action": "add_tag", "tag_id": tag["id"]},
+    )
+    assert r.json()["affected"] == 0
+    r = await client.post(
+        "/api/v1/addresses/bulk",
+        json={"ids": [ids[1]], "action": "remove_tag", "tag_id": tag["id"]},
+    )
+    assert r.json()["affected"] == 1
+
+
 async def test_prefix_move_vrf(client):
     g = await _vrf(client)
     v2 = (

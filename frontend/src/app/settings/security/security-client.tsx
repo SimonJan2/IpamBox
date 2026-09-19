@@ -1,14 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { KeyRound, MonitorSmartphone, ShieldAlert, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
+import { useAsyncData } from "@/lib/use-async-data";
 import { fmtTs } from "@/lib/prefs";
 import { useAuth } from "@/lib/auth";
 import { ROLE_META } from "@/lib/permissions";
 import type { SessionOut } from "@/types";
+import { AsyncPanel } from "@/components/async-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,18 +41,14 @@ function fmtAgo(seconds: number | null): string {
 
 export default function SecurityPage() {
   const { status: auth } = useAuth();
-  const [sessions, setSessions] = useState<SessionOut[]>([]);
+  const sessionsQ = useAsyncData(() =>
+    api.get<SessionOut[]>("/api/v1/auth/sessions")
+  );
   const [pw, setPw] = useState({ current: "", next: "", logout: true });
   const [pwBusy, setPwBusy] = useState(false);
 
-  const refresh = useCallback(() => {
-    api
-      .get<SessionOut[]>("/api/v1/auth/sessions")
-      .then(setSessions)
-      .catch(() => {});
-  }, []);
-
-  useEffect(refresh, [refresh]);
+  const sessions = sessionsQ.data ?? [];
+  const refresh = () => void sessionsQ.reload();
 
   const changePassword = async () => {
     setPwBusy(true);
@@ -181,9 +179,13 @@ export default function SecurityPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {sessions.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No sessions found.</p>
-          ) : (
+          <AsyncPanel
+            loading={sessionsQ.loading}
+            error={sessionsQ.error}
+            onRetry={sessionsQ.reload}
+            empty={sessions.length === 0}
+            emptyMessage="No sessions found."
+          >
             <div className="rounded-lg border">
               <Table>
                 <TableHeader>
@@ -235,7 +237,7 @@ export default function SecurityPage() {
                 </TableBody>
               </Table>
             </div>
-          )}
+          </AsyncPanel>
           {sessions.some((s) => !s.current) && (
             <Button size="sm" variant="outline" onClick={revokeOthers}>
               Sign out all other sessions

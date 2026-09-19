@@ -12,11 +12,13 @@ import {
 } from "@tanstack/react-table";
 
 import { api } from "@/lib/api";
+import { useAsyncData } from "@/lib/use-async-data";
 import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
 import { foldHebrew } from "@/lib/utils";
 import { useUrlSorting, useUrlText } from "@/lib/url-state";
 import { expiryBadge } from "@/components/expiry-badge";
+import { AsyncPanel } from "@/components/async-panel";
 import { SortHeader } from "@/components/sort-header";
 import type { Certificate } from "@/types";
 import { Button } from "@/components/ui/button";
@@ -52,7 +54,9 @@ export default function CertificatesPage() {
   const { can } = useAuth();
   const canWrite = can(PERM.DATA_WRITE);
   const canDelete = can(PERM.DATA_DELETE);
-  const [items, setItems] = useState<Certificate[]>([]);
+  const itemsQ = useAsyncData(() =>
+    api.get<Certificate[]>("/api/v1/certificates")
+  );
   const [q, setQ] = useUrlText("q");
   const [sorting, setSorting] = useUrlSorting([
     { id: "expires_on", desc: false },
@@ -63,13 +67,8 @@ export default function CertificatesPage() {
   const [form, setForm] = useState(EMPTY);
   const [busy, setBusy] = useState(false);
 
-  const refresh = () => {
-    api
-      .get<Certificate[]>("/api/v1/certificates")
-      .then(setItems)
-      .catch(() => {});
-  };
-  useEffect(refresh, []);
+  const items = itemsQ.data ?? [];
+  const refresh = () => void itemsQ.reload();
 
   useEffect(() => {
     if (dialogOpen) {
@@ -285,6 +284,13 @@ export default function CertificatesPage() {
       </div>
 
       <div className="rounded-lg border">
+        <AsyncPanel
+          loading={itemsQ.loading}
+          error={itemsQ.error}
+          onRetry={itemsQ.reload}
+          empty={items.length === 0}
+          emptyMessage="No certificates yet — add the first one."
+        >
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((hg) => (
@@ -307,18 +313,19 @@ export default function CertificatesPage() {
                 ))}
               </TableRow>
             ))}
-            {table.getRowModel().rows.length === 0 && (
+            {table.getRowModel().rows.length === 0 && items.length > 0 && (
               <TableRow>
                 <TableCell
                   colSpan={7}
                   className="py-10 text-center text-muted-foreground"
                 >
-                  No certificates found.
+                  No certificates match this filter.
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
+        </AsyncPanel>
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

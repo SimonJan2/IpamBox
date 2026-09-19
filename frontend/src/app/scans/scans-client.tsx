@@ -1,14 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Play, Square } from "lucide-react";
 import { toast } from "sonner";
 
 import { api, scanStreamUrl } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useAsyncData } from "@/lib/use-async-data";
+import { usePolling } from "@/lib/use-polling";
 import { PERM } from "@/lib/permissions";
 import { timeAgo } from "@/lib/utils";
 import type { ScanConfig, ScanJob, Vrf } from "@/types";
+import { AsyncPanel } from "@/components/async-panel";
 import { ScanStatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,28 +35,35 @@ function fmtEta(s: number | null | undefined): string {
 export default function ScansPage() {
   const { can } = useAuth();
   const canWrite = can(PERM.DATA_WRITE);
-  const [scans, setScans] = useState<ScanJob[]>([]);
-  const [vrfs, setVrfs] = useState<Record<number, string>>({});
-  const [config, setConfig] = useState<ScanConfig | null>(null);
+  const scansQ = useAsyncData(() => api.get<ScanJob[]>("/api/v1/scans?limit=50"));
+  const auxQ = useAsyncData(async () => {
+    const [vs, cfg] = await Promise.all([
+      api.get<Vrf[]>("/api/v1/vrfs"),
+      api.get<ScanConfig>("/api/v1/scans/config"),
+    ]);
+    return {
+      vrfs: Object.fromEntries(vs.map((v) => [v.id, v.name])),
+      config: cfg,
+    };
+  });
   const [eta, setEta] = useState<Record<number, number | null>>({});
   const streams = useRef<Map<number, EventSource>>(new Map());
 
-  const refresh = useCallback(() => {
-    api.get<ScanJob[]>("/api/v1/scans?limit=50").then(setScans).catch(() => {});
-  }, []);
+  const scans = scansQ.data ?? [];
+  const vrfs = auxQ.data?.vrfs ?? {};
+  const config = auxQ.data?.config ?? null;
 
-  useEffect(() => {
-    refresh();
-    api.get<Vrf[]>("/api/v1/vrfs").then((vs) =>
-      setVrfs(Object.fromEntries(vs.map((v) => [v.id, v.name])))
-    ).catch(() => {});
-    api.get<ScanConfig>("/api/v1/scans/config").then(setConfig).catch(() => {});
-    const t = setInterval(refresh, 10000);
-    return () => {
-      clearInterval(t);
-      streams.current.forEach((es) => es.close());
-    };
-  }, [refresh]);
+  // SSE below is the live-update channel while jobs run; polling is the
+  // fallback and backs off to the ceiling when nothing changes.
+  usePolling(
+    async () => JSON.stringify(await scansQ.reload()),
+    { interval: 10000 }
+  );
+
+  useEffect(
+    () => () => streams.current.forEach((es) => es.close()),
+    []
+  );
 
   // attach an SSE stream to every live scan
   useEffect(() => {
@@ -63,8 +73,8 @@ export default function ScansPage() {
         es.onmessage = (m) => {
           try {
             const d = JSON.parse(m.data);
-            setScans((prev) =>
-              prev.map((p) =>
+            scansQ.setData((prev) =>
+              (prev ?? []).map((p) =>
                 p.id === s.id
                   ? {
                       ...p,
@@ -82,7 +92,7 @@ export default function ScansPage() {
             if (["completed", "failed", "cancelled"].includes(d.status)) {
               es.close();
               streams.current.delete(s.id);
-              refresh();
+              void scansQ.reload();
             }
           } catch {
             /* ignore */
@@ -95,13 +105,13 @@ export default function ScansPage() {
         streams.current.set(s.id, es);
       }
     }
-  }, [scans, refresh]);
+  }, [scans, scansQ.reload, scansQ.setData]);
 
   const startScan = async (cidr?: string) => {
     try {
       await api.post("/api/v1/scans", cidr ? { cidr } : {});
       toast.success(cidr ? `Scan queued for ${cidr}` : "Scan queued");
-      refresh();
+      void scansQ.reload();
     } catch (e) {
       toast.error("Failed to queue scan", { description: String(e) });
     }
@@ -111,7 +121,7 @@ export default function ScansPage() {
     try {
       await api.post(`/api/v1/scans/${id}/cancel`, {});
       toast.success("Scan cancelled");
-      refresh();
+      void scansQ.reload();
     } catch (e) {
       toast.error("Cancel failed", { description: String(e) });
     }
@@ -134,7 +144,12 @@ export default function ScansPage() {
         )}
       </div>
 
-      {config && (
+      {auxQ.error ? (
+        <AsyncPanel error={auxQ.error} loading={false} onRetry={auxQ.reload}>
+          {null}
+        </AsyncPanel>
+      ) : (
+        config && (
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Scanner configuration</CardTitle>
@@ -173,6 +188,7 @@ export default function ScansPage() {
             )}
           </CardContent>
         </Card>
+        )
       )}
 
       <Card>
@@ -180,6 +196,13 @@ export default function ScansPage() {
           <CardTitle className="text-base">Job history</CardTitle>
         </CardHeader>
         <CardContent>
+          <AsyncPanel
+            loading={scansQ.loading}
+            error={scansQ.error}
+            onRetry={scansQ.reload}
+            empty={scans.length === 0}
+            emptyMessage='No scans yet — hit "Scan LAN" to run one.'
+          >
           <Table>
             <TableHeader>
               <TableRow>
@@ -240,15 +263,9 @@ export default function ScansPage() {
                   </TableCell>
                 </TableRow>
               ))}
-              {scans.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={10} className="py-10 text-center text-muted-foreground">
-                    No scans yet — hit &quot;Scan LAN&quot; to run one.
-                  </TableCell>
-                </TableRow>
-              )}
             </TableBody>
           </Table>
+          </AsyncPanel>
         </CardContent>
       </Card>
     </div>

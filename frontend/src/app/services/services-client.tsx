@@ -12,12 +12,14 @@ import {
 } from "@tanstack/react-table";
 
 import { api } from "@/lib/api";
+import { useAsyncData } from "@/lib/use-async-data";
 import { useAuth } from "@/lib/auth";
 import { useFeatureFlag } from "@/lib/features";
 import { PERM } from "@/lib/permissions";
 import { foldHebrew } from "@/lib/utils";
 import { useUrlSorting, useUrlText } from "@/lib/url-state";
 import { SortHeader } from "@/components/sort-header";
+import { AsyncPanel } from "@/components/async-panel";
 import type { Service, Site } from "@/types";
 import { Button } from "@/components/ui/button";
 import {
@@ -66,8 +68,15 @@ export default function ServicesPage() {
   const { can } = useAuth();
   const canWrite = can(PERM.DATA_WRITE);
   const canDelete = can(PERM.DATA_DELETE);
-  const [items, setItems] = useState<Service[]>([]);
-  const [sites, setSites] = useState<Site[]>([]);
+  const itemsQ = useAsyncData(() => api.get<Service[]>("/api/v1/services"));
+  const sitesQ = useAsyncData(async () => {
+    try {
+      return await api.get<Site[]>("/api/v1/sites");
+    } catch (e) {
+      toast.error("Could not load sites", { description: String(e) });
+      return [];
+    }
+  });
   const [q, setQ] = useUrlText("q");
   const [sorting, setSorting] = useUrlSorting();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -78,11 +87,9 @@ export default function ServicesPage() {
   const [codeManual, setCodeManual] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const refresh = () => {
-    api.get<Service[]>("/api/v1/services").then(setItems).catch(() => {});
-    api.get<Site[]>("/api/v1/sites").then(setSites).catch(() => {});
-  };
-  useEffect(refresh, []);
+  const items = itemsQ.data ?? [];
+  const sites = sitesQ.data ?? [];
+  const refresh = () => void itemsQ.reload();
 
   useEffect(() => {
     if (dialogOpen) {
@@ -356,6 +363,13 @@ export default function ServicesPage() {
       </div>
 
       <div className="rounded-lg border">
+        <AsyncPanel
+          loading={itemsQ.loading}
+          error={itemsQ.error}
+          onRetry={itemsQ.reload}
+          empty={items.length === 0}
+          emptyMessage="No services yet — add the first one."
+        >
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((hg) => (
@@ -378,18 +392,19 @@ export default function ServicesPage() {
                 ))}
               </TableRow>
             ))}
-            {table.getRowModel().rows.length === 0 && (
+            {table.getRowModel().rows.length === 0 && items.length > 0 && (
               <TableRow>
                 <TableCell
                   colSpan={8}
                   className="py-10 text-center text-muted-foreground"
                 >
-                  No services found.
+                  No services match this filter.
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
+        </AsyncPanel>
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

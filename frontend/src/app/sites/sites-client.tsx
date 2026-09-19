@@ -12,12 +12,14 @@ import {
 } from "@tanstack/react-table";
 
 import { api } from "@/lib/api";
+import { useAsyncData } from "@/lib/use-async-data";
 import { useAuth } from "@/lib/auth";
 import { usePrefs } from "@/lib/prefs";
 import { PERM } from "@/lib/permissions";
 import { foldHebrew } from "@/lib/utils";
 import { useUrlSorting, useUrlText } from "@/lib/url-state";
 import { SortHeader } from "@/components/sort-header";
+import { AsyncPanel } from "@/components/async-panel";
 import type { Site } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -260,17 +262,15 @@ export default function SitesPage() {
   const [prefs] = usePrefs();
   const canWrite = can(PERM.DATA_WRITE);
   const canDelete = can(PERM.DATA_DELETE);
-  const [sites, setSites] = useState<Site[]>([]);
+  const sitesQ = useAsyncData(() => api.get<Site[]>("/api/v1/sites"));
   const [q, setQ] = useUrlText("q");
   const [sorting, setSorting] = useUrlSorting();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Site | null>(null);
   const [deleting, setDeleting] = useState<Site | null>(null);
 
-  const refresh = () => {
-    api.get<Site[]>("/api/v1/sites").then(setSites).catch(() => {});
-  };
-  useEffect(refresh, []);
+  const sites = sitesQ.data ?? [];
+  const refresh = () => void sitesQ.reload();
 
   const filtered = useMemo(() => {
     const needle = foldHebrew(q.toLowerCase());
@@ -430,6 +430,13 @@ export default function SitesPage() {
       </div>
 
       <div className="rounded-lg border">
+        <AsyncPanel
+          loading={sitesQ.loading}
+          error={sitesQ.error}
+          onRetry={sitesQ.reload}
+          empty={sites.length === 0}
+          emptyMessage="No sites yet — create the first one."
+        >
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((hg) => (
@@ -452,18 +459,19 @@ export default function SitesPage() {
                 ))}
               </TableRow>
             ))}
-            {table.getRowModel().rows.length === 0 && (
+            {table.getRowModel().rows.length === 0 && sites.length > 0 && (
               <TableRow>
                 <TableCell
                   colSpan={7}
                   className="py-10 text-center text-muted-foreground"
                 >
-                  No sites found.
+                  No sites match this filter.
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
+        </AsyncPanel>
       </div>
 
       <SiteDialog

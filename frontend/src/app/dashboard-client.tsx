@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
 import Link from "next/link";
 import {
   Activity,
@@ -27,8 +27,11 @@ import {
 } from "recharts";
 
 import { api } from "@/lib/api";
+import { useAsyncData } from "@/lib/use-async-data";
+import { usePolling } from "@/lib/use-polling";
 import { timeAgo } from "@/lib/utils";
 import type { ChangeLogEntry, DashboardStats, Prefix, ScanJob } from "@/types";
+import { AsyncPanel } from "@/components/async-panel";
 import { expiryBadge } from "@/components/expiry-badge";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -72,31 +75,42 @@ function StatCard({
 }
 
 export default function DashboardPage() {
-  const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [prefixes, setPrefixes] = useState<Prefix[]>([]);
-  const [scans, setScans] = useState<ScanJob[]>([]);
-  const [activity, setActivity] = useState<ChangeLogEntry[]>([]);
+  const statsQ = useAsyncData(() =>
+    api.get<DashboardStats>("/api/v1/dashboard/stats")
+  );
+  const prefixesQ = useAsyncData(() =>
+    // the chart renders the top 12 by utilization — ask for exactly that
+    api.get<Prefix[]>("/api/v1/prefixes?order_by=utilization&limit=12")
+  );
+  const scansQ = useAsyncData(() =>
+    api.get<ScanJob[]>("/api/v1/scans?limit=6")
+  );
+  const activityQ = useAsyncData(() =>
+    api.get<ChangeLogEntry[]>("/api/v1/changelog?limit=6")
+  );
 
-  const refresh = useCallback(() => {
-    api.get<DashboardStats>("/api/v1/dashboard/stats").then(setStats).catch(() => {});
-    api.get<Prefix[]>("/api/v1/prefixes").then(setPrefixes).catch(() => {});
-    api.get<ScanJob[]>("/api/v1/scans?limit=6").then(setScans).catch(() => {});
-    api
-      .get<ChangeLogEntry[]>("/api/v1/changelog?limit=6")
-      .then(setActivity)
-      .catch(() => {});
-  }, []);
+  const refresh = useCallback(async () => {
+    const r = await Promise.all([
+      statsQ.reload(),
+      prefixesQ.reload(),
+      scansQ.reload(),
+      activityQ.reload(),
+    ]);
+    return JSON.stringify(r);
+  }, [statsQ.reload, prefixesQ.reload, scansQ.reload, activityQ.reload]);
+
+  usePolling(refresh, { interval: 8000 });
 
   useEffect(() => {
-    refresh();
-    const t = setInterval(refresh, 8000);
-    const onEv = () => refresh();
+    const onEv = () => void refresh();
     window.addEventListener("ipam:refresh", onEv);
-    return () => {
-      clearInterval(t);
-      window.removeEventListener("ipam:refresh", onEv);
-    };
+    return () => window.removeEventListener("ipam:refresh", onEv);
   }, [refresh]);
+
+  const stats = statsQ.data;
+  const prefixes = prefixesQ.data ?? [];
+  const scans = scansQ.data ?? [];
+  const activity = activityQ.data ?? [];
 
   const chartData = [...prefixes]
     .filter((p) => p.status !== "container")
@@ -108,6 +122,12 @@ export default function DashboardPage() {
     <div className="space-y-6">
       <h1 className="text-xl font-semibold">Dashboard</h1>
 
+      <AsyncPanel
+        loading={statsQ.loading}
+        error={statsQ.error}
+        onRetry={statsQ.reload}
+        skeleton={<Skeleton className="h-44 w-full" />}
+      >
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           title="Managed subnets"
@@ -172,6 +192,7 @@ export default function DashboardPage() {
           href="/services"
         />
       </div>
+      </AsyncPanel>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
@@ -190,14 +211,14 @@ export default function DashboardPage() {
             </Link>
           </CardHeader>
           <CardContent className="space-y-2">
-            {!stats ? (
-              <Skeleton className="h-10 w-full" />
-            ) : stats.certs_expiring.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No certificates expiring within 30 days.
-              </p>
-            ) : (
-              stats.certs_expiring.map((c) => (
+            <AsyncPanel
+              loading={statsQ.loading}
+              error={statsQ.error}
+              onRetry={statsQ.reload}
+              empty={stats?.certs_expiring.length === 0}
+              emptyMessage="No certificates expiring within 30 days."
+            >
+              {stats?.certs_expiring.map((c) => (
                 <Link
                   key={c.id}
                   href="/certificates"
@@ -216,8 +237,8 @@ export default function DashboardPage() {
                   </span>
                   {expiryBadge(c.expires_on)}
                 </Link>
-              ))
-            )}
+              ))}
+            </AsyncPanel>
           </CardContent>
         </Card>
 
@@ -234,12 +255,14 @@ export default function DashboardPage() {
             )}
           </CardHeader>
           <CardContent className="space-y-2">
-            {!stats ? (
-              <Skeleton className="h-10 w-full" />
-            ) : stats.mac_mismatch_items.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No mismatches flagged.</p>
-            ) : (
-              stats.mac_mismatch_items.map((m) => (
+            <AsyncPanel
+              loading={statsQ.loading}
+              error={statsQ.error}
+              onRetry={statsQ.reload}
+              empty={stats?.mac_mismatch_items.length === 0}
+              emptyMessage="No mismatches flagged."
+            >
+              {stats?.mac_mismatch_items.map((m) => (
                 <Link
                   key={m.id}
                   href={`/prefixes/${m.prefix_id}`}
@@ -258,8 +281,8 @@ export default function DashboardPage() {
                     {timeAgo(m.flagged_at)}
                   </span>
                 </Link>
-              ))
-            )}
+              ))}
+            </AsyncPanel>
           </CardContent>
         </Card>
       </div>
@@ -270,11 +293,15 @@ export default function DashboardPage() {
             <CardTitle>Subnet utilization</CardTitle>
           </CardHeader>
           <CardContent className="h-72">
-            {chartData.length === 0 ? (
-              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                No prefixes yet — run a scan or create one.
-              </div>
-            ) : (
+            <AsyncPanel
+              loading={prefixesQ.loading}
+              error={prefixesQ.error}
+              onRetry={prefixesQ.reload}
+              empty={chartData.length === 0}
+              emptyMessage="No prefixes yet — run a scan or create one."
+              skeleton={<Skeleton className="h-full w-full" />}
+              className="h-full"
+            >
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
                   <XAxis
@@ -306,7 +333,7 @@ export default function DashboardPage() {
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
-            )}
+            </AsyncPanel>
           </CardContent>
         </Card>
 
@@ -315,9 +342,13 @@ export default function DashboardPage() {
             <CardTitle>Recent scans</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {scans.length === 0 && (
-              <p className="text-sm text-muted-foreground">No scans yet.</p>
-            )}
+            <AsyncPanel
+              loading={scansQ.loading}
+              error={scansQ.error}
+              onRetry={scansQ.reload}
+              empty={scans.length === 0}
+              emptyMessage="No scans yet."
+            >
             {scans.map((s) => (
               <Link
                 key={s.id}
@@ -345,6 +376,7 @@ export default function DashboardPage() {
                 {stats.devices_discovered} discovered hosts await review
               </Link>
             )}
+            </AsyncPanel>
           </CardContent>
         </Card>
       </div>
@@ -363,11 +395,13 @@ export default function DashboardPage() {
           </Link>
         </CardHeader>
         <CardContent className="space-y-1.5">
-          {activity.length === 0 && (
-            <p className="text-sm text-muted-foreground">
-              No changes recorded yet.
-            </p>
-          )}
+          <AsyncPanel
+            loading={activityQ.loading}
+            error={activityQ.error}
+            onRetry={activityQ.reload}
+            empty={activity.length === 0}
+            emptyMessage="No changes recorded yet."
+          >
           {activity.map((e) => (
             <div
               key={e.id}
@@ -387,6 +421,7 @@ export default function DashboardPage() {
               </span>
             </div>
           ))}
+          </AsyncPanel>
         </CardContent>
       </Card>
     </div>

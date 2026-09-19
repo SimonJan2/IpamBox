@@ -13,6 +13,7 @@ import {
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
+import { useAsyncData } from "@/lib/use-async-data";
 import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
 import { usePrefs } from "@/lib/prefs";
@@ -32,6 +33,7 @@ import type {
   Tag,
 } from "@/types";
 import { AddressFilterPanel } from "@/components/address-filter-panel";
+import { AsyncPanel } from "@/components/async-panel";
 import { PrefixBreadcrumbs } from "@/components/breadcrumbs";
 import { AddressList, AddrMapViewSwitcher } from "@/components/address-list";
 import { IpDrawer } from "@/components/ip-drawer";
@@ -200,9 +202,28 @@ export default function PrefixDetailPage({ id }: { id: string }) {
   const canWrite = can(PERM.DATA_WRITE);
   const canDelete = can(PERM.DATA_DELETE);
   const [prefs, setPrefs] = usePrefs();
-  const [prefix, setPrefix] = useState<Prefix | null>(null);
-  const [page, setPage] = useState<AddressPage | null>(null);
-  const [ranges, setRanges] = useState<IpRange[]>([]);
+  const prefixQ = useAsyncData(
+    () => api.get<Prefix>(`/api/v1/prefixes/${prefixId}`),
+    [prefixId]
+  );
+  const pageQ = useAsyncData(
+    () =>
+      api.get<AddressPage>(
+        `/api/v1/prefixes/${prefixId}/addresses?limit=20000`
+      ),
+    [prefixId]
+  );
+  const rangesQ = useAsyncData(async () => {
+    try {
+      return await api.get<IpRange[]>(`/api/v1/ranges?prefix_id=${prefixId}`);
+    } catch (e) {
+      toast.error("Could not load IP ranges", { description: String(e) });
+      return [];
+    }
+  }, [prefixId]);
+  const prefix = prefixQ.data;
+  const page = pageQ.data;
+  const ranges = rangesQ.data ?? [];
   const [drawer, setDrawer] = useState<{ ip: string; addr: IpAddress | null } | null>(null);
   const [rangeOpen, setRangeOpen] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -222,20 +243,12 @@ export default function PrefixDetailPage({ id }: { id: string }) {
   const { tags, byObject: addrTags, refresh: refreshTags } = useTags("IPAddress");
 
   const refresh = useCallback(() => {
-    api.get<Prefix>(`/api/v1/prefixes/${prefixId}`).then(setPrefix).catch(() => {});
-    api
-      .get<AddressPage>(`/api/v1/prefixes/${prefixId}/addresses?limit=20000`)
-      .then(setPage)
-      .catch(() => {});
-    api
-      .get<IpRange[]>(`/api/v1/ranges?prefix_id=${prefixId}`)
-      .then(setRanges)
-      .catch(() => {});
+    void prefixQ.reload();
+    void pageQ.reload();
+    void rangesQ.reload();
     refreshTags();
     setSelected(new Set());
-  }, [prefixId, refreshTags]);
-
-  useEffect(refresh, [refresh]);
+  }, [prefixQ.reload, pageQ.reload, rangesQ.reload, refreshTags]);
 
   const allocNext = async () => {
     try {
@@ -286,12 +299,18 @@ export default function PrefixDetailPage({ id }: { id: string }) {
     role?: IpRole | null;
     tag_id?: number;
   }) => {
+    const ids = [...selected];
     try {
-      const r = await api.post<{ affected: number }>("/api/v1/addresses/bulk", {
-        ids: [...selected],
-        ...payload,
+      const r = await api.post<{ affected: number; not_found: number[] }>(
+        "/api/v1/addresses/bulk",
+        { ids, ...payload }
+      );
+      const verb = payload.action === "delete" ? "deleted" : "updated";
+      toast.success(`${r.affected} of ${ids.length} ${verb}`, {
+        description: r.not_found?.length
+          ? `${r.not_found.length} not found (already gone)`
+          : undefined,
       });
-      toast.success(`Updated ${r.affected} addresses`);
       refresh();
     } catch (e) {
       toast.error("Bulk update failed", { description: String(e) });
@@ -369,8 +388,12 @@ export default function PrefixDetailPage({ id }: { id: string }) {
               </span>
             )}
           </>
-        ) : (
+        ) : prefixQ.loading ? (
           <Skeleton className="h-7 w-48" />
+        ) : (
+          <span className="text-sm text-rose-400">
+            Couldn&apos;t load prefix — {prefixQ.error}
+          </span>
         )}
         <div className="ml-auto flex gap-2">
           {canWrite && (
@@ -509,9 +532,15 @@ export default function PrefixDetailPage({ id }: { id: string }) {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {!page ? (
-            <Skeleton className="h-64 w-full" />
-          ) : (
+          <AsyncPanel
+            loading={pageQ.loading}
+            error={pageQ.error}
+            onRetry={pageQ.reload}
+            skeleton={<Skeleton className="h-64 w-full" />}
+            empty={!page}
+            emptyMessage="No addresses in this prefix."
+          >
+            {page && (
             <div className="flex flex-col gap-4 lg:flex-row">
               <div className="min-w-0 flex-1">
                 {view === "grid" ? (
@@ -579,7 +608,8 @@ export default function PrefixDetailPage({ id }: { id: string }) {
                 />
               </aside>
             </div>
-          )}
+            )}
+          </AsyncPanel>
         </CardContent>
       </Card>
 

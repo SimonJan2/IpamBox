@@ -162,6 +162,17 @@ async def test_addresses_q_filter_not_broken(client: AsyncClient):
     r = await client.get("/api/v1/addresses", params={"q": "sw-core"})
     assert r.status_code == 200
     assert [a["id"] for a in r.json()] == [ids["addr"]["id"]]
-    # also matches the raw address and notes/vendor fields
+    # also matches the raw address
     r = await client.get("/api/v1/addresses", params={"q": "10.20.3.4"})
+    assert [a["id"] for a in r.json()] == [ids["addr"]["id"]]
+    # a non-matching query forces evaluation of every field — this is the path
+    # that crashed on r.description
+    r = await client.get("/api/v1/addresses", params={"q": "zzz-no-match"})
+    assert r.status_code == 200
+    assert r.json() == []
+    # notes/vendor fields match too (the fields that replaced `description`)
+    await client.patch(
+        f"/api/v1/addresses/{ids['addr']['id']}", json={"notes": "rack-42 uplink"}
+    )
+    r = await client.get("/api/v1/addresses", params={"q": "rack-42"})
     assert [a["id"] for a in r.json()] == [ids["addr"]["id"]]

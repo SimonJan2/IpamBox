@@ -5,6 +5,7 @@ import { SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
+import { useAsyncData } from "@/lib/use-async-data";
 import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
 import type { SettingsOut, SettingsValues } from "@/types";
@@ -16,6 +17,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
+import { AsyncPanel } from "@/components/async-panel";
 import { SettingField } from "@/components/settings/field";
 
 type Key = keyof SettingsValues;
@@ -37,20 +39,18 @@ const FEATURES: { key: Key; label: string; hint: string }[] = [
 export default function FeaturesPage() {
   const { can } = useAuth();
   const canAdmin = can(PERM.SYSTEM_ADMIN);
-  const [s, setS] = useState<SettingsOut | null>(null);
+  const settingsQ = useAsyncData(() =>
+    api.get<SettingsOut>("/api/v1/settings")
+  );
+  const s = settingsQ.data;
+  const setS = settingsQ.setData;
   const [draft, setDraft] = useState<SettingsValues | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    api
-      .get<SettingsOut>("/api/v1/settings")
-      .then((o) => {
-        setS(o);
-        setDraft(o.values);
-      })
-      .catch(() => {});
-  }, []);
+    if (s) setDraft(s.values);
+  }, [s]);
 
   const set = <K extends Key>(k: K, v: SettingsValues[K]) =>
     setDraft((d) => (d ? { ...d, [k]: v } : d));
@@ -96,7 +96,17 @@ export default function FeaturesPage() {
   };
 
   if (!draft) {
-    return <p className="text-sm text-muted-foreground">Loading…</p>;
+    return (
+      <AsyncPanel
+        loading={settingsQ.loading}
+        error={settingsQ.error}
+        onRetry={settingsQ.reload}
+        empty
+        emptyMessage="Settings unavailable."
+      >
+        {null}
+      </AsyncPanel>
+    );
   }
 
   return (
