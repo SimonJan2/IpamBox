@@ -190,8 +190,15 @@ export interface PrefixNode {
   prefix: string;
   status: PrefixStatus;
   vlan_id: number | null;
+  vlan_vid: number | null;
   vlan_name: string | null;
   description: string | null;
+  used_ips: number;
+  usable_ips: number;
+  utilization_pct: number;
+  descendant_count: number;
+  agg_used_ips: number;
+  allocated_pct: number;
   children: PrefixNode[];
 }
 

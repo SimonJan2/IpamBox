@@ -73,11 +73,44 @@ async def test_tree_endpoint(client):
     vrf_id = await _global_vrf_id(client)
     site = (await client.post("/api/v1/sites", json={"name": "HQ"})).json()
     await client.patch(f"/api/v1/vrfs/{vrf_id}", json={"site_id": site["id"]})
+    vlan = (
+        await client.post("/api/v1/vlans", json={"vid": 210, "name": "users"})
+    ).json()
     await client.post("/api/v1/prefixes", json={"prefix": "10.80.0.0/16", "vrf_id": vrf_id, "status": "container"})
-    await client.post("/api/v1/prefixes", json={"prefix": "10.80.1.0/24", "vrf_id": vrf_id})
+    await client.post("/api/v1/prefixes", json={"prefix": "10.80.1.0/24", "vrf_id": vrf_id, "status": "container"})
+    leaf = (
+        await client.post(
+            "/api/v1/prefixes",
+            json={"prefix": "10.80.1.0/26", "vrf_id": vrf_id, "vlan_id": vlan["id"]},
+        )
+    ).json()
+    for i in (1, 2, 3):
+        await client.post(
+            "/api/v1/addresses",
+            json={"address": f"10.80.1.{i}", "prefix_id": leaf["id"]},
+        )
 
     tree = (await client.get("/api/v1/prefixes/tree")).json()
     hq = next(n for n in tree if n["name"] == "HQ")
     global_vrf = next(v for v in hq["vrfs"] if v["name"] == "Global")
-    assert global_vrf["prefixes"][0]["prefix"] == "10.80.0.0/16"
-    assert global_vrf["prefixes"][0]["children"][0]["prefix"] == "10.80.1.0/24"
+    root = global_vrf["prefixes"][0]
+    assert root["prefix"] == "10.80.0.0/16"
+    mid = root["children"][0]
+    assert mid["prefix"] == "10.80.1.0/24"
+    leaf_node = mid["children"][0]
+    assert leaf_node["prefix"] == "10.80.1.0/26"
+
+    # rollup fields on the /16 container
+    assert root["descendant_count"] == 2
+    assert root["agg_used_ips"] == 3
+    assert root["allocated_pct"] == round(100.0 * 256 / 65536, 1)
+    assert mid["descendant_count"] == 1
+    assert mid["allocated_pct"] == 25.0
+
+    # leaf stats + vlan vid (not the DB row id)
+    assert leaf_node["vlan_vid"] == 210
+    assert leaf_node["vlan_name"] == "users"
+    assert leaf_node["used_ips"] == 3
+    assert leaf_node["usable_ips"] == 62
+    assert leaf_node["utilization_pct"] == round(100.0 * 3 / 62, 1)
+    assert leaf_node["children"] == []
