@@ -1,14 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Check, ShieldCheck, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Check, Loader2, ShieldCheck, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useAsyncData } from "@/lib/use-async-data";
 import { PERM } from "@/lib/permissions";
 import { timeAgo } from "@/lib/utils";
 import type { IpAddress, Prefix } from "@/types";
+import { AsyncPanel } from "@/components/async-panel";
+import { ConfirmDialog } from "@/components/confirm-action";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,64 +25,130 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+type BulkResp = { affected: number; not_found: number[] };
+
 export default function DiscoveryPage() {
   const { can } = useAuth();
   const canWrite = can(PERM.DATA_WRITE);
   const canDelete = can(PERM.DATA_DELETE);
-  const [items, setItems] = useState<IpAddress[]>([]);
-  const [prefixes, setPrefixes] = useState<Record<number, string>>({});
+  const itemsQ = useAsyncData(() => api.get<IpAddress[]>("/api/v1/discovery"));
+  const prefixesQ = useAsyncData(async () => {
+    const ps = await api.get<Prefix[]>("/api/v1/prefixes");
+    return Object.fromEntries(ps.map((p) => [p.id, p.prefix]));
+  });
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [pending, setPending] = useState<Set<number>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [confirmDel, setConfirmDel] = useState<
+    { kind: "one"; id: number } | { kind: "bulk" } | null
+  >(null);
 
-  const refresh = useCallback(() => {
-    api.get<IpAddress[]>("/api/v1/discovery").then(setItems).catch(() => {});
-    api.get<Prefix[]>("/api/v1/prefixes").then((ps) =>
-      setPrefixes(Object.fromEntries(ps.map((p) => [p.id, p.prefix])))
-    ).catch(() => {});
-  }, []);
+  const items = itemsQ.data ?? [];
+  const prefixes = prefixesQ.data ?? {};
 
   useEffect(() => {
-    refresh();
-    const onEv = () => refresh();
+    const onEv = () => {
+      void itemsQ.reload();
+      void prefixesQ.reload();
+    };
     window.addEventListener("ipam:refresh", onEv);
     return () => window.removeEventListener("ipam:refresh", onEv);
-  }, [refresh]);
+  }, [itemsQ.reload, prefixesQ.reload]);
+
+  const dropSelected = (id: number) =>
+    setSelected((s) => {
+      if (!s.has(id)) return s;
+      const n = new Set(s);
+      n.delete(id);
+      return n;
+    });
 
   const act = async (id: number, status: "active" | "reserved") => {
+    if (pending.has(id)) return;
+    const prev = items;
+    setPending((p) => new Set(p).add(id));
+    itemsQ.setData((cur) => (cur ?? []).filter((a) => a.id !== id));
     try {
       await api.post(`/api/v1/discovery/${id}/confirm`, { status });
       toast.success(status === "active" ? "Marked active" : "Marked reserved");
-      refresh();
+      dropSelected(id);
     } catch (e) {
+      itemsQ.setData(prev);
       toast.error("Failed", { description: String(e) });
+    } finally {
+      setPending((p) => {
+        const n = new Set(p);
+        n.delete(id);
+        return n;
+      });
     }
   };
 
-  const remove = async (id: number) => {
+  const removeOne = async (id: number) => {
+    const prev = items;
+    itemsQ.setData((cur) => (cur ?? []).filter((a) => a.id !== id));
     try {
       await api.del(`/api/v1/addresses/${id}`);
       toast.success("Removed");
-      refresh();
+      dropSelected(id);
     } catch (e) {
-      toast.error("Failed", { description: String(e) });
+      itemsQ.setData(prev);
+      throw e; // ConfirmDialog keeps the dialog open and toasts
     }
   };
 
-  const bulk = async (action: "set_status" | "delete") => {
+  const markAllActive = async () => {
+    if (bulkBusy) return;
+    const ids = [...selected];
+    const prev = items;
+    setBulkBusy(true);
+    itemsQ.setData((cur) => (cur ?? []).filter((a) => !selected.has(a.id)));
     try {
-      const r = await api.post<{ affected: number }>("/api/v1/addresses/bulk", {
-        ids: [...selected],
-        action,
-        ...(action === "set_status" ? { status: "active" } : {}),
+      const r = await api.post<BulkResp>("/api/v1/addresses/bulk", {
+        ids,
+        action: "set_status",
+        status: "active",
       });
-      toast.success(`Updated ${r.affected} hosts`);
+      toast.success(`${r.affected} of ${ids.length} updated`, {
+        description: r.not_found.length
+          ? `${r.not_found.length} not found (already gone)`
+          : undefined,
+      });
       setSelected(new Set());
-      refresh();
     } catch (e) {
+      itemsQ.setData(prev);
       toast.error("Bulk update failed", { description: String(e) });
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const bulkDelete = async () => {
+    const ids = [...selected];
+    const prev = items;
+    itemsQ.setData((cur) => (cur ?? []).filter((a) => !selected.has(a.id)));
+    try {
+      const r = await api.post<BulkResp>("/api/v1/addresses/bulk", {
+        ids,
+        action: "delete",
+      });
+      toast.success(`${r.affected} of ${ids.length} deleted`, {
+        description: r.not_found.length
+          ? `${r.not_found.length} not found (already gone)`
+          : undefined,
+      });
+      setSelected(new Set());
+    } catch (e) {
+      itemsQ.setData(prev);
+      throw e; // ConfirmDialog keeps the dialog open and toasts
     }
   };
 
   const allChecked = items.length > 0 && selected.size === items.length;
+  const delTarget =
+    confirmDel?.kind === "one"
+      ? items.find((a) => a.id === confirmDel.id)
+      : null;
 
   return (
     <div className="space-y-4">
@@ -94,12 +163,23 @@ export default function DiscoveryPage() {
             {selected.size} selected
           </span>
           {canWrite && (
-            <Button size="sm" variant="outline" onClick={() => bulk("set_status")}>
-              <Check /> Mark all active
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={bulkBusy}
+              onClick={markAllActive}
+            >
+              {bulkBusy ? <Loader2 className="animate-spin" /> : <Check />} Mark
+              all active
             </Button>
           )}
           {canDelete && (
-            <Button size="sm" variant="destructive" onClick={() => bulk("delete")}>
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={bulkBusy}
+              onClick={() => setConfirmDel({ kind: "bulk" })}
+            >
               <Trash2 /> Delete
             </Button>
           )}
@@ -114,6 +194,13 @@ export default function DiscoveryPage() {
           <CardTitle className="text-base">{items.length} pending</CardTitle>
         </CardHeader>
         <CardContent>
+          <AsyncPanel
+            loading={itemsQ.loading}
+            error={itemsQ.error}
+            onRetry={itemsQ.reload}
+            empty={items.length === 0}
+            emptyMessage="Inbox zero — nothing pending review."
+          >
           <Table>
             <TableHeader>
               <TableRow>
@@ -142,6 +229,7 @@ export default function DiscoveryPage() {
                   <TableCell>
                     <Checkbox
                       checked={selected.has(a.id)}
+                      disabled={pending.has(a.id)}
                       onCheckedChange={(on) => {
                         const next = new Set(selected);
                         if (on) next.add(a.id);
@@ -172,36 +260,87 @@ export default function DiscoveryPage() {
                   <TableCell className="text-muted-foreground">{timeAgo(a.last_seen)}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
-                      {canWrite && (
+                      {pending.has(a.id) ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                      ) : (
                         <>
-                          <Button size="sm" variant="ghost" onClick={() => act(a.id, "active")}>
-                            <Check className="text-emerald-400" /> Active
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => act(a.id, "reserved")}>
-                            <ShieldCheck className="text-amber-400" /> Reserve
-                          </Button>
+                          {canWrite && (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                disabled={bulkBusy}
+                                onClick={() => act(a.id, "active")}
+                              >
+                                <Check className="text-emerald-400" /> Active
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                disabled={bulkBusy}
+                                onClick={() => act(a.id, "reserved")}
+                              >
+                                <ShieldCheck className="text-amber-400" /> Reserve
+                              </Button>
+                            </>
+                          )}
+                          {canDelete && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={bulkBusy}
+                              onClick={() =>
+                                setConfirmDel({ kind: "one", id: a.id })
+                              }
+                            >
+                              <Trash2 className="text-red-400" />
+                            </Button>
+                          )}
                         </>
-                      )}
-                      {canDelete && (
-                        <Button size="sm" variant="ghost" onClick={() => remove(a.id)}>
-                          <Trash2 className="text-red-400" />
-                        </Button>
                       )}
                     </div>
                   </TableCell>
                 </TableRow>
               ))}
-              {items.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={10} className="py-10 text-center text-muted-foreground">
-                    Inbox zero — nothing pending review.
-                  </TableCell>
-                </TableRow>
-              )}
             </TableBody>
           </Table>
+          </AsyncPanel>
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={confirmDel !== null}
+        onOpenChange={(o) => !o && setConfirmDel(null)}
+        title={
+          confirmDel?.kind === "bulk"
+            ? `Delete ${selected.size} discovered hosts`
+            : "Delete discovered host"
+        }
+        description={
+          confirmDel?.kind === "bulk" ? (
+            <>
+              Permanently delete the{" "}
+              <b>{selected.size} selected discovered hosts</b>? They will be
+              re-discovered on the next scan if they are still live. This cannot
+              be undone.
+            </>
+          ) : (
+            <>
+              Permanently delete{" "}
+              <span className="font-mono text-foreground">
+                {delTarget?.address ?? "this host"}
+              </span>
+              ? It will be re-discovered on the next scan if it is still live.
+            </>
+          )
+        }
+        confirmWord="DELETE"
+        actionLabel={confirmDel?.kind === "bulk" ? "Delete all" : "Delete"}
+        onAction={async () => {
+          if (confirmDel?.kind === "bulk") await bulkDelete();
+          else if (confirmDel?.kind === "one") await removeOne(confirmDel.id);
+        }}
+      />
     </div>
   );
 }

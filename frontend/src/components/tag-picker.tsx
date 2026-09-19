@@ -52,7 +52,9 @@ export function useTags(objectType: string) {
         }
         setByObject(map);
       })
-      .catch(() => {});
+      .catch((e) =>
+        toast.error("Could not load tags", { description: String(e) })
+      );
   }, [objectType]);
 
   useEffect(refresh, [refresh]);

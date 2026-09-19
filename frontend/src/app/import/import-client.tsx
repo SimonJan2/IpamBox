@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -14,9 +14,11 @@ import {
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
+import { useAsyncData } from "@/lib/use-async-data";
 import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
 import type { ImportBatch, RowResult, SheetPreview, Site } from "@/types";
+import { AsyncPanel } from "@/components/async-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -176,25 +178,30 @@ export default function ImportPage() {
   const canWrite = can(PERM.DATA_WRITE);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const [batches, setBatches] = useState<ImportBatch[]>([]);
+  const batchesQ = useAsyncData(() =>
+    api.get<ImportBatch[]>("/api/v1/imports")
+  );
+  const sitesQ = useAsyncData(async () => {
+    try {
+      return await api.get<Site[]>("/api/v1/sites");
+    } catch (e) {
+      toast.error("Could not load sites", { description: String(e) });
+      return [];
+    }
+  });
   const [batch, setBatch] = useState<ImportBatch | null>(null);
   const [sheets, setSheets] = useState<SheetPreview[]>([]);
   const [skipped, setSkipped] = useState<Set<string>>(new Set());
   const [overrides, setOverrides] = useState<Record<string, number | string>>(
     {}
   );
-  const [sites, setSites] = useState<Site[]>([]);
   const [preview, setPreview] = useState<PreviewResp | null>(null);
   const [commitResult, setCommitResult] = useState<CommitResp | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const refreshHistory = () => {
-    api.get<ImportBatch[]>("/api/v1/imports").then(setBatches).catch(() => {});
-  };
-  useEffect(() => {
-    refreshHistory();
-    api.get<Site[]>("/api/v1/sites").then(setSites).catch(() => {});
-  }, []);
+  const batches = batchesQ.data ?? [];
+  const sites = sitesQ.data ?? [];
+  const refreshHistory = () => void batchesQ.reload();
 
   const upload = async (file: File) => {
     setBusy(true);
@@ -486,6 +493,13 @@ export default function ImportPage() {
       <div className="space-y-3">
         <h2 className="font-semibold">Import history</h2>
         <div className="rounded-lg border">
+          <AsyncPanel
+            loading={batchesQ.loading}
+            error={batchesQ.error}
+            onRetry={batchesQ.reload}
+            empty={batches.length === 0}
+            emptyMessage="No imports yet — upload a Network_Address.xlsx workbook."
+          >
           <Table>
             <TableHeader>
               <TableRow>
@@ -552,18 +566,9 @@ export default function ImportPage() {
                   </TableRow>
                 );
               })}
-              {batches.length === 0 && (
-                <TableRow>
-                  <TableCell
-                    colSpan={6}
-                    className="py-10 text-center text-muted-foreground"
-                  >
-                    No imports yet — upload a Network_Address.xlsx workbook.
-                  </TableCell>
-                </TableRow>
-              )}
             </TableBody>
           </Table>
+          </AsyncPanel>
         </div>
       </div>
     </div>

@@ -80,7 +80,12 @@ export function QuickScanDialog({
 
   useEffect(() => {
     if (open) {
-      api.get<Vrf[]>("/api/v1/vrfs").then(setVrfs).catch(() => {});
+      api
+        .get<Vrf[]>("/api/v1/vrfs")
+        .then(setVrfs)
+        .catch((e) =>
+          toast.error("Could not load VRFs", { description: String(e) })
+        );
       setJob(null);
     }
   }, [open]);

@@ -1,14 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
+import { useAsyncData } from "@/lib/use-async-data";
 import { useAuth } from "@/lib/auth";
 import { usePrefs } from "@/lib/prefs";
 import { PERM } from "@/lib/permissions";
 import type { Tag } from "@/types";
+import { AsyncPanel } from "@/components/async-panel";
 import { TagDialog } from "@/components/tag-dialog";
 import { TagChip } from "@/components/tag-picker";
 import { Button } from "@/components/ui/button";
@@ -26,15 +28,12 @@ export default function TagsPage() {
   const [prefs] = usePrefs();
   const canWrite = can(PERM.DATA_WRITE);
   const canDelete = can(PERM.DATA_DELETE);
-  const [tags, setTags] = useState<Tag[]>([]);
+  const tagsQ = useAsyncData(() => api.get<Tag[]>("/api/v1/tags"));
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Tag | null>(null);
 
-  const refresh = useCallback(() => {
-    api.get<Tag[]>("/api/v1/tags").then(setTags).catch(() => {});
-  }, []);
-
-  useEffect(refresh, [refresh]);
+  const tags = tagsQ.data ?? [];
+  const refresh = () => void tagsQ.reload();
 
   const remove = async (t: Tag) => {
     try {
@@ -67,6 +66,13 @@ export default function TagsPage() {
       </p>
 
       <div className="rounded-lg border">
+        <AsyncPanel
+          loading={tagsQ.loading}
+          error={tagsQ.error}
+          onRetry={tagsQ.reload}
+          empty={tags.length === 0}
+          emptyMessage="No tags yet — create the first one."
+        >
         <Table>
           <TableHeader>
             <TableRow>
@@ -113,15 +119,9 @@ export default function TagsPage() {
                 </TableCell>
               </TableRow>
             ))}
-            {tags.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={prefs.showSlugs ? 4 : 3} className="py-10 text-center text-muted-foreground">
-                  No tags yet.
-                </TableCell>
-              </TableRow>
-            )}
           </TableBody>
         </Table>
+        </AsyncPanel>
       </div>
 
       <TagDialog

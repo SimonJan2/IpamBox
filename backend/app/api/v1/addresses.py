@@ -151,60 +151,78 @@ async def bulk_addresses(
     user: User | None = Depends(require_perm(DATA_WRITE)),
 ):
     if not body.ids:
-        return {"affected": 0}
+        return {"affected": 0, "not_found": []}
     # delete hides inside a POST here — enforce the stricter permission inline
     if body.action == "delete" and not has_perm(user, DATA_DELETE):
         raise HTTPException(403, f"requires {DATA_DELETE} permission")
+    if body.action == "set_status" and body.status is None:
+        raise HTTPException(422, "status required for set_status")
+    if body.action in ("add_tag", "remove_tag") and body.tag_id is None:
+        raise HTTPException(422, "tag_id required")
+    if body.action not in ("delete", "set_status", "set_role", "add_tag", "remove_tag"):
+        raise HTTPException(422, f"unknown action {body.action!r}")
+
+    # Resolve which requested ids actually exist — callers get the real
+    # affected count plus the stale ids, not len(body.ids) parroted back.
+    found = set(
+        (
+            await session.execute(
+                select(IPAddress.id).where(IPAddress.id.in_(body.ids))
+            )
+        ).scalars()
+    )
+    missing = sorted(set(body.ids) - found)
+
     if body.action == "delete":
-        await session.execute(delete(IPAddress).where(IPAddress.id.in_(body.ids)))
+        result = await session.execute(
+            delete(IPAddress).where(IPAddress.id.in_(found))
+        )
+        affected = result.rowcount or 0
     elif body.action == "set_status":
-        if body.status is None:
-            raise HTTPException(422, "status required for set_status")
         rows = (
-            await session.execute(select(IPAddress).where(IPAddress.id.in_(body.ids)))
+            await session.execute(select(IPAddress).where(IPAddress.id.in_(found)))
         ).scalars().all()
         for r in rows:
             r.status = body.status
+        affected = len(rows)
     elif body.action == "set_role":
         rows = (
-            await session.execute(select(IPAddress).where(IPAddress.id.in_(body.ids)))
+            await session.execute(select(IPAddress).where(IPAddress.id.in_(found)))
         ).scalars().all()
         for r in rows:
             r.role = body.role
-    elif body.action in ("add_tag", "remove_tag"):
-        if body.tag_id is None:
-            raise HTTPException(422, "tag_id required")
-        for oid in body.ids:
-            if body.action == "add_tag":
-                exists = (
-                    await session.execute(
-                        select(TagAssignment).where(
-                            TagAssignment.tag_id == body.tag_id,
-                            TagAssignment.object_type == "IPAddress",
-                            TagAssignment.object_id == oid,
-                        )
-                    )
-                ).scalar_one_or_none()
-                if exists is None:
-                    session.add(
-                        TagAssignment(
-                            tag_id=body.tag_id,
-                            object_type="IPAddress",
-                            object_id=oid,
-                        )
-                    )
-            else:
+        affected = len(rows)
+    elif body.action == "add_tag":
+        already = set(
+            (
                 await session.execute(
-                    delete(TagAssignment).where(
+                    select(TagAssignment.object_id).where(
                         TagAssignment.tag_id == body.tag_id,
                         TagAssignment.object_type == "IPAddress",
-                        TagAssignment.object_id == oid,
+                        TagAssignment.object_id.in_(found),
                     )
                 )
-    else:
-        raise HTTPException(422, f"unknown action {body.action!r}")
+            ).scalars()
+        )
+        todo = found - already
+        session.add_all(
+            TagAssignment(
+                tag_id=body.tag_id, object_type="IPAddress", object_id=oid
+            )
+            for oid in todo
+        )
+        affected = len(todo)
+    else:  # remove_tag
+        result = await session.execute(
+            delete(TagAssignment).where(
+                TagAssignment.tag_id == body.tag_id,
+                TagAssignment.object_type == "IPAddress",
+                TagAssignment.object_id.in_(found),
+            )
+        )
+        affected = result.rowcount or 0
     await session.commit()
-    return {"affected": len(body.ids)}
+    return {"affected": affected, "not_found": missing}
 
 
 @router.get("", response_model=list[IPAddressOut])
@@ -218,7 +236,7 @@ async def list_addresses(
     offset: int = 0,
     session: AsyncSession = Depends(get_session),
 ):
-    stmt = select(IPAddress).order_by(IPAddress.address_int).limit(limit).offset(offset)
+    stmt = select(IPAddress).order_by(IPAddress.address_int)
     if vrf_id is not None:
         stmt = stmt.where(IPAddress.vrf_id == vrf_id)
     if prefix_id is not None:
@@ -234,21 +252,25 @@ async def list_addresses(
                 )
             )
         )
-    rows = (await session.execute(stmt)).scalars().all()
     if q:
+        # q folds Hebrew and matches notes/vendor — evaluated in Python, so
+        # limit/offset apply after filtering, not before.
         from app.services.workbook.normalize import fold_hebrew
 
         ql = fold_hebrew(q.lower())
         rows = [
             r
-            for r in rows
+            for r in (await session.execute(stmt)).scalars()
             if ql in str(r.address).lower()
             or (r.hostname and ql in fold_hebrew(r.hostname.lower()))
             or (r.mac_address and ql in r.mac_address.lower())
             or (r.vendor and ql in fold_hebrew(r.vendor.lower()))
             or (r.notes and ql in fold_hebrew(r.notes.lower()))
         ]
-    return rows
+        return rows[offset : offset + limit]
+    return (
+        (await session.execute(stmt.limit(limit).offset(offset))).scalars().all()
+    )
 
 
 @router.post(

@@ -12,11 +12,13 @@ import {
 } from "@tanstack/react-table";
 
 import { api } from "@/lib/api";
+import { useAsyncData } from "@/lib/use-async-data";
 import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
 import { foldHebrew } from "@/lib/utils";
 import { useUrlParam, useUrlSorting, useUrlText } from "@/lib/url-state";
 import { SortHeader } from "@/components/sort-header";
+import { AsyncPanel } from "@/components/async-panel";
 import type { Asset, AssetKind, Site } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -69,8 +71,15 @@ export default function InventoryPage() {
   const { can } = useAuth();
   const canWrite = can(PERM.DATA_WRITE);
   const canDelete = can(PERM.DATA_DELETE);
-  const [items, setItems] = useState<Asset[]>([]);
-  const [sites, setSites] = useState<Site[]>([]);
+  const itemsQ = useAsyncData(() => api.get<Asset[]>("/api/v1/assets"));
+  const sitesQ = useAsyncData(async () => {
+    try {
+      return await api.get<Site[]>("/api/v1/sites");
+    } catch (e) {
+      toast.error("Could not load sites", { description: String(e) });
+      return [];
+    }
+  });
   const [q, setQ] = useUrlText("q");
   const [kindFilter, setKindFilter] = useUrlParam("kind", "all");
   const [sorting, setSorting] = useUrlSorting();
@@ -80,11 +89,9 @@ export default function InventoryPage() {
   const [form, setForm] = useState(EMPTY);
   const [busy, setBusy] = useState(false);
 
-  const refresh = () => {
-    api.get<Asset[]>("/api/v1/assets").then(setItems).catch(() => {});
-    api.get<Site[]>("/api/v1/sites").then(setSites).catch(() => {});
-  };
-  useEffect(refresh, []);
+  const items = itemsQ.data ?? [];
+  const sites = sitesQ.data ?? [];
+  const refresh = () => void itemsQ.reload();
 
   useEffect(() => {
     if (dialogOpen) {
@@ -378,6 +385,13 @@ export default function InventoryPage() {
       </div>
 
       <div className="rounded-lg border">
+        <AsyncPanel
+          loading={itemsQ.loading}
+          error={itemsQ.error}
+          onRetry={itemsQ.reload}
+          empty={items.length === 0}
+          emptyMessage="No assets yet — add the first one."
+        >
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((hg) => (
@@ -400,18 +414,19 @@ export default function InventoryPage() {
                 ))}
               </TableRow>
             ))}
-            {table.getRowModel().rows.length === 0 && (
+            {table.getRowModel().rows.length === 0 && items.length > 0 && (
               <TableRow>
                 <TableCell
                   colSpan={10}
                   className="py-10 text-center text-muted-foreground"
                 >
-                  No assets found.
+                  No assets match this filter.
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
+        </AsyncPanel>
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

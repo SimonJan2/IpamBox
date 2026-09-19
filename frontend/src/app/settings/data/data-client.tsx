@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { DatabaseZap, FileDown, FileUp } from "lucide-react";
 import { toast } from "sonner";
 
@@ -16,7 +17,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ConfirmAction } from "@/components/settings/confirm-action";
+import { ConfirmAction } from "@/components/confirm-action";
 
 async function download(path: string, name: string) {
   const res = await fetch(path, { credentials: "include" });
@@ -31,6 +32,7 @@ async function download(path: string, name: string) {
 }
 
 export default function DataPage() {
+  const router = useRouter();
   const { can } = useAuth();
   const [scanDays, setScanDays] = useState("");
   const [logDays, setLogDays] = useState("");
@@ -188,10 +190,11 @@ export default function DataPage() {
               await api.post("/api/v1/maintenance/reset", {
                 confirm: "RESET",
               });
-              toast.success("IpamBox was reset", {
-                description: "Reloading…",
-              });
-              setTimeout(() => window.location.assign("/"), 1200);
+              toast.success("IpamBox was reset");
+              // Users and sessions survive a reset — refresh data in place.
+              window.dispatchEvent(new Event("ipam:refresh"));
+              router.push("/");
+              router.refresh();
             }}
           />
         </CardContent>

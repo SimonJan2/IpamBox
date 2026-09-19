@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Download,
@@ -13,6 +14,7 @@ import { toast } from "sonner";
 
 import { api } from "@/lib/api";
 import { fmtTs } from "@/lib/prefs";
+import { useAsyncData } from "@/lib/use-async-data";
 import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
 import type {
@@ -41,6 +43,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { SettingField } from "@/components/settings/field";
+import { AsyncPanel } from "@/components/async-panel";
 
 function fmtSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -63,10 +66,15 @@ async function downloadUrl(path: string, fallbackName: string) {
 }
 
 export default function BackupSettingsPage() {
+  const router = useRouter();
   const { can } = useAuth();
   const canAdmin = can(PERM.SYSTEM_ADMIN);
-  const [files, setFiles] = useState<BackupFilesOut | null>(null);
-  const [settings, setSettings] = useState<SettingsOut | null>(null);
+  const filesQ = useAsyncData(() =>
+    api.get<BackupFilesOut>("/api/v1/backup/files")
+  );
+  const settingsQ = useAsyncData(() =>
+    api.get<SettingsOut>("/api/v1/settings")
+  );
   const [schedule, setSchedule] = useState({ interval: 0, keep: 14 });
   const [file, setFile] = useState<File | null>(null);
   const [includeUsers, setIncludeUsers] = useState(false);
@@ -76,21 +84,22 @@ export default function BackupSettingsPage() {
   const [busy, setBusy] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
-  const refreshFiles = useCallback(() => {
-    api.get<BackupFilesOut>("/api/v1/backup/files").then(setFiles).catch(() => {});
-  }, []);
-
-  useEffect(refreshFiles, [refreshFiles]);
+  const files = filesQ.data;
+  const settings = settingsQ.data;
+  const setSettings = settingsQ.setData;
+  const refreshFiles = useCallback(
+    () => void filesQ.reload(),
+    [filesQ.reload]
+  );
 
   useEffect(() => {
-    api.get<SettingsOut>("/api/v1/settings").then((o) => {
-      setSettings(o);
+    if (settings) {
       setSchedule({
-        interval: o.values.backup_interval_minutes,
-        keep: o.values.backup_keep,
+        interval: settings.values.backup_interval_minutes,
+        keep: settings.values.backup_keep,
       });
-    }).catch(() => {});
-  }, []);
+    }
+  }, [settings]);
 
   const downloadFresh = async () => {
     try {
@@ -183,9 +192,17 @@ export default function BackupSettingsPage() {
       );
       setReport(r);
       toast.success("Restore complete", {
-        description: "Reloading to pick up restored data…",
+        description: "All data was replaced in place.",
       });
-      setTimeout(() => window.location.reload(), 1500);
+      // Sessions survive a restore — refresh page data and the shared
+      // refresh listeners in place instead of a timed hard reload.
+      refreshFiles();
+      void settingsQ.reload();
+      setPreview(null);
+      setFile(null);
+      if (fileInput.current) fileInput.current.value = "";
+      window.dispatchEvent(new Event("ipam:refresh"));
+      router.refresh();
     } catch (e) {
       toast.error("Restore failed — nothing was changed", {
         description: String(e),
@@ -340,6 +357,13 @@ export default function BackupSettingsPage() {
             (the <code>backupdata</code> docker volume) — copy them off the host
             for real disaster recovery.
           </p>
+          <AsyncPanel
+            loading={filesQ.loading}
+            error={filesQ.error}
+            onRetry={filesQ.reload}
+            empty={files !== null && files !== undefined && files.files.length === 0}
+            emptyMessage="No backup files yet — save a schedule or snapshot now."
+          >
           {files && files.files.length > 0 && (
             <div className="rounded-lg border">
               <Table>
@@ -387,6 +411,7 @@ export default function BackupSettingsPage() {
               </Table>
             </div>
           )}
+          </AsyncPanel>
         </CardContent>
       </Card>
 

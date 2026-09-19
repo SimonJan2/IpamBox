@@ -50,13 +50,9 @@ async def check_overlap(
     return None
 
 
-async def prefix_stats(session: AsyncSession, prefix: Prefix) -> dict:
+def prefix_stats_dict(prefix: Prefix, used: int) -> dict:
+    """Stats payload for one prefix given its address count (no DB access)."""
     net = prefix_math.to_network(prefix.prefix)
-    used = int(
-        (await session.execute(
-            select(func.count(IPAddress.id)).where(IPAddress.prefix_id == prefix.id)
-        )).scalar_one()
-    )
     usable = prefix_math.usable_count(net)
     return {
         "total_ips": net.num_addresses,
@@ -67,6 +63,15 @@ async def prefix_stats(session: AsyncSession, prefix: Prefix) -> dict:
         "unusable_first": prefix_math.reserves_boundaries(net),
         "unusable_last": prefix_math.reserves_boundaries(net),
     }
+
+
+async def prefix_stats(session: AsyncSession, prefix: Prefix) -> dict:
+    used = int(
+        (await session.execute(
+            select(func.count(IPAddress.id)).where(IPAddress.prefix_id == prefix.id)
+        )).scalar_one()
+    )
+    return prefix_stats_dict(prefix, used)
 
 
 async def reserve_next_available(

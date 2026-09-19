@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -67,6 +67,31 @@ export function IpDrawer({
   const [busy, setBusy] = useState(false);
   const [history, setHistory] = useState<ChangeLogEntry[]>([]);
   const [natOptions, setNatOptions] = useState<IpAddress[]>([]);
+  const [natError, setNatError] = useState<string | null>(null);
+  const natTouched = useRef(false);
+  const natTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const fetchNat = useCallback(
+    async (q: string) => {
+      try {
+        const rows = await api.get<IpAddress[]>(
+          `/api/v1/addresses?prefix_id=${prefixId}` +
+            (q ? `&q=${encodeURIComponent(q)}` : "") +
+            "&limit=25"
+        );
+        setNatOptions(rows);
+        setNatError(null);
+      } catch (e) {
+        setNatError(String(e));
+      }
+    },
+    [prefixId]
+  );
+
+  const scheduleNat = (q: string) => {
+    if (natTimer.current) clearTimeout(natTimer.current);
+    natTimer.current = setTimeout(() => void fetchNat(q), 250);
+  };
 
   useEffect(() => {
     setForm({
@@ -77,38 +102,65 @@ export function IpDrawer({
       nat_inside: "",
       notes: addr?.notes ?? "",
     });
+    setNatOptions([]);
+    setNatError(null);
+    natTouched.current = false;
     if (addr?.nat_inside_id) {
       api
         .get<IpAddress>(`/api/v1/addresses/${addr.nat_inside_id}`)
         .then((a) => setForm((f) => ({ ...f, nat_inside: a.address })))
-        .catch(() => {});
+        .catch((e) =>
+          toast.error("Could not resolve NAT inside address", {
+            description: String(e),
+          })
+        );
     }
-    api
-      .get<IpAddress[]>(`/api/v1/addresses?prefix_id=${prefixId}&limit=2000`)
-      .then(setNatOptions)
-      .catch(() => setNatOptions([]));
     if (open && addr) {
       api
         .get<ChangeLogEntry[]>(
           `/api/v1/changelog?object_type=IPAddress&object_id=${addr.id}&limit=20`
         )
         .then(setHistory)
-        .catch(() => setHistory([]));
+        .catch((e) => {
+          setHistory([]);
+          toast.error("Could not load history", { description: String(e) });
+        });
     } else {
       setHistory([]);
     }
-  }, [addr, open]);
+    return () => {
+      if (natTimer.current) clearTimeout(natTimer.current);
+    };
+  }, [addr, open, prefixId]);
 
   const save = async () => {
     setBusy(true);
     try {
-      const natId = form.nat_inside
-        ? natOptions.find((a) => a.address === form.nat_inside)?.id
-        : null;
-      if (form.nat_inside && natId == null) {
-        toast.error("NAT inside address not found in this prefix");
-        setBusy(false);
-        return;
+      const natVal = form.nat_inside.trim();
+      let natId: number | null = null;
+      if (natVal) {
+        natId =
+          natOptions.find((a) => a.address === natVal && a.id !== addr?.id)
+            ?.id ?? null;
+        if (natId == null) {
+          // The datalist only holds the last 25 suggestions — resolve the
+          // typed value against the API so a valid entry always saves.
+          try {
+            const rows = await api.get<IpAddress[]>(
+              `/api/v1/addresses?prefix_id=${prefixId}&q=${encodeURIComponent(natVal)}&limit=25`
+            );
+            natId =
+              rows.find((a) => a.address === natVal && a.id !== addr?.id)?.id ??
+              null;
+          } catch {
+            natId = null;
+          }
+        }
+        if (natId == null) {
+          toast.error("NAT inside address not found in this prefix");
+          setBusy(false);
+          return;
+        }
       }
       const body = {
         hostname: form.hostname || null,
@@ -270,12 +322,26 @@ export function IpDrawer({
             <Label>NAT inside address</Label>
             <Input
               value={form.nat_inside}
-              onChange={(e) => setForm({ ...form, nat_inside: e.target.value })}
+              onChange={(e) => {
+                setForm({ ...form, nat_inside: e.target.value });
+                scheduleNat(e.target.value);
+              }}
+              onFocus={() => {
+                if (!natTouched.current) {
+                  natTouched.current = true;
+                  void fetchNat(form.nat_inside);
+                }
+              }}
               placeholder="e.g. 10.0.0.5 (must exist in this prefix)"
               className="font-mono"
               list="nat-candidates"
               disabled={!canWrite}
             />
+            {natError && (
+              <p className="text-xs text-rose-400">
+                NAT suggestions unavailable: {natError}
+              </p>
+            )}
             <datalist id="nat-candidates">
               {natOptions
                 .filter((a) => a.id !== addr?.id)

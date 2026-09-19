@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-
 import { api } from "@/lib/api";
+import { useAsyncData } from "@/lib/use-async-data";
+import { usePolling } from "@/lib/use-polling";
 import { timeAgo } from "@/lib/utils";
 import { useUrlText } from "@/lib/url-state";
 import type { ChangeLogEntry } from "@/types";
+import { AsyncPanel } from "@/components/async-panel";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
@@ -49,21 +50,17 @@ function ChangeSummary({ entry }: { entry: ChangeLogEntry }) {
 }
 
 export default function ChangelogPage() {
-  const [entries, setEntries] = useState<ChangeLogEntry[]>([]);
+  const entriesQ = useAsyncData(() =>
+    api.get<ChangeLogEntry[]>("/api/v1/changelog?limit=300")
+  );
   const [q, setQ] = useUrlText("q");
 
-  const refresh = useCallback(() => {
-    api
-      .get<ChangeLogEntry[]>("/api/v1/changelog?limit=300")
-      .then(setEntries)
-      .catch(() => {});
-  }, []);
+  usePolling(
+    async () => JSON.stringify(await entriesQ.reload()),
+    { interval: 10000 }
+  );
 
-  useEffect(() => {
-    refresh();
-    const t = setInterval(refresh, 10000);
-    return () => clearInterval(t);
-  }, [refresh]);
+  const entries = entriesQ.data ?? [];
 
   const filtered = entries.filter(
     (e) =>
@@ -90,6 +87,13 @@ export default function ChangelogPage() {
       />
 
       <div className="rounded-lg border">
+        <AsyncPanel
+          loading={entriesQ.loading}
+          error={entriesQ.error}
+          onRetry={entriesQ.reload}
+          empty={entries.length === 0}
+          emptyMessage="No changes recorded yet."
+        >
         <Table>
           <TableHeader>
             <TableRow>
@@ -126,18 +130,19 @@ export default function ChangelogPage() {
                 </TableCell>
               </TableRow>
             ))}
-            {filtered.length === 0 && (
+            {filtered.length === 0 && entries.length > 0 && (
               <TableRow>
                 <TableCell
                   colSpan={5}
                   className="py-10 text-center text-muted-foreground"
                 >
-                  No changes recorded yet.
+                  No entries match this filter.
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
+        </AsyncPanel>
       </div>
     </div>
   );

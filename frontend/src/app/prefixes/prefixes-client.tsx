@@ -14,11 +14,13 @@ import {
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
+import { useAsyncData } from "@/lib/use-async-data";
 import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
 import { foldHebrew, ipToInt } from "@/lib/utils";
 import { useUrlParam, useUrlSorting, useUrlText } from "@/lib/url-state";
 import { SortHeader } from "@/components/sort-header";
+import { AsyncPanel } from "@/components/async-panel";
 import type { Prefix, Site, Vlan, Vrf } from "@/types";
 import { PrefixStatusBadge } from "@/components/status-badge";
 import { TagChip, TagPicker, useTags } from "@/components/tag-picker";
@@ -437,10 +439,33 @@ export default function PrefixesPage() {
   const { can } = useAuth();
   const canWrite = can(PERM.DATA_WRITE);
   const canDelete = can(PERM.DATA_DELETE);
-  const [prefixes, setPrefixes] = useState<Prefix[]>([]);
-  const [vrfs, setVrfs] = useState<Vrf[]>([]);
-  const [sites, setSites] = useState<Site[]>([]);
-  const [vlans, setVlans] = useState<Vlan[]>([]);
+  const prefixesQ = useAsyncData(() =>
+    api.get<Prefix[]>("/api/v1/prefixes")
+  );
+  const vrfsQ = useAsyncData(async () => {
+    try {
+      return await api.get<Vrf[]>("/api/v1/vrfs");
+    } catch (e) {
+      toast.error("Could not load VRFs", { description: String(e) });
+      return [];
+    }
+  });
+  const sitesQ = useAsyncData(async () => {
+    try {
+      return await api.get<Site[]>("/api/v1/sites");
+    } catch (e) {
+      toast.error("Could not load sites", { description: String(e) });
+      return [];
+    }
+  });
+  const vlansQ = useAsyncData(async () => {
+    try {
+      return await api.get<Vlan[]>("/api/v1/vlans");
+    } catch (e) {
+      toast.error("Could not load VLANs", { description: String(e) });
+      return [];
+    }
+  });
   const [q, setQRaw] = useUrlText("q");
   const setQ = (v: string | ((p: string) => string)) =>
     setQRaw(typeof v === "function" ? v(q) : v);
@@ -451,14 +476,15 @@ export default function PrefixesPage() {
   const [deleting, setDeleting] = useState<Prefix | null>(null);
   const { tags, byObject: prefixTags, refresh: refreshTags } = useTags("Prefix");
 
+  const prefixes = prefixesQ.data ?? [];
+  const vrfs = vrfsQ.data ?? [];
+  const sites = sitesQ.data ?? [];
+  const vlans = vlansQ.data ?? [];
+
   const refresh = () => {
-    api.get<Prefix[]>("/api/v1/prefixes").then(setPrefixes).catch(() => {});
-    api.get<Vrf[]>("/api/v1/vrfs").then(setVrfs).catch(() => {});
-    api.get<Site[]>("/api/v1/sites").then(setSites).catch(() => {});
-    api.get<Vlan[]>("/api/v1/vlans").then(setVlans).catch(() => {});
+    void prefixesQ.reload();
     refreshTags();
   };
-  useEffect(refresh, []);
 
   const vrfName = useMemo(
     () => Object.fromEntries(vrfs.map((v) => [v.id, v.name])),
@@ -673,6 +699,13 @@ export default function PrefixesPage() {
       </div>
 
       <div className="rounded-lg border">
+        <AsyncPanel
+          loading={prefixesQ.loading}
+          error={prefixesQ.error}
+          onRetry={prefixesQ.reload}
+          empty={prefixes.length === 0}
+          emptyMessage="No prefixes yet — create the first one."
+        >
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((hg) => (
@@ -699,15 +732,16 @@ export default function PrefixesPage() {
                 ))}
               </TableRow>
             ))}
-            {table.getRowModel().rows.length === 0 && (
+            {table.getRowModel().rows.length === 0 && prefixes.length > 0 && (
               <TableRow>
                 <TableCell colSpan={9} className="py-10 text-center text-muted-foreground">
-                  No prefixes found.
+                  No prefixes match this filter.
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
+        </AsyncPanel>
       </div>
 
       <NewPrefixDialog

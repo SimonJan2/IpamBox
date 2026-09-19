@@ -12,11 +12,13 @@ import {
 } from "@tanstack/react-table";
 
 import { api } from "@/lib/api";
+import { useAsyncData } from "@/lib/use-async-data";
 import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
 import { foldHebrew } from "@/lib/utils";
 import { useUrlParam, useUrlSorting, useUrlText } from "@/lib/url-state";
 import { SortHeader } from "@/components/sort-header";
+import { AsyncPanel } from "@/components/async-panel";
 import type { Site, Vlan, VlanGroup, VlanStatus } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -298,9 +300,6 @@ export default function VlansPage() {
   const { can } = useAuth();
   const canWrite = can(PERM.DATA_WRITE);
   const canDelete = can(PERM.DATA_DELETE);
-  const [vlans, setVlans] = useState<Vlan[]>([]);
-  const [groups, setGroups] = useState<VlanGroup[]>([]);
-  const [sites, setSites] = useState<Site[]>([]);
   const [q, setQ] = useUrlText("q");
   const [sorting, setSorting] = useUrlSorting();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -311,14 +310,37 @@ export default function VlansPage() {
   const setFilterGroup = (id: number | null) =>
     setFilterGroupRaw(id === null ? "" : String(id));
 
-  const refresh = useCallback(() => {
-    const q = filterGroup ? `?group_id=${filterGroup}` : "";
-    api.get<Vlan[]>(`/api/v1/vlans${q}`).then(setVlans).catch(() => {});
-    api.get<VlanGroup[]>("/api/v1/vlan-groups").then(setGroups).catch(() => {});
-    api.get<Site[]>("/api/v1/sites").then(setSites).catch(() => {});
-  }, [filterGroup]);
+  const vlansQ = useAsyncData(
+    () =>
+      api.get<Vlan[]>(
+        `/api/v1/vlans${filterGroup ? `?group_id=${filterGroup}` : ""}`
+      ),
+    [filterGroup]
+  );
+  const groupsQ = useAsyncData(async () => {
+    try {
+      return await api.get<VlanGroup[]>("/api/v1/vlan-groups");
+    } catch (e) {
+      toast.error("Could not load VLAN groups", { description: String(e) });
+      return [];
+    }
+  });
+  const sitesQ = useAsyncData(async () => {
+    try {
+      return await api.get<Site[]>("/api/v1/sites");
+    } catch (e) {
+      toast.error("Could not load sites", { description: String(e) });
+      return [];
+    }
+  });
 
-  useEffect(refresh, [refresh]);
+  const vlans = vlansQ.data ?? [];
+  const groups = groupsQ.data ?? [];
+  const sites = sitesQ.data ?? [];
+  const refresh = useCallback(() => {
+    void vlansQ.reload();
+    void groupsQ.reload();
+  }, [vlansQ.reload, groupsQ.reload]);
 
   const groupName = useMemo(
     () => Object.fromEntries(groups.map((g) => [g.id, g.name])),
@@ -514,6 +536,13 @@ export default function VlansPage() {
             </Button>
           )}
         </div>
+        <AsyncPanel
+          loading={groupsQ.loading}
+          error={groupsQ.error}
+          onRetry={groupsQ.reload}
+          empty={groups.length === 0}
+          emptyMessage="No groups yet — create one above."
+        >
         <Table>
           <TableBody>
             {groups.map((g) => (
@@ -560,18 +589,9 @@ export default function VlansPage() {
                 </TableCell>
               </TableRow>
             ))}
-            {groups.length === 0 && (
-              <TableRow>
-                <TableCell
-                  colSpan={4}
-                  className="py-6 text-center text-muted-foreground"
-                >
-                  No groups yet.
-                </TableCell>
-              </TableRow>
-            )}
           </TableBody>
         </Table>
+        </AsyncPanel>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -595,6 +615,13 @@ export default function VlansPage() {
       </div>
 
       <div className="rounded-lg border">
+        <AsyncPanel
+          loading={vlansQ.loading}
+          error={vlansQ.error}
+          onRetry={vlansQ.reload}
+          empty={vlans.length === 0}
+          emptyMessage="No VLANs yet — create the first one."
+        >
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((hg) => (
@@ -617,18 +644,19 @@ export default function VlansPage() {
                 ))}
               </TableRow>
             ))}
-            {table.getRowModel().rows.length === 0 && (
+            {table.getRowModel().rows.length === 0 && vlans.length > 0 && (
               <TableRow>
                 <TableCell
                   colSpan={7}
                   className="py-10 text-center text-muted-foreground"
                 >
-                  No VLANs found.
+                  No VLANs match this filter.
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
+        </AsyncPanel>
       </div>
 
       <VlanDialog

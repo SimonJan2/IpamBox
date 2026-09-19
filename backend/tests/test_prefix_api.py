@@ -46,6 +46,48 @@ async def test_prefix_stats_fields(client):
     assert body["utilization_pct"] == 0.0
 
 
+async def test_prefixes_order_by_utilization_and_limit(client):
+    vrf_id = await _global_vrf_id(client)
+    p1 = (
+        await client.post("/api/v1/prefixes", json={"prefix": "10.61.0.0/24", "vrf_id": vrf_id})
+    ).json()
+    p2 = (
+        await client.post("/api/v1/prefixes", json={"prefix": "10.62.0.0/24", "vrf_id": vrf_id})
+    ).json()
+    p3 = (
+        await client.post("/api/v1/prefixes", json={"prefix": "10.63.0.0/24", "vrf_id": vrf_id})
+    ).json()
+    for i in (5, 6):
+        await client.post(
+            "/api/v1/addresses",
+            json={"address": f"10.62.0.{i}", "prefix_id": p2["id"]},
+        )
+    await client.post(
+        "/api/v1/addresses",
+        json={"address": "10.63.0.5", "prefix_id": p3["id"]},
+    )
+
+    # utilization desc: p2 (2 used) -> p3 (1 used) -> p1 (empty); limit trims
+    rows = (
+        await client.get(
+            "/api/v1/prefixes", params={"order_by": "utilization", "limit": 2}
+        )
+    ).json()
+    assert [r["id"] for r in rows] == [p2["id"], p3["id"]]
+
+    rows = (
+        await client.get("/api/v1/prefixes", params={"order_by": "utilization"})
+    ).json()
+    assert [r["id"] for r in rows] == [p2["id"], p3["id"], p1["id"]]
+
+    # default ordering is still by network address, and limit applies after it
+    rows = (await client.get("/api/v1/prefixes", params={"limit": 1})).json()
+    assert [r["id"] for r in rows] == [p1["id"]]
+
+    r = await client.get("/api/v1/prefixes", params={"order_by": "bogus"})
+    assert r.status_code == 422
+
+
 async def test_unknown_vlan_rejected(client):
     vrf_id = await _global_vrf_id(client)
     r = await client.post(

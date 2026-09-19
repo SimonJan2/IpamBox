@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Pencil,
   Plus,
@@ -14,10 +14,12 @@ import {
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
+import { useAsyncData } from "@/lib/use-async-data";
 import { fmtTs } from "@/lib/prefs";
 import { useAuth } from "@/lib/auth";
 import { PERM, ROLE_META, ROLE_ORDER } from "@/lib/permissions";
 import type { RoleName, UserOut } from "@/types";
+import { AsyncPanel } from "@/components/async-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -236,19 +238,16 @@ function DeleteUserDialog({
 
 export default function UsersPage() {
   const { status, can } = useAuth();
-  const [users, setUsers] = useState<UserOut[]>([]);
+  const usersQ = useAsyncData(async () =>
+    can(PERM.USERS_MANAGE) ? api.get<UserOut[]>("/api/v1/users") : []
+  );
   const [q, setQ] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [editing, setEditing] = useState<UserOut | "new" | null>(null);
   const [deleting, setDeleting] = useState<UserOut | null>(null);
 
-  const refresh = useCallback(() => {
-    api.get<UserOut[]>("/api/v1/users").then(setUsers).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    if (can(PERM.USERS_MANAGE)) refresh();
-  }, [can, refresh]);
+  const users = usersQ.data ?? [];
+  const refresh = () => void usersQ.reload();
 
   const counts = useMemo(() => {
     const c = { total: users.length } as Record<string, number>;
@@ -343,6 +342,13 @@ export default function UsersPage() {
       </div>
 
       <div className="rounded-lg border">
+        <AsyncPanel
+          loading={usersQ.loading}
+          error={usersQ.error}
+          onRetry={usersQ.reload}
+          empty={users.length === 0}
+          emptyMessage="No users yet."
+        >
         <Table>
           <TableHeader>
             <TableRow>
@@ -404,15 +410,16 @@ export default function UsersPage() {
                 </TableRow>
               );
             })}
-            {filtered.length === 0 && (
+            {filtered.length === 0 && users.length > 0 && (
               <TableRow>
                 <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
-                  {users.length === 0 ? "No users yet." : "No users match the filters."}
+                  No users match the filters.
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
+        </AsyncPanel>
       </div>
 
       <Card>

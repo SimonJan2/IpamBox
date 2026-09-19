@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { Activity, Info, Link2, Server } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { useAsyncData } from "@/lib/use-async-data";
 import type { DashboardStats, SettingsOut } from "@/types";
+import { AsyncPanel } from "@/components/async-panel";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -25,20 +26,19 @@ function Row({ k, v, mono = true }: { k: string; v: React.ReactNode; mono?: bool
 }
 
 export default function SettingsPage() {
-  const [settings, setSettings] = useState<SettingsOut | null>(null);
-  const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [ready, setReady] = useState<"ok" | "degraded" | null>(null);
-
-  useEffect(() => {
-    api
-      .get<SettingsOut>("/api/v1/settings")
-      .then((o) => {
-        setSettings(o);
-        setReady("ok");
-      })
-      .catch(() => setReady("degraded"));
-    api.get<DashboardStats>("/api/v1/dashboard/stats").then(setStats).catch(() => {});
-  }, []);
+  const settingsQ = useAsyncData(() =>
+    api.get<SettingsOut>("/api/v1/settings")
+  );
+  const statsQ = useAsyncData(() =>
+    api.get<DashboardStats>("/api/v1/dashboard/stats")
+  );
+  const settings = settingsQ.data;
+  const stats = statsQ.data;
+  const ready = settingsQ.loading
+    ? null
+    : settingsQ.error
+      ? "degraded"
+      : "ok";
 
   const lan = settings?.system.lan;
 
@@ -67,6 +67,11 @@ export default function SettingsPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
+          <AsyncPanel
+            loading={settingsQ.loading}
+            error={settingsQ.error}
+            onRetry={settingsQ.reload}
+          >
           <Row k="IpamBox version" v={settings?.system.app_version ?? "…"} />
           <Row k="Schema revision" v={settings?.system.alembic_head ?? "…"} />
           <Row
@@ -90,6 +95,7 @@ export default function SettingsPage() {
             }
             mono={false}
           />
+          </AsyncPanel>
         </CardContent>
       </Card>
 
@@ -100,12 +106,19 @@ export default function SettingsPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-2 gap-x-8 sm:grid-cols-3">
+          <AsyncPanel
+            loading={statsQ.loading}
+            error={statsQ.error}
+            onRetry={statsQ.reload}
+            className="col-span-full"
+          >
           <Row k="Sites" v={stats?.sites_total ?? "…"} />
           <Row k="VRFs" v={stats?.vrfs_total ?? "…"} />
           <Row k="Prefixes" v={stats?.prefixes_total ?? "…"} />
           <Row k="Addresses" v={stats?.ips_total ?? "…"} />
           <Row k="Discovered" v={stats?.devices_discovered ?? "…"} />
           <Row k="Scans run" v={stats?.scans_total ?? "…"} />
+          </AsyncPanel>
         </CardContent>
       </Card>
 
@@ -120,6 +133,11 @@ export default function SettingsPage() {
             Read-only — these come from <code>.env</code> / compose and need a
             container restart to change.
           </p>
+          <AsyncPanel
+            loading={settingsQ.loading}
+            error={settingsQ.error}
+            onRetry={settingsQ.reload}
+          >
           <Row k="Database" v={settings?.env.database_url ?? "…"} />
           <Row k="Redis" v={settings?.env.redis_url ?? "…"} />
           <Row
@@ -139,6 +157,7 @@ export default function SettingsPage() {
             k="Password provisioned"
             v={settings ? String(settings.env.ipambox_password_set) : "…"}
           />
+          </AsyncPanel>
         </CardContent>
       </Card>
 

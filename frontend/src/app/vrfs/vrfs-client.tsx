@@ -5,12 +5,14 @@ import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
+import { useAsyncData } from "@/lib/use-async-data";
 import { useAuth } from "@/lib/auth";
 import { useFeatureFlag } from "@/lib/features";
 import { PERM } from "@/lib/permissions";
 import { slugify } from "@/lib/utils";
 import { useUrlText } from "@/lib/url-state";
 import type { Site, Vrf } from "@/types";
+import { AsyncPanel } from "@/components/async-panel";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -254,18 +256,23 @@ export default function VrfsPage() {
   const canWrite = can(PERM.DATA_WRITE);
   const canDelete = can(PERM.DATA_DELETE);
   const followSiteCode = useFeatureFlag("site_code_follow_site");
-  const [vrfs, setVrfs] = useState<Vrf[]>([]);
-  const [sites, setSites] = useState<Site[]>([]);
+  const vrfsQ = useAsyncData(() => api.get<Vrf[]>("/api/v1/vrfs"));
+  const sitesQ = useAsyncData(async () => {
+    try {
+      return await api.get<Site[]>("/api/v1/sites");
+    } catch (e) {
+      toast.error("Could not load sites", { description: String(e) });
+      return [];
+    }
+  });
   const [q, setQ] = useUrlText("q");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Vrf | null>(null);
   const [deleting, setDeleting] = useState<Vrf | null>(null);
 
-  const refresh = () => {
-    api.get<Vrf[]>("/api/v1/vrfs").then(setVrfs).catch(() => {});
-    api.get<Site[]>("/api/v1/sites").then(setSites).catch(() => {});
-  };
-  useEffect(refresh, []);
+  const vrfs = vrfsQ.data ?? [];
+  const sites = sitesQ.data ?? [];
+  const refresh = () => void vrfsQ.reload();
 
   const siteName = useMemo(
     () => Object.fromEntries(sites.map((s) => [s.id, s.name])),
@@ -303,6 +310,13 @@ export default function VrfsPage() {
       />
 
       <div className="rounded-lg border">
+        <AsyncPanel
+          loading={vrfsQ.loading}
+          error={vrfsQ.error}
+          onRetry={vrfsQ.reload}
+          empty={vrfs.length === 0}
+          emptyMessage="No VRFs yet — create the first one."
+        >
         <Table>
           <TableHeader>
             <TableRow>
@@ -357,18 +371,19 @@ export default function VrfsPage() {
                 </TableCell>
               </TableRow>
             ))}
-            {filtered.length === 0 && (
+            {filtered.length === 0 && vrfs.length > 0 && (
               <TableRow>
                 <TableCell
                   colSpan={6}
                   className="py-10 text-center text-muted-foreground"
                 >
-                  No VRFs found.
+                  No VRFs match this filter.
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
+        </AsyncPanel>
       </div>
 
       <VrfDialog

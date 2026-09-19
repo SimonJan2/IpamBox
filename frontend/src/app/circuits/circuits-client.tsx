@@ -13,12 +13,14 @@ import {
 } from "@tanstack/react-table";
 
 import { api } from "@/lib/api";
+import { useAsyncData } from "@/lib/use-async-data";
 import { useAuth } from "@/lib/auth";
 import { useFeatureFlag } from "@/lib/features";
 import { PERM } from "@/lib/permissions";
 import { cn, foldHebrew } from "@/lib/utils";
 import { useUrlParam, useUrlSorting, useUrlText } from "@/lib/url-state";
 import { SortHeader } from "@/components/sort-header";
+import { AsyncPanel } from "@/components/async-panel";
 import type { Circuit, Site } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -291,8 +293,15 @@ export default function CircuitsPage() {
   const canWrite = can(PERM.DATA_WRITE);
   const canDelete = can(PERM.DATA_DELETE);
   const followSiteCode = useFeatureFlag("site_code_follow_site");
-  const [items, setItems] = useState<Circuit[]>([]);
-  const [sites, setSites] = useState<Site[]>([]);
+  const itemsQ = useAsyncData(() => api.get<Circuit[]>("/api/v1/circuits"));
+  const sitesQ = useAsyncData(async () => {
+    try {
+      return await api.get<Site[]>("/api/v1/sites");
+    } catch (e) {
+      toast.error("Could not load sites", { description: String(e) });
+      return [];
+    }
+  });
   const [tab, setTabRaw] = useUrlParam("tab", "active");
   const setTab = (v: string) => setTabRaw(v === "retired" ? "retired" : "active");
   const [q, setQRaw] = useUrlText("q");
@@ -306,11 +315,9 @@ export default function CircuitsPage() {
   const [editing, setEditing] = useState<Circuit | null>(null);
   const [deleting, setDeleting] = useState<Circuit | null>(null);
 
-  const refresh = () => {
-    api.get<Circuit[]>("/api/v1/circuits").then(setItems).catch(() => {});
-    api.get<Site[]>("/api/v1/sites").then(setSites).catch(() => {});
-  };
-  useEffect(refresh, []);
+  const items = itemsQ.data ?? [];
+  const sites = sitesQ.data ?? [];
+  const refresh = () => void itemsQ.reload();
 
   // legacy imports (קוי בזק ישן) live in the Retired Circuits tab
   const activeItems = useMemo(() => items.filter((c) => !c.is_retired), [items]);
@@ -648,6 +655,17 @@ export default function CircuitsPage() {
       </div>
 
       <div className="rounded-lg border">
+        <AsyncPanel
+          loading={itemsQ.loading}
+          error={itemsQ.error}
+          onRetry={itemsQ.reload}
+          empty={scopedItems.length === 0}
+          emptyMessage={
+            tab === "retired"
+              ? "No retired circuits."
+              : "No circuits yet — add the first one."
+          }
+        >
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((hg) => (
@@ -670,20 +688,19 @@ export default function CircuitsPage() {
                 ))}
               </TableRow>
             ))}
-            {table.getRowModel().rows.length === 0 && (
+            {table.getRowModel().rows.length === 0 && scopedItems.length > 0 && (
               <TableRow>
                 <TableCell
                   colSpan={columns.length}
                   className="py-10 text-center text-muted-foreground"
                 >
-                  {tab === "retired"
-                    ? "No retired circuits."
-                    : "No circuits found."}
+                  No circuits match this filter.
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
+        </AsyncPanel>
       </div>
 
       <CircuitDialog
