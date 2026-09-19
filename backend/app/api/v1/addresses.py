@@ -242,10 +242,11 @@ async def list_addresses(
         rows = [
             r
             for r in rows
-            if ql in str(r.address)
+            if ql in str(r.address).lower()
             or (r.hostname and ql in fold_hebrew(r.hostname.lower()))
             or (r.mac_address and ql in r.mac_address.lower())
-            or (r.description and ql in fold_hebrew(r.description.lower()))
+            or (r.vendor and ql in fold_hebrew(r.vendor.lower()))
+            or (r.notes and ql in fold_hebrew(r.notes.lower()))
         ]
     return rows
 

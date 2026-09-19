@@ -17,6 +17,11 @@ export interface Prefs {
   tsFormat: TsFormat;
   addrMapView: AddrMapView;
   showSlugs: boolean;
+  sidebarCollapsed: boolean;
+  /** Sidebar group label -> expanded; missing key means expanded. */
+  sidebarGroups: Record<string, boolean>;
+  /** Recent command-palette picks, newest first (max 5). */
+  searchRecent: { label: string; href: string }[];
 }
 
 export const DEFAULT_PREFS: Prefs = {
@@ -27,6 +32,9 @@ export const DEFAULT_PREFS: Prefs = {
   tsFormat: "local",
   addrMapView: "grid",
   showSlugs: false,
+  sidebarCollapsed: false,
+  sidebarGroups: {},
+  searchRecent: [],
 };
 
 const KEY = "ipambox:prefs";

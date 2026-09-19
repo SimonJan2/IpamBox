@@ -6,7 +6,10 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "IpamBox",
+  title: {
+    default: "IpamBox",
+    template: "%s · IpamBox",
+  },
   description: "IP address management & network scanner",
 };
 
