@@ -1,5 +1,6 @@
 "use client";
 
+import { cloneElement, isValidElement, useId } from "react";
 import { RotateCcw } from "lucide-react";
 
 import type { SettingSource } from "@/types";
@@ -35,10 +36,13 @@ export function SettingField({
   error?: string;
   children: React.ReactNode;
 }) {
+  const controlId = useId();
   return (
     <div className="grid gap-1.5">
       <div className="flex items-center justify-between gap-2">
-        <Label className="text-sm">{label}</Label>
+        <Label className="text-sm" htmlFor={controlId}>
+          {label}
+        </Label>
         {source && (
           <span className="flex items-center gap-1.5">
             <Tooltip>
@@ -61,6 +65,7 @@ export function SettingField({
                 variant="ghost"
                 size="icon"
                 className="h-6 w-6"
+                aria-label={`Reset ${label} to .env / default`}
                 title="Reset to .env / default"
                 onClick={onReset}
               >
@@ -70,7 +75,26 @@ export function SettingField({
           </span>
         )}
       </div>
-      {children}
+      {isValidElement(children)
+        ? cloneElement(
+            children as React.ReactElement<{
+              id?: string;
+              "aria-label"?: string;
+              "aria-labelledby"?: string;
+            }>,
+            {
+              id: controlId,
+              // htmlFor doesn't reliably name button-based controls (Switch,
+              // Select root) — pass the label through as aria-label too.
+              ...((children.props as Record<string, unknown>)["aria-label"] ==
+                null &&
+              (children.props as Record<string, unknown>)["aria-labelledby"] ==
+                null
+                ? { "aria-label": label }
+                : {}),
+            }
+          )
+        : children}
       {error ? (
         <p className="text-xs text-rose-400">{error}</p>
       ) : hint ? (

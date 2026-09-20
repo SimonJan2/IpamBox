@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -113,6 +113,7 @@ function RangeDialog({
 }) {
   const [form, setForm] = useState({ start: "", end: "", role: "dhcp", description: "" });
   const [busy, setBusy] = useState(false);
+  const uid = useId();
 
   useEffect(() => {
     if (open) setForm({ start: "", end: "", role: "dhcp", description: "" });
@@ -147,16 +148,18 @@ function RangeDialog({
         <div className="grid gap-3">
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
-              <Label>Start address</Label>
+              <Label htmlFor={`${uid}-start`}>Start address</Label>
               <Input
+                id={`${uid}-start`}
                 placeholder="10.0.0.100"
                 value={form.start}
                 onChange={(e) => setForm({ ...form, start: e.target.value })}
               />
             </div>
             <div className="grid gap-1.5">
-              <Label>End address</Label>
+              <Label htmlFor={`${uid}-end`}>End address</Label>
               <Input
+                id={`${uid}-end`}
                 placeholder="10.0.0.199"
                 value={form.end}
                 onChange={(e) => setForm({ ...form, end: e.target.value })}
@@ -164,12 +167,12 @@ function RangeDialog({
             </div>
           </div>
           <div className="grid gap-1.5">
-            <Label>Role</Label>
+            <Label htmlFor={`${uid}-role`}>Role</Label>
             <Select
               value={form.role}
               onValueChange={(v) => setForm({ ...form, role: v })}
             >
-              <SelectTrigger>
+              <SelectTrigger id={`${uid}-role`}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -182,8 +185,9 @@ function RangeDialog({
             </Select>
           </div>
           <div className="grid gap-1.5">
-            <Label>Description</Label>
+            <Label htmlFor={`${uid}-description`}>Description</Label>
             <Input
+              id={`${uid}-description`}
               placeholder="e.g. DHCP pool"
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
@@ -236,6 +240,7 @@ function SplitDialog({
   const [loading, setLoading] = useState(false);
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
+  const uid = useId();
 
   const loadPlan = useCallback(
     async (m: number) => {
@@ -327,7 +332,7 @@ function SplitDialog({
         <div className="grid gap-3">
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
-              <Label>New mask</Label>
+              <Label htmlFor={`${uid}-mask`}>New mask</Label>
               <Select
                 value={String(mask)}
                 onValueChange={(v) => {
@@ -336,7 +341,7 @@ function SplitDialog({
                   void loadPlan(m);
                 }}
               >
-                <SelectTrigger>
+                <SelectTrigger id={`${uid}-mask`}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -349,9 +354,9 @@ function SplitDialog({
               </Select>
             </div>
             <div className="grid gap-1.5">
-              <Label>Child status</Label>
+              <Label htmlFor={`${uid}-child-status`}>Child status</Label>
               <Select value={childStatus} onValueChange={setChildStatus}>
-                <SelectTrigger>
+                <SelectTrigger id={`${uid}-child-status`}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -375,7 +380,7 @@ function SplitDialog({
 
           <div className="grid gap-1.5">
             <div className="flex items-center justify-between">
-              <Label>Subnets to create</Label>
+              <Label id={`${uid}-subnets`}>Subnets to create</Label>
               {plan && creatable > 0 && (
                 <button
                   onClick={toggleAll}
@@ -385,7 +390,11 @@ function SplitDialog({
                 </button>
               )}
             </div>
-            <div className="max-h-56 space-y-0.5 overflow-auto rounded-md border p-2">
+            <div
+              role="group"
+              aria-labelledby={`${uid}-subnets`}
+              className="max-h-56 space-y-0.5 overflow-auto rounded-md border p-2"
+            >
               {loading && (
                 <div className="flex items-center gap-2 p-2 text-xs text-muted-foreground">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" /> Computing…
@@ -419,6 +428,9 @@ function SplitDialog({
                       <Checkbox
                         checked={exists || sel.has(c)}
                         disabled={exists}
+                        aria-label={
+                          exists ? `${c} (already exists)` : `Select ${c}`
+                        }
                         onCheckedChange={(v) => {
                           const next = new Set(sel);
                           if (v) next.add(c);
@@ -636,8 +648,8 @@ export default function PrefixDetailPage({ id }: { id: string }) {
     <div className="space-y-4">
       <PrefixBreadcrumbs prefixId={prefixId} />
       <div className="flex flex-wrap items-center gap-3">
-        <Button variant="ghost" size="icon" asChild>
-          <Link href="/prefixes">
+        <Button variant="ghost" size="icon" aria-label="Back to subnets" asChild>
+          <Link href="/prefixes" aria-label="Back to subnets">
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
@@ -764,7 +776,12 @@ export default function PrefixDetailPage({ id }: { id: string }) {
                     </TableCell>
                     <TableCell className="text-right">
                       {canDelete && (
-                        <Button variant="ghost" size="icon" onClick={() => removeRange(r)}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Delete range ${r.start_address}–${r.end_address}`}
+                          onClick={() => removeRange(r)}
+                        >
                           <Trash2 className="h-4 w-4 text-rose-400" />
                         </Button>
                       )}
@@ -887,7 +904,7 @@ export default function PrefixDetailPage({ id }: { id: string }) {
 
       {selected.size > 0 && canWrite && (
         <div className="sticky bottom-4 z-10 mx-auto flex w-fit items-center gap-3 rounded-lg border bg-card px-4 py-2 shadow-lg">
-          <span className="text-sm text-muted-foreground">
+          <span role="status" className="text-sm text-muted-foreground">
             {selected.size} selected
           </span>
           <Select onValueChange={(v) => bulk({ action: "set_status", status: v as IpStatus })}>

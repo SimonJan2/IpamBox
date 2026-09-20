@@ -45,7 +45,7 @@ export default function AppearancePage() {
               value={prefs.theme}
               onValueChange={(v) => setPrefs({ theme: v as typeof prefs.theme })}
             >
-              <SelectTrigger>
+              <SelectTrigger aria-label="Theme">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -63,7 +63,7 @@ export default function AppearancePage() {
                 setPrefs({ density: v as typeof prefs.density })
               }
             >
-              <SelectTrigger>
+              <SelectTrigger aria-label="Table density">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -83,7 +83,7 @@ export default function AppearancePage() {
                 setPrefs({ tsFormat: v as typeof prefs.tsFormat })
               }
             >
-              <SelectTrigger>
+              <SelectTrigger aria-label="Timestamp format">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -101,7 +101,7 @@ export default function AppearancePage() {
               value={String(prefs.pageSize)}
               onValueChange={(v) => setPrefs({ pageSize: Number(v) })}
             >
-              <SelectTrigger>
+              <SelectTrigger aria-label="Rows per page">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

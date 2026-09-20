@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -19,7 +19,7 @@ import { useFeatureFlag } from "@/lib/features";
 import { PERM } from "@/lib/permissions";
 import { cn, foldHebrew } from "@/lib/utils";
 import { useUrlParam, useUrlSorting, useUrlText } from "@/lib/url-state";
-import { SortHeader } from "@/components/sort-header";
+import { SortHeader, columnAriaSort } from "@/components/sort-header";
 import { AsyncPanel } from "@/components/async-panel";
 import type { Circuit, Site } from "@/types";
 import { Badge } from "@/components/ui/badge";
@@ -157,6 +157,7 @@ function CircuitDialog({
 
   const set = (k: keyof typeof EMPTY) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm({ ...form, [k]: e.target.value });
+  const uid = useId();
 
   const submit = async () => {
     setBusy(true);
@@ -214,9 +215,9 @@ function CircuitDialog({
         <div className="grid gap-3">
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
-              <Label>Site</Label>
+              <Label htmlFor={`${uid}-site`}>Site</Label>
               <Select value={form.site_id} onValueChange={onSiteChange}>
-                <SelectTrigger>
+                <SelectTrigger id={`${uid}-site`}>
                   <SelectValue placeholder="None" />
                 </SelectTrigger>
                 <SelectContent>
@@ -234,15 +235,20 @@ function CircuitDialog({
             </div>
             <div className="grid gap-1.5">
               <div className="flex items-center justify-between">
-                <Label>Site code</Label>
+                <Label htmlFor={`${uid}-site-code`}>Site code</Label>
                 {site?.code && (
                   <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Switch checked={!codeManual} onCheckedChange={onCodeAuto} />
+                    <Switch
+                      checked={!codeManual}
+                      onCheckedChange={onCodeAuto}
+                      aria-label="Derive site code from site"
+                    />
                     from site
                   </label>
                 )}
               </div>
               <Input
+                id={`${uid}-site-code`}
                 dir="ltr"
                 value={form.site_code}
                 disabled={codeLocked}
@@ -250,12 +256,22 @@ function CircuitDialog({
               />
             </div>
             <div className="grid gap-1.5">
-              <Label>Site name</Label>
-              <Input dir="auto" value={form.site_name} onChange={set("site_name")} />
+              <Label htmlFor={`${uid}-site-name`}>Site name</Label>
+              <Input
+                id={`${uid}-site-name`}
+                dir="auto"
+                value={form.site_name}
+                onChange={set("site_name")}
+              />
             </div>
             <div className="grid gap-1.5">
-              <Label>Site #</Label>
-              <Input dir="ltr" value={form.site_number} onChange={set("site_number")} />
+              <Label htmlFor={`${uid}-site-number`}>Site #</Label>
+              <Input
+                id={`${uid}-site-number`}
+                dir="ltr"
+                value={form.site_number}
+                onChange={set("site_number")}
+              />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -264,8 +280,9 @@ function CircuitDialog({
                 key={k}
                 className={k === "notes" ? "col-span-2" : "grid gap-1.5"}
               >
-                <Label>{label}</Label>
+                <Label htmlFor={`${uid}-${k}`}>{label}</Label>
                 <Input
+                  id={`${uid}-${k}`}
                   dir={k === "wan_ip" || k === "bezeq_circuit_id" ? "ltr" : "auto"}
                   value={form[k]}
                   onChange={set(k)}
@@ -274,7 +291,11 @@ function CircuitDialog({
             ))}
           </div>
           <label className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Switch checked={retired} onCheckedChange={setRetired} />
+            <Switch
+              checked={retired}
+              onCheckedChange={setRetired}
+              aria-label="Retired — shown under Retired Circuits"
+            />
             Retired — shown under Retired Circuits
           </label>
         </div>
@@ -484,6 +505,7 @@ export default function CircuitsPage() {
               <Button
                 variant="ghost"
                 size="icon"
+                aria-label={`Edit circuit ${c.row.original.bezeq_circuit_id ?? c.row.original.site_name ?? c.row.original.id}`}
                 onClick={() => {
                   setEditing(c.row.original);
                   setDialogOpen(true);
@@ -496,6 +518,7 @@ export default function CircuitsPage() {
               <Button
                 variant="ghost"
                 size="icon"
+                aria-label={`Delete circuit ${c.row.original.bezeq_circuit_id ?? c.row.original.site_name ?? c.row.original.id}`}
                 onClick={() => setDeleting(c.row.original)}
               >
                 <Trash2 className="h-4 w-4 text-rose-400" />
@@ -671,7 +694,7 @@ export default function CircuitsPage() {
             {table.getHeaderGroups().map((hg) => (
               <TableRow key={hg.id}>
                 {hg.headers.map((h) => (
-                  <TableHead key={h.id}>
+                  <TableHead key={h.id} aria-sort={columnAriaSort(h.column)}>
                     {flexRender(h.column.columnDef.header, h.getContext())}
                   </TableHead>
                 ))}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,7 @@ export function ConfirmAction({
 }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  const inputId = useId();
 
   const run = async () => {
     setBusy(true);
@@ -48,12 +49,13 @@ export function ConfirmAction({
       <div className="text-sm text-muted-foreground">{description}</div>
       {extra}
       <div className="grid gap-1.5">
-        <Label className="text-xs">
+        <Label className="text-xs" htmlFor={inputId}>
           Type <span className="font-mono text-rose-400">{confirmWord}</span> to
           confirm
         </Label>
         <div className="flex gap-2">
           <Input
+            id={inputId}
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder={confirmWord}
@@ -95,6 +97,7 @@ export function ConfirmDialog({
 }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  const inputId = useId();
 
   useEffect(() => {
     if (open) setText("");
@@ -120,11 +123,12 @@ export function ConfirmDialog({
         </DialogHeader>
         <div className="text-sm text-muted-foreground">{description}</div>
         <div className="grid gap-1.5">
-          <Label className="text-xs">
+          <Label className="text-xs" htmlFor={inputId}>
             Type <span className="font-mono text-rose-400">{confirmWord}</span>{" "}
             to confirm
           </Label>
           <Input
+            id={inputId}
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder={confirmWord}

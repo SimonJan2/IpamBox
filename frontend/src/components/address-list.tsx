@@ -75,6 +75,7 @@ export function AddrMapViewSwitcher({
           key={v}
           type="button"
           aria-pressed={view === v}
+          aria-label={label}
           title={label}
           onClick={() => onChange(v)}
           className={cn(
@@ -298,7 +299,12 @@ export function AddressList({
     const active = sortKey === k;
     const Icon = !active ? ChevronsUpDown : sortDir === 1 ? ChevronUp : ChevronDown;
     return (
-      <TableHead className={cn("sticky top-0 z-10 bg-card", className)}>
+      <TableHead
+        className={cn("sticky top-0 z-10 bg-card", className)}
+        aria-sort={
+          active ? (sortDir === 1 ? "ascending" : "descending") : "none"
+        }
+      >
         <button
           type="button"
           onClick={() => toggleSort(k)}
@@ -452,6 +458,7 @@ export function AddressList({
           <TableCell className="py-2" onClick={(e) => e.stopPropagation()}>
             <Checkbox
               checked={selected.has(a.id)}
+              aria-label={`Select ${a.address}`}
               onCheckedChange={(v) => onToggle(a.id, !!v)}
             />
           </TableCell>
@@ -532,7 +539,12 @@ export function AddressList({
         >
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-7 w-7">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                aria-label={`Actions for ${a.address}`}
+              >
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
@@ -579,7 +591,11 @@ export function AddressList({
         {canUngroup && !filtersActive && (
           <label className="flex items-center gap-2">
             Group free
-            <Switch checked={groupFree} onCheckedChange={setGroupFree} />
+            <Switch
+              checked={groupFree}
+              onCheckedChange={setGroupFree}
+              aria-label="Group free addresses"
+            />
           </label>
         )}
       </div>
@@ -595,6 +611,7 @@ export function AddressList({
                 <TableHead className="sticky top-0 z-10 w-8 bg-card">
                   <Checkbox
                     checked={allChecked}
+                    aria-label="Select all addresses"
                     onCheckedChange={(v) => onToggleAll(!!v)}
                   />
                 </TableHead>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
   Download,
   FileArchive,
@@ -83,6 +83,7 @@ export default function BackupSettingsPage() {
   const [confirmText, setConfirmText] = useState("");
   const [busy, setBusy] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const uid = useId();
 
   const files = filesQ.data;
   const settings = settingsQ.data;
@@ -260,6 +261,7 @@ export default function BackupSettingsPage() {
                 <Checkbox
                   checked={includeUsers}
                   onCheckedChange={setIncludeUsers}
+                  aria-label="Include user accounts (non-admin)"
                 />
                 Include user accounts (non-admin)
               </label>
@@ -391,6 +393,7 @@ export default function BackupSettingsPage() {
                         <Button
                           variant="ghost"
                           size="icon"
+                          aria-label={`Download ${f.name}`}
                           title="Download"
                           onClick={() => downloadFile(f.name)}
                         >
@@ -399,6 +402,7 @@ export default function BackupSettingsPage() {
                         <Button
                           variant="ghost"
                           size="icon"
+                          aria-label={`Delete ${f.name}`}
                           title="Delete"
                           onClick={() => deleteFile(f.name)}
                         >
@@ -433,8 +437,9 @@ export default function BackupSettingsPage() {
           </p>
 
           <div className="grid gap-1.5">
-            <Label>Backup file</Label>
+            <Label htmlFor={`${uid}-backup-file`}>Backup file</Label>
             <Input
+              id={`${uid}-backup-file`}
               ref={fileInput}
               type="file"
               accept=".gz,.json,application/gzip,application/json"
@@ -478,11 +483,12 @@ export default function BackupSettingsPage() {
                 </ul>
               )}
               <div className="grid gap-1.5">
-                <Label>
+                <Label htmlFor={`${uid}-restore-confirm`}>
                   Type <span className="font-mono text-rose-400">RESTORE</span>{" "}
                   to confirm
                 </Label>
                 <Input
+                  id={`${uid}-restore-confirm`}
                   value={confirmText}
                   onChange={(e) => setConfirmText(e.target.value)}
                   placeholder="RESTORE"

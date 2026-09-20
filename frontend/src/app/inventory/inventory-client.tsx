@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -17,7 +17,7 @@ import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
 import { foldHebrew } from "@/lib/utils";
 import { useUrlParam, useUrlSorting, useUrlText } from "@/lib/url-state";
-import { SortHeader } from "@/components/sort-header";
+import { SortHeader, columnAriaSort } from "@/components/sort-header";
 import { AsyncPanel } from "@/components/async-panel";
 import type { Asset, AssetKind, Site } from "@/types";
 import { Badge } from "@/components/ui/badge";
@@ -309,6 +309,7 @@ export default function InventoryPage() {
               <Button
                 variant="ghost"
                 size="icon"
+                aria-label={`Edit asset ${c.row.original.model ?? c.row.original.serial_number ?? c.row.original.id}`}
                 onClick={() => {
                   setEditing(c.row.original);
                   setDialogOpen(true);
@@ -321,6 +322,7 @@ export default function InventoryPage() {
               <Button
                 variant="ghost"
                 size="icon"
+                aria-label={`Delete asset ${c.row.original.model ?? c.row.original.serial_number ?? c.row.original.id}`}
                 onClick={() => setDeleting(c.row.original)}
               >
                 <Trash2 className="h-4 w-4 text-rose-400" />
@@ -344,6 +346,7 @@ export default function InventoryPage() {
 
   const set = (k: keyof typeof EMPTY) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm({ ...form, [k]: e.target.value });
+  const uid = useId();
 
   return (
     <div className="space-y-4">
@@ -397,7 +400,7 @@ export default function InventoryPage() {
             {table.getHeaderGroups().map((hg) => (
               <TableRow key={hg.id}>
                 {hg.headers.map((h) => (
-                  <TableHead key={h.id}>
+                  <TableHead key={h.id} aria-sort={columnAriaSort(h.column)}>
                     {flexRender(h.column.columnDef.header, h.getContext())}
                   </TableHead>
                 ))}
@@ -436,12 +439,12 @@ export default function InventoryPage() {
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
-              <Label>Kind</Label>
+              <Label htmlFor={`${uid}-kind`}>Kind</Label>
               <Select
                 value={form.kind}
                 onValueChange={(v) => setForm({ ...form, kind: v as AssetKind })}
               >
-                <SelectTrigger>
+                <SelectTrigger id={`${uid}-kind`}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -451,12 +454,12 @@ export default function InventoryPage() {
               </Select>
             </div>
             <div className="grid gap-1.5">
-              <Label>Site</Label>
+              <Label htmlFor={`${uid}-site`}>Site</Label>
               <Select
                 value={form.site_id}
                 onValueChange={(v) => setForm({ ...form, site_id: v })}
               >
-                <SelectTrigger>
+                <SelectTrigger id={`${uid}-site`}>
                   <SelectValue placeholder="None" />
                 </SelectTrigger>
                 <SelectContent>
@@ -470,32 +473,54 @@ export default function InventoryPage() {
               </Select>
             </div>
             <div className="grid gap-1.5">
-              <Label>Category</Label>
-              <Input dir="auto" value={form.category} onChange={set("category")} />
-            </div>
-            <div className="grid gap-1.5">
-              <Label>Vendor</Label>
-              <Input dir="auto" value={form.vendor} onChange={set("vendor")} />
-            </div>
-            <div className="grid gap-1.5">
-              <Label>Model</Label>
-              <Input dir="auto" value={form.model} onChange={set("model")} />
-            </div>
-            <div className="grid gap-1.5">
-              <Label>Serial number</Label>
+              <Label htmlFor={`${uid}-category`}>Category</Label>
               <Input
+                id={`${uid}-category`}
+                dir="auto"
+                value={form.category}
+                onChange={set("category")}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor={`${uid}-vendor`}>Vendor</Label>
+              <Input
+                id={`${uid}-vendor`}
+                dir="auto"
+                value={form.vendor}
+                onChange={set("vendor")}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor={`${uid}-model`}>Model</Label>
+              <Input
+                id={`${uid}-model`}
+                dir="auto"
+                value={form.model}
+                onChange={set("model")}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor={`${uid}-serial`}>Serial number</Label>
+              <Input
+                id={`${uid}-serial`}
                 dir="ltr"
                 value={form.serial_number}
                 onChange={set("serial_number")}
               />
             </div>
             <div className="grid gap-1.5">
-              <Label>Version</Label>
-              <Input dir="ltr" value={form.version} onChange={set("version")} />
+              <Label htmlFor={`${uid}-version`}>Version</Label>
+              <Input
+                id={`${uid}-version`}
+                dir="ltr"
+                value={form.version}
+                onChange={set("version")}
+              />
             </div>
             <div className="grid gap-1.5">
-              <Label>EOL date</Label>
+              <Label htmlFor={`${uid}-eol`}>EOL date</Label>
               <Input
+                id={`${uid}-eol`}
                 type="date"
                 dir="ltr"
                 value={form.eol_on}
@@ -503,20 +528,31 @@ export default function InventoryPage() {
               />
             </div>
             <div className="grid gap-1.5">
-              <Label>Support status</Label>
+              <Label htmlFor={`${uid}-support`}>Support status</Label>
               <Input
+                id={`${uid}-support`}
                 dir="auto"
                 value={form.support_status}
                 onChange={set("support_status")}
               />
             </div>
             <div className="col-span-2 grid gap-1.5">
-              <Label>Purpose</Label>
-              <Input dir="auto" value={form.purpose} onChange={set("purpose")} />
+              <Label htmlFor={`${uid}-purpose`}>Purpose</Label>
+              <Input
+                id={`${uid}-purpose`}
+                dir="auto"
+                value={form.purpose}
+                onChange={set("purpose")}
+              />
             </div>
             <div className="col-span-2 grid gap-1.5">
-              <Label>Notes</Label>
-              <Input dir="auto" value={form.notes} onChange={set("notes")} />
+              <Label htmlFor={`${uid}-notes`}>Notes</Label>
+              <Input
+                id={`${uid}-notes`}
+                dir="auto"
+                value={form.notes}
+                onChange={set("notes")}
+              />
             </div>
           </div>
           <DialogFooter>

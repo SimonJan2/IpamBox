@@ -132,12 +132,13 @@ function NavLink({
       href={item.href}
       onClick={onNavigate}
       aria-label={collapsed ? item.label : undefined}
+      aria-current={active ? "page" : undefined}
       className={cn(
-        "flex items-center rounded-md text-sm transition-colors",
+        "flex items-center rounded-md border-l-2 text-sm transition-colors",
         collapsed ? "justify-center p-2.5" : "gap-3 px-3 py-2",
         active
-          ? "bg-emerald-500/10 text-emerald-400"
-          : "text-muted-foreground hover:bg-accent hover:text-foreground"
+          ? "border-emerald-400 bg-emerald-500/10 font-semibold text-emerald-400"
+          : "border-transparent text-muted-foreground hover:bg-accent hover:text-foreground"
       )}
     >
       <item.icon className="h-4 w-4 shrink-0" />
@@ -406,6 +407,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 variant="ghost"
                 size="icon"
                 className="h-7 w-7"
+                aria-label="Sign out"
                 title="Sign out"
                 onClick={signOut}
               >

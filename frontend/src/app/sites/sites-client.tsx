@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -18,7 +18,7 @@ import { usePrefs } from "@/lib/prefs";
 import { PERM } from "@/lib/permissions";
 import { foldHebrew } from "@/lib/utils";
 import { useUrlSorting, useUrlText } from "@/lib/url-state";
-import { SortHeader } from "@/components/sort-header";
+import { SortHeader, columnAriaSort } from "@/components/sort-header";
 import { AsyncPanel } from "@/components/async-panel";
 import type { Site } from "@/types";
 import { Badge } from "@/components/ui/badge";
@@ -64,6 +64,7 @@ function SiteDialog({
     address: "",
   });
   const [busy, setBusy] = useState(false);
+  const uid = useId();
 
   useEffect(() => {
     if (open) {
@@ -119,24 +120,27 @@ function SiteDialog({
         </DialogHeader>
         <div className="grid gap-3">
           <div className="grid gap-1.5">
-            <Label>Name</Label>
+            <Label htmlFor={`${uid}-name`}>Name</Label>
             <Input
+              id={`${uid}-name`}
               placeholder="DC-East"
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
             />
           </div>
           <div className="grid gap-1.5">
-            <Label>Slug</Label>
+            <Label htmlFor={`${uid}-slug`}>Slug</Label>
             <Input
+              id={`${uid}-slug`}
               placeholder="dc-east (auto if empty)"
               value={form.slug}
               onChange={(e) => setForm({ ...form, slug: e.target.value })}
             />
           </div>
           <div className="grid gap-1.5">
-            <Label>Description</Label>
+            <Label htmlFor={`${uid}-description`}>Description</Label>
             <Input
+              id={`${uid}-description`}
               dir="auto"
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
@@ -144,8 +148,9 @@ function SiteDialog({
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div className="grid gap-1.5">
-              <Label>Code</Label>
+              <Label htmlFor={`${uid}-code`}>Code</Label>
               <Input
+                id={`${uid}-code`}
                 dir="ltr"
                 placeholder="ALNB"
                 value={form.code}
@@ -153,8 +158,9 @@ function SiteDialog({
               />
             </div>
             <div className="grid gap-1.5">
-              <Label>Site number</Label>
+              <Label htmlFor={`${uid}-site-number`}>Site number</Label>
               <Input
+                id={`${uid}-site-number`}
                 dir="ltr"
                 placeholder="2"
                 value={form.site_number}
@@ -164,8 +170,9 @@ function SiteDialog({
               />
             </div>
             <div className="grid gap-1.5">
-              <Label>Size</Label>
+              <Label htmlFor={`${uid}-size`}>Size</Label>
               <Input
+                id={`${uid}-size`}
                 dir="auto"
                 placeholder="קטן/בינוני/גדול"
                 value={form.size}
@@ -174,16 +181,18 @@ function SiteDialog({
             </div>
           </div>
           <div className="grid gap-1.5">
-            <Label>Contact</Label>
+            <Label htmlFor={`${uid}-contact`}>Contact</Label>
             <Input
+              id={`${uid}-contact`}
               dir="auto"
               value={form.contact}
               onChange={(e) => setForm({ ...form, contact: e.target.value })}
             />
           </div>
           <div className="grid gap-1.5">
-            <Label>Address</Label>
+            <Label htmlFor={`${uid}-address`}>Address</Label>
             <Input
+              id={`${uid}-address`}
               dir="auto"
               value={form.address}
               onChange={(e) => setForm({ ...form, address: e.target.value })}
@@ -367,6 +376,7 @@ export default function SitesPage() {
               <Button
                 variant="ghost"
                 size="icon"
+                aria-label={`Edit ${c.row.original.name}`}
                 onClick={() => {
                   setEditing(c.row.original);
                   setDialogOpen(true);
@@ -379,6 +389,7 @@ export default function SitesPage() {
               <Button
                 variant="ghost"
                 size="icon"
+                aria-label={`Delete ${c.row.original.name}`}
                 onClick={() => setDeleting(c.row.original)}
               >
                 <Trash2 className="h-4 w-4 text-rose-400" />
@@ -442,7 +453,7 @@ export default function SitesPage() {
             {table.getHeaderGroups().map((hg) => (
               <TableRow key={hg.id}>
                 {hg.headers.map((h) => (
-                  <TableHead key={h.id}>
+                  <TableHead key={h.id} aria-sort={columnAriaSort(h.column)}>
                     {flexRender(h.column.columnDef.header, h.getContext())}
                   </TableHead>
                 ))}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Network } from "lucide-react";
 
 import { api } from "@/lib/api";
@@ -16,6 +16,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const uid = useId();
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,16 +47,18 @@ export default function LoginPage() {
         <CardContent>
           <form onSubmit={submit} className="grid gap-4">
             <div className="grid gap-1.5">
-              <Label>Username</Label>
+              <Label htmlFor={`${uid}-username`}>Username</Label>
               <Input
+                id={`${uid}-username`}
                 autoComplete="username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
               />
             </div>
             <div className="grid gap-1.5">
-              <Label>Password</Label>
+              <Label htmlFor={`${uid}-password`}>Password</Label>
               <Input
+                id={`${uid}-password`}
                 type="password"
                 autoComplete="current-password"
                 autoFocus

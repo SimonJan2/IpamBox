@@ -159,7 +159,7 @@ export default function DiscoveryPage() {
 
       {selected.size > 0 && (
         <div className="sticky top-4 z-10 flex w-fit items-center gap-3 rounded-lg border bg-card px-4 py-2 shadow-lg">
-          <span className="text-sm text-muted-foreground">
+          <span role="status" className="text-sm text-muted-foreground">
             {selected.size} selected
           </span>
           {canWrite && (
@@ -207,6 +207,7 @@ export default function DiscoveryPage() {
                 <TableHead className="w-8">
                   <Checkbox
                     checked={allChecked}
+                    aria-label="Select all rows"
                     onCheckedChange={(on) =>
                       setSelected(on ? new Set(items.map((a) => a.id)) : new Set())
                     }
@@ -230,6 +231,7 @@ export default function DiscoveryPage() {
                     <Checkbox
                       checked={selected.has(a.id)}
                       disabled={pending.has(a.id)}
+                      aria-label={`Select ${a.address}`}
                       onCheckedChange={(on) => {
                         const next = new Set(selected);
                         if (on) next.add(a.id);
@@ -288,6 +290,7 @@ export default function DiscoveryPage() {
                             <Button
                               size="sm"
                               variant="ghost"
+                              aria-label={`Delete ${a.address}`}
                               disabled={bulkBusy}
                               onClick={() =>
                                 setConfirmDel({ kind: "one", id: a.id })

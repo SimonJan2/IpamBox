@@ -254,6 +254,7 @@ export default function ScansPage() {
                       <Button
                         variant="ghost"
                         size="icon"
+                        aria-label={`Cancel scan ${s.cidr ?? s.id}`}
                         title="Cancel scan"
                         onClick={() => cancel(s.id)}
                       >

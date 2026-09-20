@@ -67,12 +67,15 @@ export function TagPicker({
   allTags,
   assigned,
   onChanged,
+  id,
 }: {
   objectType: string;
   objectId: number;
   allTags: Tag[];
   assigned: Tag[];
   onChanged: () => void;
+  /** Applied to the trigger button so a parent <Label htmlFor> associates. */
+  id?: string;
 }) {
   const { can } = useAuth();
   const assignedIds = new Set(assigned.map((t) => t.id));
@@ -100,7 +103,13 @@ export function TagPicker({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" title="Edit tags">
+        <Button
+          variant="ghost"
+          size="icon"
+          id={id}
+          aria-label="Edit tags"
+          title="Edit tags"
+        >
           <Tags className="h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>

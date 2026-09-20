@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useRouter } from "next/navigation";
 import { DatabaseZap, FileDown, FileUp } from "lucide-react";
 import { toast } from "sonner";
@@ -36,6 +36,7 @@ export default function DataPage() {
   const { can } = useAuth();
   const [scanDays, setScanDays] = useState("");
   const [logDays, setLogDays] = useState("");
+  const uid = useId();
 
   return (
     <div className="space-y-6">
@@ -108,8 +109,11 @@ export default function DataPage() {
             actionLabel="Purge scans"
             extra={
               <div className="grid max-w-56 gap-1.5">
-                <Label className="text-xs">Only older than (days, optional)</Label>
+                <Label className="text-xs" htmlFor={`${uid}-scan-days`}>
+                  Only older than (days, optional)
+                </Label>
                 <Input
+                  id={`${uid}-scan-days`}
                   type="number"
                   min={1}
                   value={scanDays}
@@ -138,8 +142,11 @@ export default function DataPage() {
             actionLabel="Purge changelog"
             extra={
               <div className="grid max-w-56 gap-1.5">
-                <Label className="text-xs">Only older than (days, optional)</Label>
+                <Label className="text-xs" htmlFor={`${uid}-log-days`}>
+                  Only older than (days, optional)
+                </Label>
                 <Input
+                  id={`${uid}-log-days`}
                   type="number"
                   min={1}
                   value={logDays}

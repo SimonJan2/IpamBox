@@ -14,6 +14,11 @@ export interface StatusTokenSet {
   cell: string;
   /** `<Badge>` variant for this status. */
   badge: StatusBadgeVariant;
+  /**
+   * Non-color corner glyph rendered on subnet-grid cells (and the legend),
+   * so status is never conveyed by color alone.
+   */
+  glyph: string;
 }
 
 /**
@@ -26,32 +31,42 @@ export const STATUS_TOKENS: Record<IpStatus, StatusTokenSet> = {
     dot: "bg-emerald-500/70",
     cell: "ipcell-active",
     badge: "default",
+    glyph: "●",
   },
   reserved: {
     dot: "bg-amber-500/70",
     cell: "ipcell-reserved",
     badge: "amber",
+    glyph: "◆",
   },
   dhcp: {
     dot: "bg-cyan-500/70",
     cell: "ipcell-dhcp",
     badge: "cyan",
+    glyph: "≈",
   },
   discovered: {
     dot: "bg-violet-500/70",
     cell: "ipcell-discovered",
     badge: "violet",
+    glyph: "✦",
   },
   offline: {
     dot: "bg-zinc-500/70",
     cell: "ipcell-offline",
     badge: "zinc",
+    glyph: "✕",
   },
 };
 
-/** Grid cells that carry no IpStatus — same `.ipcell-*` theme-aware classes. */
-export const GRID_CELL_TOKENS = {
-  free: "ipcell-free",
-  boundary: "ipcell-boundary",
-  range: "ipcell-range",
-} as const;
+/** Grid cells that carry no IpStatus — same `.ipcell-*` theme-aware classes.
+ *  `label` feeds the grid legend; boundary/range are already encoded
+ *  non-chromatically (stripe pattern / dashed border) so they need no glyph. */
+export const GRID_CELL_TOKENS: Record<
+  "free" | "boundary" | "range",
+  { cell: string; label: string }
+> = {
+  free: { cell: "ipcell-free", label: "free" },
+  boundary: { cell: "ipcell-boundary", label: "network/broadcast" },
+  range: { cell: "ipcell-range", label: "ip range" },
+};

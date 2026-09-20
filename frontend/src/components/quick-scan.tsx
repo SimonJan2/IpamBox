@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Radar } from "lucide-react";
 import { toast } from "sonner";
 
@@ -67,6 +67,7 @@ export function QuickScanDialog({
   const [vrfs, setVrfs] = useState<Vrf[]>([]);
   const [job, setJob] = useState<ScanJob | null>(null);
   const [busy, setBusy] = useState(false);
+  const uid = useId();
   const event = useScanStream(job?.id ?? null, (e) => {
     if (e.status === "completed") {
       toast.success("Scan finished", {
@@ -122,9 +123,9 @@ export function QuickScanDialog({
 
         <div className="grid gap-3">
           <div className="grid gap-1.5">
-            <Label htmlFor="cidr">CIDR (optional)</Label>
+            <Label htmlFor={`${uid}-cidr`}>CIDR (optional)</Label>
             <Input
-              id="cidr"
+              id={`${uid}-cidr`}
               placeholder="auto-detect, e.g. 192.168.1.0/24"
               value={cidr}
               onChange={(e) => setCidr(e.target.value)}
@@ -132,9 +133,9 @@ export function QuickScanDialog({
             />
           </div>
           <div className="grid gap-1.5">
-            <Label>VRF</Label>
+            <Label htmlFor={`${uid}-vrf`}>VRF</Label>
             <Select value={vrfId} onValueChange={setVrfId} disabled={!!job}>
-              <SelectTrigger>
+              <SelectTrigger id={`${uid}-vrf`}>
                 <SelectValue placeholder="Global (default)" />
               </SelectTrigger>
               <SelectContent>
@@ -150,12 +151,16 @@ export function QuickScanDialog({
         </div>
 
         {job && (
-          <div className="space-y-2 rounded-md border p-3">
+          <div
+            role="status"
+            aria-live="polite"
+            className="space-y-2 rounded-md border p-3"
+          >
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">
                 {event?.cidr || job.cidr || "detecting…"} — {event?.phase ?? job.status}
               </span>
-              <span className="font-mono text-emerald-400">
+              <span aria-hidden="true" className="font-mono text-emerald-400">
                 {Math.round(event?.progress ?? job.progress)}%
               </span>
             </div>

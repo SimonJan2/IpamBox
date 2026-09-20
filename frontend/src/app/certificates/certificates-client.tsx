@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -19,7 +19,7 @@ import { foldHebrew } from "@/lib/utils";
 import { useUrlSorting, useUrlText } from "@/lib/url-state";
 import { expiryBadge } from "@/components/expiry-badge";
 import { AsyncPanel } from "@/components/async-panel";
-import { SortHeader } from "@/components/sort-header";
+import { SortHeader, columnAriaSort } from "@/components/sort-header";
 import type { Certificate } from "@/types";
 import { Button } from "@/components/ui/button";
 import {
@@ -218,6 +218,7 @@ export default function CertificatesPage() {
               <Button
                 variant="ghost"
                 size="icon"
+                aria-label={`Edit certificate ${c.row.original.cert_name ?? c.row.original.server_name ?? c.row.original.id}`}
                 onClick={() => {
                   setEditing(c.row.original);
                   setDialogOpen(true);
@@ -230,6 +231,7 @@ export default function CertificatesPage() {
               <Button
                 variant="ghost"
                 size="icon"
+                aria-label={`Delete certificate ${c.row.original.cert_name ?? c.row.original.server_name ?? c.row.original.id}`}
                 onClick={() => setDeleting(c.row.original)}
               >
                 <Trash2 className="h-4 w-4 text-rose-400" />
@@ -253,6 +255,7 @@ export default function CertificatesPage() {
 
   const set = (k: keyof typeof EMPTY) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm({ ...form, [k]: e.target.value });
+  const uid = useId();
 
   return (
     <div className="space-y-4">
@@ -296,7 +299,7 @@ export default function CertificatesPage() {
             {table.getHeaderGroups().map((hg) => (
               <TableRow key={hg.id}>
                 {hg.headers.map((h) => (
-                  <TableHead key={h.id}>
+                  <TableHead key={h.id} aria-sort={columnAriaSort(h.column)}>
                     {flexRender(h.column.columnDef.header, h.getContext())}
                   </TableHead>
                 ))}
@@ -337,29 +340,46 @@ export default function CertificatesPage() {
           </DialogHeader>
           <div className="grid gap-3">
             <div className="grid gap-1.5">
-              <Label>Certificate name</Label>
-              <Input dir="auto" value={form.cert_name} onChange={set("cert_name")} />
-            </div>
-            <div className="grid gap-1.5">
-              <Label>Platform</Label>
-              <Input dir="auto" value={form.platform} onChange={set("platform")} />
-            </div>
-            <div className="grid gap-1.5">
-              <Label>Server name</Label>
+              <Label htmlFor={`${uid}-name`}>Certificate name</Label>
               <Input
+                id={`${uid}-name`}
+                dir="auto"
+                value={form.cert_name}
+                onChange={set("cert_name")}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor={`${uid}-platform`}>Platform</Label>
+              <Input
+                id={`${uid}-platform`}
+                dir="auto"
+                value={form.platform}
+                onChange={set("platform")}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor={`${uid}-server`}>Server name</Label>
+              <Input
+                id={`${uid}-server`}
                 dir="auto"
                 value={form.server_name}
                 onChange={set("server_name")}
               />
             </div>
             <div className="grid gap-1.5">
-              <Label>Target / VS</Label>
-              <Input dir="auto" value={form.target} onChange={set("target")} />
+              <Label htmlFor={`${uid}-target`}>Target / VS</Label>
+              <Input
+                id={`${uid}-target`}
+                dir="auto"
+                value={form.target}
+                onChange={set("target")}
+              />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="grid gap-1.5">
-                <Label>Expires on</Label>
+                <Label htmlFor={`${uid}-expires`}>Expires on</Label>
                 <Input
+                  id={`${uid}-expires`}
                   type="date"
                   dir="ltr"
                   value={form.expires_on}
@@ -367,8 +387,9 @@ export default function CertificatesPage() {
                 />
               </div>
               <div className="grid gap-1.5">
-                <Label>Serial</Label>
+                <Label htmlFor={`${uid}-serial`}>Serial</Label>
                 <Input
+                  id={`${uid}-serial`}
                   dir="ltr"
                   className="font-mono"
                   value={form.serial_raw}
@@ -377,8 +398,13 @@ export default function CertificatesPage() {
               </div>
             </div>
             <div className="grid gap-1.5">
-              <Label>Notes</Label>
-              <Input dir="auto" value={form.notes} onChange={set("notes")} />
+              <Label htmlFor={`${uid}-notes`}>Notes</Label>
+              <Input
+                id={`${uid}-notes`}
+                dir="auto"
+                value={form.notes}
+                onChange={set("notes")}
+              />
             </div>
           </div>
           <DialogFooter>

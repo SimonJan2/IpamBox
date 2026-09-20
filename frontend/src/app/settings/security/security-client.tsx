@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { KeyRound, MonitorSmartphone, ShieldAlert, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -46,6 +46,7 @@ export default function SecurityPage() {
   );
   const [pw, setPw] = useState({ current: "", next: "", logout: true });
   const [pwBusy, setPwBusy] = useState(false);
+  const uid = useId();
 
   const sessions = sessionsQ.data ?? [];
   const refresh = () => void sessionsQ.reload();
@@ -137,8 +138,9 @@ export default function SecurityPage() {
         <CardContent className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="grid gap-1.5">
-              <Label>Current password</Label>
+              <Label htmlFor={`${uid}-current`}>Current password</Label>
               <Input
+                id={`${uid}-current`}
                 type="password"
                 autoComplete="current-password"
                 value={pw.current}
@@ -146,8 +148,9 @@ export default function SecurityPage() {
               />
             </div>
             <div className="grid gap-1.5">
-              <Label>New password (min 8 chars)</Label>
+              <Label htmlFor={`${uid}-next`}>New password (min 8 chars)</Label>
               <Input
+                id={`${uid}-next`}
                 type="password"
                 autoComplete="new-password"
                 value={pw.next}
@@ -159,6 +162,7 @@ export default function SecurityPage() {
             <Checkbox
               checked={pw.logout}
               onCheckedChange={(v) => setPw({ ...pw, logout: v })}
+              aria-label="Sign out all other sessions"
             />
             Sign out all other sessions
           </label>
@@ -225,6 +229,7 @@ export default function SecurityPage() {
                           <Button
                             variant="ghost"
                             size="icon"
+                            aria-label={`Revoke session ${s.id}`}
                             title="Revoke"
                             onClick={() => revoke(s.id)}
                           >

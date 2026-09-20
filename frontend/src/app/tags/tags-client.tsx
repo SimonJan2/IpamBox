@@ -102,6 +102,7 @@ export default function TagsPage() {
                       <Button
                         variant="ghost"
                         size="icon"
+                        aria-label={`Edit tag ${t.name}`}
                         onClick={() => {
                           setEditing(t);
                           setDialogOpen(true);
@@ -111,7 +112,12 @@ export default function TagsPage() {
                       </Button>
                     )}
                     {canDelete && (
-                      <Button variant="ghost" size="icon" onClick={() => remove(t)}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Delete tag ${t.name}`}
+                        onClick={() => remove(t)}
+                      >
                         <Trash2 className="h-4 w-4 text-rose-400" />
                       </Button>
                     )}

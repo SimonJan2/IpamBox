@@ -1,6 +1,15 @@
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import type { Column } from "@tanstack/react-table";
 
+/** Maps a column's sort state to aria-sort for the wrapping <th>. */
+export function columnAriaSort<TData>(
+  column: Column<TData, unknown>
+): "ascending" | "descending" | "none" | undefined {
+  if (!column.getCanSort()) return undefined;
+  const dir = column.getIsSorted();
+  return dir === "asc" ? "ascending" : dir === "desc" ? "descending" : "none";
+}
+
 export function SortHeader<TData>({
   column,
   children,
