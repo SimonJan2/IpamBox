@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.config import get_settings
 from app.core.db import get_session
 from app.core.deps import DATA_DELETE, DATA_WRITE, require_perm
 from app.models.ip_address import IPAddress
@@ -365,6 +366,17 @@ async def split_prefix(
     except IPAMError as e:
         raise HTTPException(e.status_code, str(e))
     net = prefix_math.to_network(prefix.prefix)
+    if net.prefixlen < mask <= net.max_prefixlen:
+        # Reject before materializing: children() builds a real list, so a
+        # /8 -> /32 request would allocate 16.7M network objects.
+        cap = get_settings().ipambox_max_split_children
+        count = 1 << (mask - net.prefixlen)
+        if count > cap:
+            raise HTTPException(
+                422,
+                f"split into /{mask} would produce {count} children — "
+                f"max {cap} per request (IPAMBOX_MAX_SPLIT_CHILDREN)",
+            )
     try:
         kids = prefix_math.children(net, mask)
     except ValueError as e:

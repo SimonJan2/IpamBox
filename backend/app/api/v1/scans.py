@@ -14,7 +14,7 @@ from app.core.redis import get_arq_pool, get_redis
 from app.models.scan_job import ScanJob, ScanStatus
 from app.models.vrf import VRF
 from app.schemas.scan import ScanConfigOut, ScanCreate, ScanJobOut
-from app.services import runtime_settings
+from app.services import prefix_math, runtime_settings
 from app.services.ipam import IPAMError, get_or_404
 from app.worker.scanner import detect_local_cidr
 from app.worker.worker import cancel_key
@@ -76,7 +76,16 @@ async def scan_config(session: AsyncSession = Depends(get_session)):
 async def create_scan(body: ScanCreate, session: AsyncSession = Depends(get_session)):
     eff = await runtime_settings.get_effective(session)
     if body.cidr:
-        _check_cidr_allowed(ipaddress.ip_network(body.cidr, strict=False), eff.values)
+        net = ipaddress.ip_network(body.cidr, strict=False)
+        _check_cidr_allowed(net, eff.values)
+        cap = eff.values["scan_max_hosts"]
+        usable = prefix_math.usable_count(net)
+        if usable > cap:
+            raise HTTPException(
+                422,
+                f"{net} has {usable} usable hosts — exceeds scan_max_hosts={cap} "
+                "(Settings → Scanning or SCAN_MAX_HOSTS)",
+            )
     elif eff.values["scan_only_configured"] and eff.values["scan_networks"]:
         raise HTTPException(
             422, "only configured networks may be scanned — pick one of them"

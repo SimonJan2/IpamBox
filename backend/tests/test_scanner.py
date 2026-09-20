@@ -94,6 +94,60 @@ async def test_excluded_network_rejected(client, monkeypatch, fake_arq):
         scans_mod.settings.scan_exclude_networks = old
 
 
+async def test_scan_rejects_oversized_and_ipv6(client, fake_arq):
+    """Enqueue-time bounds: a /8 (~16.7M usable) blows past scan_max_hosts
+    (default 4096); IPv6 CIDRs are refused outright — no worker OOM, no
+    int4 total_hosts overflow."""
+    r = await client.post("/api/v1/scans", json={"cidr": "10.0.0.0/8"})
+    assert r.status_code == 422
+    assert "scan_max_hosts" in r.json()["detail"]
+
+    r = await client.post("/api/v1/scans", json={"cidr": "fd00::/64"})
+    assert r.status_code == 422
+    assert "IPv6" in r.text
+
+    # boundary: a /20 (4094 usable) is under the cap and accepted
+    r = await client.post("/api/v1/scans", json={"cidr": "10.235.0.0/20"})
+    assert r.status_code == 201, r.text
+
+
+async def test_scan_max_hosts_runtime_editable(client, fake_arq):
+    """The cap is a runtime setting: lowering it to 2 rejects a /24."""
+    r = await client.patch("/api/v1/settings", json={"scan_max_hosts": 2})
+    assert r.status_code == 200, r.text
+    r = await client.post("/api/v1/scans", json={"cidr": "10.236.0.0/24"})
+    assert r.status_code == 422
+    assert "scan_max_hosts" in r.json()["detail"]
+
+
+async def test_watchdog_reaps_stale_jobs(client, session):
+    """A worker killed mid-scan leaves RUNNING rows that would wedge the
+    single-live-job rule forever — the watchdog fails them once they pass
+    started_at + job_timeout."""
+    from datetime import datetime, timedelta
+
+    from app.worker.worker import WorkerSettings, reap_stale_scan_jobs
+
+    old = datetime.utcnow() - timedelta(seconds=WorkerSettings.job_timeout + 60)
+    stale_run = ScanJob(cidr="10.220.0.0/24", status=ScanStatus.RUNNING,
+                        started_at=old)
+    stale_q = ScanJob(cidr="10.221.0.0/24", status=ScanStatus.QUEUED,
+                      created_at=old)
+    fresh = ScanJob(cidr="10.222.0.0/24", status=ScanStatus.RUNNING,
+                    started_at=datetime.utcnow())
+    session.add_all([stale_run, stale_q, fresh])
+    await session.commit()
+
+    assert await reap_stale_scan_jobs(session) == 2
+    await session.refresh(stale_run)
+    await session.refresh(stale_q)
+    await session.refresh(fresh)
+    assert stale_run.status == ScanStatus.FAILED
+    assert "job_timeout" in stale_run.error
+    assert stale_q.status == ScanStatus.FAILED
+    assert fresh.status == ScanStatus.RUNNING
+
+
 async def _extra_vrf(client, name="HomeLab") -> int:
     r = await client.post("/api/v1/vrfs", json={"name": name})
     assert r.status_code == 201, r.text
@@ -166,7 +220,8 @@ async def test_reconcile_persists_ports_and_type(client, session):
                    hostname="printer.lan", open_ports=[631, 9100],
                    device_type="printer"),
     ]
-    n, new = await reconcile(session, p["id"], vrf_id, hosts)
+    net = ipaddress.ip_network("10.240.0.0/24")
+    n, new = await reconcile(session, p["id"], vrf_id, hosts, net)
     await session.commit()
     assert (n, new) == (2, 2)
 
@@ -203,7 +258,8 @@ async def test_reconcile_flags_mac_mismatch(client, session):
     ).json()
 
     hosts = [HostResult(ip="10.241.0.10", mac="66:77:88:99:AA:BB")]
-    await reconcile(session, p["id"], vrf_id, hosts)
+    net = ipaddress.ip_network("10.241.0.0/24")
+    await reconcile(session, p["id"], vrf_id, hosts, net)
     await session.commit()
 
     row = (
@@ -214,9 +270,71 @@ async def test_reconcile_flags_mac_mismatch(client, session):
 
     # re-scan with the matching MAC clears the flag
     await reconcile(session, p["id"], vrf_id,
-                    [HostResult(ip="10.241.0.10", mac="66:77:88:99:AA:BB")])
+                    [HostResult(ip="10.241.0.10", mac="66:77:88:99:AA:BB")], net)
     await session.commit()
     row = (
         await client.get("/api/v1/addresses", params={"q": "10.241.0.10"})
     ).json()[0]
     assert "mac_mismatch" not in (row["custom_fields"] or {})
+
+
+async def test_reconcile_offline_sweep_scoped_to_scanned_net(client, session):
+    """Scanning a /24 under a documented /16 must not mark the other 255
+    subnets' addresses offline — the sweep is bounded to the scanned range."""
+    from sqlalchemy import select
+
+    from app.models.change_log import ChangeLog
+    from app.models.ip_address import IPAddress
+
+    vrf_id = (await client.get("/api/v1/vrfs")).json()[0]["id"]
+    p = (
+        await client.post(
+            "/api/v1/prefixes", json={"prefix": "10.242.0.0/16", "vrf_id": vrf_id}
+        )
+    ).json()
+    # two ACTIVE rows inside the scanned /24, one ACTIVE row outside it
+    addr_ids = {}
+    for addr in ("10.242.1.5", "10.242.1.9", "10.242.2.5"):
+        r = await client.post(
+            "/api/v1/addresses",
+            json={
+                "prefix_id": p["id"],
+                "vrf_id": vrf_id,
+                "address": addr,
+                "status": "active",
+            },
+        )
+        assert r.status_code == 201, r.text
+        addr_ids[addr] = r.json()["id"]
+    # clear the create-changelog rows so only reconcile's writes are counted
+    await session.execute(
+        ChangeLog.__table__.delete().where(ChangeLog.object_type == "IPAddress")
+    )
+    await session.commit()
+
+    scanned = ipaddress.ip_network("10.242.1.0/24")
+    # scan sees .5 alive but not .9; .2.5 is outside the scanned range.
+    # (no MAC on the seen host: last_seen is a skipped changelog field, so the
+    # only logged update is .9's status flip)
+    hosts = [HostResult(ip="10.242.1.5")]
+    await reconcile(session, p["id"], vrf_id, hosts, scanned)
+    await session.commit()
+
+    rows = (
+        await client.get("/api/v1/addresses", params={"prefix_id": p["id"]})
+    ).json()
+    by_ip = {r["address"]: r["status"] for r in rows}
+    assert by_ip["10.242.1.5"] == "active"    # seen -> stays active
+    assert by_ip["10.242.1.9"] == "offline"   # in-range unseen -> offline
+    assert by_ip["10.242.2.5"] == "active"    # out-of-range -> untouched
+
+    # changelog only records the in-range transition
+    logged = (
+        await session.execute(
+            select(ChangeLog.object_id).where(
+                ChangeLog.object_type == "IPAddress",
+                ChangeLog.action == "update",
+            )
+        )
+    ).scalars().all()
+    assert logged == [addr_ids["10.242.1.9"]]

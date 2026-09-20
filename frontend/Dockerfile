@@ -21,5 +21,8 @@ ENV NODE_ENV=production \
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
+# xff-shim makes the rewrite proxy report the real client IP in
+# X-Forwarded-For (Next only fills it when absent — spoofable otherwise).
+COPY xff-shim.js ./xff-shim.js
 EXPOSE 3000
-CMD ["node", "server.js"]
+CMD ["node", "--require", "/app/xff-shim.js", "server.js"]

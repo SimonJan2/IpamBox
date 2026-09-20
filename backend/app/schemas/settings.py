@@ -13,6 +13,7 @@ class SettingsPatch(BaseModel):
     scan_only_configured: bool | None = None
     scan_interval_minutes: int | None = None
     scan_min_interval_seconds: int | None = None
+    scan_max_hosts: int | None = None
     scan_tcp_ports: list[int] | None = None
     scan_interface: str | None = None
     scan_icmp_timeout: float | None = None

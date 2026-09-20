@@ -8,6 +8,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-ipam}
     volumes:
       - pgdata:/var/lib/postgresql/data
+    networks:
+      - ipam
     ports:
       # bound to loopback: also reachable from the host-networked scanner container
       - "127.0.0.1:5432:5432"
@@ -23,6 +25,8 @@ services:
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redisdata:/data
+    networks:
+      - ipam
     ports:
       - "127.0.0.1:${REDIS_PORT:-6378}:6379"
     healthcheck:
@@ -42,13 +46,21 @@ services:
       IPAMBOX_PASSWORD_FILE: ${IPAMBOX_PASSWORD_FILE:-}
       IPAMBOX_SESSION_HOURS: ${IPAMBOX_SESSION_HOURS:-168}
       IPAMBOX_ALLOW_INSECURE: ${IPAMBOX_ALLOW_INSECURE:-false}
+      # false so logins work over plain HTTP on a LAN (browsers reject Secure
+      # cookies on non-localhost http origins). Set true when serving HTTPS.
       IPAMBOX_COOKIE_SECURE: ${IPAMBOX_COOKIE_SECURE:-false}
+      # X-Forwarded-For is honored only from these peers — 192.0.2.10 is the
+      # `web` proxy's pinned address on the `ipam` bridge below. Keep in sync
+      # with services.web.networks; uvicorn gets the same list via
+      # --forwarded-allow-ips (see `command`).
+      IPAMBOX_TRUSTED_PROXIES: ${IPAMBOX_TRUSTED_PROXIES:-127.0.0.1,::1,192.0.2.10}
       # scan guards live in the API (validation/rate-limit); worker reads them too
       SCAN_NETWORKS: ${SCAN_NETWORKS:-}
       SCAN_EXCLUDE_NETWORKS: ${SCAN_EXCLUDE_NETWORKS:-}
       SCAN_ONLY_CONFIGURED: ${SCAN_ONLY_CONFIGURED:-false}
       SCAN_INTERVAL_MINUTES: ${SCAN_INTERVAL_MINUTES:-0}
       SCAN_MIN_INTERVAL_SECONDS: ${SCAN_MIN_INTERVAL_SECONDS:-15}
+      SCAN_MAX_HOSTS: ${SCAN_MAX_HOSTS:-4096}
       SCAN_TCP_PORTS: ${SCAN_TCP_PORTS:-22,80,443,445,8080}
       SCAN_INTERFACE: ${SCAN_INTERFACE:-}
       BACKUP_DIR: ${BACKUP_DIR:-/backups}
@@ -56,14 +68,19 @@ services:
       BACKUP_KEEP: ${BACKUP_KEEP:-14}
     volumes:
       - backupdata:/backups
+    networks:
+      - ipam
     ports:
-      - "${API_PORT:-8001}:8000"
+      # The API is published on ALL interfaces by default — direct /docs,
+      # /metrics and script access from the LAN is a deliberate feature.
+      # Set API_BIND=127.0.0.1 to restrict it to loopback (web UI only).
+      - "${API_BIND:-0.0.0.0}:${API_PORT:-8001}:8000"
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips $${IPAMBOX_TRUSTED_PROXIES}"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/healthz"]
       interval: 10s
@@ -89,6 +106,7 @@ services:
       SCAN_ONLY_CONFIGURED: ${SCAN_ONLY_CONFIGURED:-false}
       SCAN_INTERVAL_MINUTES: ${SCAN_INTERVAL_MINUTES:-0}
       SCAN_MIN_INTERVAL_SECONDS: ${SCAN_MIN_INTERVAL_SECONDS:-15}
+      SCAN_MAX_HOSTS: ${SCAN_MAX_HOSTS:-4096}
       SCAN_TCP_PORTS: ${SCAN_TCP_PORTS:-22,80,443,445,8080}
       BACKUP_DIR: ${BACKUP_DIR:-/backups}
       BACKUP_INTERVAL_MINUTES: ${BACKUP_INTERVAL_MINUTES:-0}
@@ -113,6 +131,11 @@ services:
     restart: unless-stopped
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
+    networks:
+      # pinned so IPAMBOX_TRUSTED_PROXIES on the api can trust exactly this
+      # peer for X-Forwarded-For — nothing else on the bridge can spoof it
+      ipam:
+        ipv4_address: 192.0.2.10
     ports:
       - "${WEB_PORT:-3010}:3000"
     depends_on:
@@ -123,3 +146,15 @@ volumes:
   pgdata:
   redisdata:
   backupdata:
+
+# Pinned subnet carrying the `web` proxy's fixed address (192.0.2.10) so the
+# API can trust X-Forwarded-For from exactly that peer. 192.0.2.0/24 is RFC
+# 5737 TEST-NET-1 — reserved for documentation, so it can never collide with
+# a real LAN/WAN client. If you change it, update IPAMBOX_TRUSTED_PROXIES and
+# web's ipv4_address together.
+networks:
+  ipam:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.0.2.0/24

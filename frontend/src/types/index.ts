@@ -314,6 +314,7 @@ export interface SettingsValues {
   scan_only_configured: boolean;
   scan_interval_minutes: number;
   scan_min_interval_seconds: number;
+  scan_max_hosts: number;
   scan_tcp_ports: number[];
   scan_interface: string;
   scan_icmp_timeout: number;
