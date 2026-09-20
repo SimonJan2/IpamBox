@@ -18,9 +18,12 @@ class ScanCreate(BaseModel):
         if v is None:
             return v
         try:
-            return str(ipaddress.ip_network(v.strip(), strict=False))
+            net = ipaddress.ip_network(v.strip(), strict=False)
         except ValueError as exc:
             raise ValueError(f"invalid CIDR: {v}") from exc
+        if net.version != 4:
+            raise ValueError("IPv6 scanning is not supported yet")
+        return str(net)
 
 
 class ScanJobOut(BaseModel):

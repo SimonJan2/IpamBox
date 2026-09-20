@@ -118,6 +118,7 @@ EDITABLE: dict[str, SettingSpec] = {
     "scan_min_interval_seconds": SettingSpec(
         "scan_min_interval_seconds", _v_int(0, 3600)
     ),
+    "scan_max_hosts": SettingSpec("scan_max_hosts", _v_int(2, 65536)),
     "scan_tcp_ports": SettingSpec(
         "scan_tcp_ports", _v_port_list, lambda s: s.tcp_ping_ports
     ),

@@ -2,7 +2,7 @@ import asyncio
 import ipaddress
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from arq import cron
 from sqlalchemy import select
@@ -171,13 +171,24 @@ async def run_scan(ctx: dict, scan_id: int) -> dict:
                 raise RuntimeError("could not auto-detect local network CIDR")
             job.cidr = cidr
             net = ipaddress.ip_network(cidr, strict=False)
+            # Defense in depth: jobs enqueued before the enqueue-time guard
+            # (or via a future path) re-checked here so they fail instead of
+            # expanding into a multi-GB host list on the worker.
+            if net.version != 4:
+                raise RuntimeError("IPv6 scanning is not supported yet")
+            usable = prefix_math.usable_count(net)
+            if usable > eff.values["scan_max_hosts"]:
+                raise RuntimeError(
+                    f"scan target {net} has {usable} usable hosts — exceeds "
+                    f"scan_max_hosts={eff.values['scan_max_hosts']}"
+                )
             vrf_id = await _scan_vrf(session, job, net)
             job.vrf_id = vrf_id
             prefix = await _resolve_prefix(session, cidr, vrf_id, job.prefix_id)
             job.prefix_id = prefix.id
             job.status = ScanStatus.RUNNING
             job.started_at = started
-            job.total_hosts = prefix_math.usable_count(net)
+            job.total_hosts = usable
             await session.commit()
             await _publish(
                 scan_id,
@@ -195,7 +206,7 @@ async def run_scan(ctx: dict, scan_id: int) -> dict:
                 should_stop=_cancelled,
             )
 
-            discovered, new = await reconcile(session, prefix.id, vrf_id, hosts)
+            discovered, new = await reconcile(session, prefix.id, vrf_id, hosts, net)
             job.status = ScanStatus.COMPLETED
             job.progress = 100.0
             job.hosts_discovered = discovered
@@ -275,6 +286,14 @@ async def run_scheduled_scans(ctx: dict) -> dict:
                 net = ipaddress.ip_network(cidr, strict=False)
                 if any(net.subnet_of(x) or net == x for x in excluded):
                     log.info("scheduled scan skipped (excluded): %s", net)
+                    continue
+                if net.version != 4:
+                    log.info("scheduled scan skipped (IPv6 unsupported): %s", net)
+                    continue
+                if prefix_math.usable_count(net) > eff.values["scan_max_hosts"]:
+                    log.info(
+                        "scheduled scan skipped (over scan_max_hosts): %s", net
+                    )
                     continue
                 live = (
                     await session.execute(
@@ -374,6 +393,45 @@ async def scheduler_tick(ctx: dict) -> dict:
     return {"ran": ran}
 
 
+async def reap_stale_scan_jobs(session, now: datetime | None = None) -> int:
+    """Fail live jobs that outlived the worker's job_timeout.
+
+    An OOM-killed or otherwise dead worker leaves RUNNING/QUEUED rows behind;
+    without this they block the single-live-job rule (429) until a restart.
+    started_at marks RUNNING rows, created_at QUEUED ones (never picked up).
+    """
+    now = now or datetime.utcnow()
+    cutoff = now - timedelta(seconds=WorkerSettings.job_timeout)
+    stale = (
+        await session.execute(
+            select(ScanJob).where(
+                ScanJob.status.in_([ScanStatus.QUEUED, ScanStatus.RUNNING])
+            )
+        )
+    ).scalars().all()
+    reaped = 0
+    for j in stale:
+        ref = j.started_at if j.status == ScanStatus.RUNNING else j.created_at
+        if ref is None or ref > cutoff:
+            continue
+        j.status = ScanStatus.FAILED
+        j.error = f"exceeded job_timeout ({WorkerSettings.job_timeout}s) — worker died?"
+        j.finished_at = now
+        if j.started_at:
+            j.duration_seconds = round((now - j.started_at).total_seconds(), 2)
+        reaped += 1
+    if reaped:
+        await session.commit()
+        log.warning("watchdog reaped %d stale scan job(s)", reaped)
+    return reaped
+
+
+async def scan_watchdog(ctx: dict) -> dict:
+    """Every-minute cron: reaps live jobs that outlived job_timeout."""
+    async with SessionLocal() as session:
+        return {"reaped": await reap_stale_scan_jobs(session)}
+
+
 async def startup(ctx: dict):
     log.info("scanner worker starting")
     # any job left queued/running by a previous worker instance is dead
@@ -394,7 +452,10 @@ async def startup(ctx: dict):
 
 class WorkerSettings:
     functions = [run_scan, run_scheduled_backup]
-    cron_jobs = [cron(scheduler_tick, minute=set(range(60)))]
+    cron_jobs = [
+        cron(scheduler_tick, minute=set(range(60))),
+        cron(scan_watchdog, minute=set(range(60))),
+    ]
     on_startup = startup
     redis_settings = redis_settings_from_url(settings.redis_url)
     max_jobs = 4

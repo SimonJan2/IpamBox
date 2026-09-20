@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     scan_only_configured: bool = False # refuse scans outside scan_networks
     scan_interval_minutes: int = 0     # >0 -> scheduled recurring scans
     scan_min_interval_seconds: int = 15  # rate-limit manual scans per CIDR
+    scan_max_hosts: int = 4096         # refuse scan targets with more usable hosts (~ /20)
 
     # Backup settings — scheduled snapshots are written by the worker into
     # backup_dir (a mounted volume); keep bounds how many files are retained.
@@ -35,6 +36,9 @@ class Settings(BaseSettings):
     import_dir: str = ""             # empty -> <backup_dir>/imports
     import_keep: int = 20            # stored workbooks retained on disk
 
+    # Read-endpoint safety caps
+    ipambox_max_split_children: int = 4096  # /prefixes/{id}/split child limit
+
     # Feature toggles — runtime-editable behavior switches (Settings > Features)
     site_code_follow_site: bool = False  # treat mismatched stored site codes as stale
 
@@ -44,6 +48,10 @@ class Settings(BaseSettings):
     ipambox_session_hours: int = 168  # one week
     ipambox_allow_insecure: bool = False  # disable auth entirely (behind a trusted proxy)
     ipambox_cookie_secure: bool = False  # set True when serving over HTTPS
+    # X-Forwarded-For is only honored when the socket peer is inside one of
+    # these networks (comma-separated IPs/CIDRs). Loopback covers dev mode;
+    # compose adds the pinned `ipam` bridge subnet (see docker-compose.yml).
+    ipambox_trusted_proxies: str = "127.0.0.1,::1"
 
     @property
     def cors_origin_list(self) -> list[str]:

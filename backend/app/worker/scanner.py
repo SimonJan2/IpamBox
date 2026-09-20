@@ -214,6 +214,23 @@ async def _ptr_lookup(ip: str, sem: asyncio.Semaphore) -> str | None:
             return None
 
 
+def _host_chunks(net, size: int = 1024):
+    """Yield host-IP string lists without materializing the whole network.
+
+    `net.hosts()` is already a lazy iterator; chunking keeps memory bounded
+    regardless of target size (the scan_max_hosts guard bounds it anyway).
+    """
+    source = net.hosts() if net.num_addresses > 2 else iter(net)
+    chunk: list[str] = []
+    for ip in source:
+        chunk.append(str(ip))
+        if len(chunk) == size:
+            yield chunk
+            chunk = []
+    if chunk:
+        yield chunk
+
+
 async def scan_cidr(
     cidr: str,
     *,
@@ -231,6 +248,8 @@ async def scan_cidr(
     has been cancelled; checked between phases/chunks -> raises ScanCancelled.
     """
     net = ipaddress.ip_network(cidr, strict=False)
+    if net.version != 4:
+        raise ValueError("IPv6 scanning is not supported yet")
     tcp_ports = tcp_ports or []
     sem = asyncio.Semaphore(concurrency)
     dev = detect_interface(iface)
@@ -257,18 +276,17 @@ async def scan_cidr(
     if await _stopped():
         raise ScanCancelled()
 
-    # 2. ICMP sweep for everything not already found via ARP
-    all_ips = [str(ip) for ip in net.hosts()] if net.num_addresses > 2 else [str(ip) for ip in net]
-    remaining = [ip for ip in all_ips if ip not in hosts]
-    # chunk the sweep so progress events flow on large subnets
-    chunk = 1024
-    for i in range(0, len(remaining), chunk):
-        batch = remaining[i : i + chunk]
-        alive = await _icmp_sweep(batch, icmp_timeout)
+    # 2. ICMP sweep for everything not already found via ARP — iterated in
+    # chunks so the target range is never materialized as a whole.
+    total = max(1, net.num_addresses - (2 if net.num_addresses > 2 else 0))
+    scanned = 0
+    for batch in _host_chunks(net):
+        alive = await _icmp_sweep([ip for ip in batch if ip not in hosts], icmp_timeout)
         for ip in alive:
             _mark(ip)
+        scanned += len(batch)
         if on_progress:
-            await on_progress("icmp", 0.4 + 0.3 * min(1.0, (i + chunk) / max(1, len(remaining))))
+            await on_progress("icmp", 0.4 + 0.3 * min(1.0, scanned / total))
         if await _stopped():
             raise ScanCancelled()
 
@@ -279,9 +297,10 @@ async def scan_cidr(
             if ports:
                 _mark(ip, open_ports=ports)
 
-        await asyncio.gather(*(probe_all(ip) for ip in all_ips))
-        if await _stopped():
-            raise ScanCancelled()
+        for batch in _host_chunks(net, 256):
+            await asyncio.gather(*(probe_all(ip) for ip in batch))
+            if await _stopped():
+                raise ScanCancelled()
 
     # 3. Enrich: TCP port probe + PTR, bounded concurrency
     live = list(hosts.values())

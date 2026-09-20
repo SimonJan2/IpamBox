@@ -210,6 +210,21 @@ export default function ScanningPage() {
               onChange={num("scan_min_interval_seconds")}
             />
           </SettingField>
+          <SettingField
+            label="Max hosts per scan"
+            hint="Scan targets larger than this are refused — protects the worker from oversized ranges."
+            source={src("scan_max_hosts")}
+            onReset={canAdmin ? () => resetKey("scan_max_hosts") : undefined}
+            error={errors.scan_max_hosts}
+          >
+            <Input
+              type="number"
+              min={2}
+              max={65536}
+              value={draft.scan_max_hosts}
+              onChange={num("scan_max_hosts")}
+            />
+          </SettingField>
         </CardContent>
       </Card>
 

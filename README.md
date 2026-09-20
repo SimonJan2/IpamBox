@@ -83,7 +83,8 @@ Scapy raw-socket scanning · Next.js 15 dark-mode UI
 
 - **First-run auth**: the UI asks you to create the admin account on
   first launch (or pre-provision with `IPAMBOX_PASSWORD[_FILE]`).
-  Session-cookie login with 5-strike IP lockout.
+  Session-cookie login with 5-strike (user, IP) lockout plus a per-IP
+  credential-stuffing backstop.
 - **4-tier RBAC**: every account has a role — Administrator, Operator
   (Tier-1), Contributor (Tier-2) or Viewer (Tier-3) — enforced on every
   API route, not just hidden in the UI. The **Users & Roles** console
@@ -118,11 +119,17 @@ Scapy raw-socket scanning · Next.js 15 dark-mode UI
 
 - The browser only ever talks to `web`; API calls go same-origin through
   a Next.js rewrite (`/api/*` → `api:8000`) — no CORS pain.
+- **Exposure model**: both `web` (`:3010`) and `api` (`:8001`) are
+  published on all interfaces by default — direct `/docs`, `/metrics` and
+  script access from the LAN is deliberate. The API still requires auth
+  (and rate-limits logins), but it is a reachable attack surface: set
+  `API_BIND=127.0.0.1` to restrict it to loopback so only the web UI is
+  reachable. Postgres and Redis stay bound to `127.0.0.1` — never exposed
+  to the LAN.
 - `scanner` uses `network_mode: host` with `NET_ADMIN`/`NET_RAW` for real
   L2 ARP access and reaches Postgres/Redis via the loopback-published
   ports. **Linux only** (host networking doesn't exist on Docker
   Desktop).
-- Postgres and Redis are bound to `127.0.0.1` — not exposed to the LAN.
 
 ## Quick start
 
@@ -163,6 +170,7 @@ apply without a restart, and can be reset back to the env value per key.
 | Variable | Purpose | Default |
 |---|---|---|
 | `API_PORT` / `WEB_PORT` | host ports for api/web | `8001` / `3010` |
+| `API_BIND` | interface the published API port binds to (`127.0.0.1` = loopback-only) | `0.0.0.0` |
 | `POSTGRES_*` | database credentials | `ipam` / `ipam` / `ipam` |
 | `SCAN_INTERFACE` ✎ | pin the scan interface (empty = default-route iface) | — |
 | `SCAN_NETWORKS` ✎ | comma-separated CIDRs to scan (empty = auto-detect) | — |
@@ -170,11 +178,13 @@ apply without a restart, and can be reset back to the env value per key.
 | `SCAN_ONLY_CONFIGURED` ✎ | refuse scans outside `SCAN_NETWORKS` | `false` |
 | `SCAN_INTERVAL_MINUTES` ✎ | recurring scans; `0` = manual only | `0` |
 | `SCAN_MIN_INTERVAL_SECONDS` ✎ | per-CIDR manual-scan rate limit | `15` |
+| `SCAN_MAX_HOSTS` ✎ | refuse scan targets above this usable-host count | `4096` |
 | `SCAN_TCP_PORTS` ✎ | ports probed per host | `22,80,443,445,8080` |
 | `IPAMBOX_PASSWORD[_FILE]` | pre-provision the admin password | — |
 | `IPAMBOX_SESSION_HOURS` ✎ | session lifetime | `168` |
 | `IPAMBOX_ALLOW_INSECURE` | disable auth — only behind a trusted proxy | `false` |
 | `IPAMBOX_COOKIE_SECURE` | `Secure` cookie flag — set when serving HTTPS | `false` |
+| `IPAMBOX_TRUSTED_PROXIES` | peers whose `X-Forwarded-For` is honored (login lockout keying) — must include `web`'s pinned bridge IP | `127.0.0.1,::1,192.0.2.10` |
 | `BACKUP_DIR` | where scheduled snapshots are written (docker volume) | `/backups` |
 | `BACKUP_INTERVAL_MINUTES` ✎ | recurring backup interval; `0` = manual only | `0` |
 | `BACKUP_KEEP` ✎ | how many scheduled files to retain | `14` |
@@ -384,8 +394,13 @@ docker compose up -d        # alembic upgrade head runs on api start
 ## Security
 
 - Auth on by default (first-run setup); bcrypt password hashing,
-  HttpOnly session cookies, per-IP login lockout.
-- DB/Redis are loopback-only; the web UI is the only public surface.
+  HttpOnly session cookies, per-(user, IP) login lockout with a per-IP
+  credential-stuffing backstop.
+- `web` and `api` are LAN-reachable by default (the API requires auth);
+  DB/Redis are loopback-only. `API_BIND=127.0.0.1` restricts the API to
+  loopback.
+- Over plain HTTP the session cookie crosses the LAN in cleartext —
+  deploy behind HTTPS or on a trusted network only.
 - See [SECURITY.md](SECURITY.md) for the threat model, deployment
   hardening and how to report vulnerabilities.
 

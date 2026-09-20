@@ -111,6 +111,38 @@ async def test_split_endpoint(client):
     assert r.json()["existing"] == []
 
 
+async def test_split_cardinality_cap(client):
+    """Splits are counted arithmetically before materializing: anything over
+    IPAMBOX_MAX_SPLIT_CHILDREN (default 4096) is a 422, not an allocation."""
+    vrf_id = await _global_vrf_id(client)
+    pid = (
+        await client.post(
+            "/api/v1/prefixes",
+            json={"prefix": "10.71.0.0/16", "vrf_id": vrf_id, "status": "container"},
+        )
+    ).json()["id"]
+
+    # /16 -> /25 = 2^9 = 512 children: under the cap, succeeds
+    r = await client.get(f"/api/v1/prefixes/{pid}/split", params={"mask": 25})
+    assert r.status_code == 200
+    assert len(r.json()["children"]) == 512
+
+    # /16 -> /28 = 2^12 = 4096 children: exactly at the cap, still succeeds
+    r = await client.get(f"/api/v1/prefixes/{pid}/split", params={"mask": 28})
+    assert r.status_code == 200
+    assert len(r.json()["children"]) == 4096
+
+    # /16 -> /29 = 8192 children: over the cap -> 422 naming the cap
+    r = await client.get(f"/api/v1/prefixes/{pid}/split", params={"mask": 29})
+    assert r.status_code == 422
+    assert "4096" in r.json()["detail"]
+
+    # invalid masks still report the bounds error, not the cap
+    r = await client.get(f"/api/v1/prefixes/{pid}/split", params={"mask": 15})
+    assert r.status_code == 422
+    assert "longer than current" in r.json()["detail"]
+
+
 async def test_tree_endpoint(client):
     vrf_id = await _global_vrf_id(client)
     site = (await client.post("/api/v1/sites", json={"name": "HQ"})).json()

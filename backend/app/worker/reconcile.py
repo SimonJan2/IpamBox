@@ -9,18 +9,31 @@ from app.worker.scanner import HostResult
 
 
 async def reconcile(
-    session: AsyncSession, prefix_id: int, vrf_id: int, hosts: list[HostResult]
+    session: AsyncSession,
+    prefix_id: int,
+    vrf_id: int,
+    hosts: list[HostResult],
+    net,
 ) -> tuple[int, int]:
     """Merge scan results into the address table.
 
     Existing rows: refresh last_seen/mac/vendor/hostname; DISCOVERED/OFFLINE -> ACTIVE.
     New rows: inserted as DISCOVERED.
-    Previously-live rows absent from this scan -> OFFLINE.
+    Previously-live rows absent from this scan -> OFFLINE — but only inside
+    the scanned network's range: `prefix_id` often resolves to a *covering*
+    prefix, so sweeping the whole prefix would mark untouched subnets offline.
     Returns (hosts_seen, hosts_new).
     """
     now = datetime.utcnow()
+    first = int(net.network_address)
+    last = first + net.num_addresses - 1
     rows = (
-        await session.execute(select(IPAddress).where(IPAddress.prefix_id == prefix_id))
+        await session.execute(
+            select(IPAddress).where(
+                IPAddress.prefix_id == prefix_id,
+                IPAddress.address_int.between(first, last),
+            )
+        )
     ).scalars().all()
     existing = {int(r.address_int): r for r in rows}
     seen_ints: set[int] = set()
@@ -81,6 +94,8 @@ async def reconcile(
                 row.status = IPStatus.ACTIVE
 
     # hosts previously live but absent from this scan -> offline
+    # (`existing` is already scoped to the scanned range, so out-of-range
+    # addresses on the covering prefix are never touched)
     for key, row in existing.items():
         if key not in seen_ints and row.status in (IPStatus.ACTIVE, IPStatus.DISCOVERED):
             row.status = IPStatus.OFFLINE

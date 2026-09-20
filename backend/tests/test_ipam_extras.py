@@ -1,3 +1,4 @@
+import ipaddress
 from datetime import date, timedelta
 
 from app.worker.reconcile import reconcile
@@ -298,7 +299,8 @@ async def test_dashboard_attention_fields(client, session):
         },
     )
     await reconcile(
-        session, p["id"], vrf_id, [HostResult(ip="10.98.0.10", mac="66:77:88:99:AA:BB")]
+        session, p["id"], vrf_id, [HostResult(ip="10.98.0.10", mac="66:77:88:99:AA:BB")],
+        ipaddress.ip_network("10.98.0.0/24"),
     )
     await session.commit()
 

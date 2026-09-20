@@ -8,6 +8,7 @@ from app.core.deps import require_auth
 from app.core.security import (
     SESSION_COOKIE,
     clear_login_failures,
+    client_ip,
     create_session,
     destroy_other_sessions,
     destroy_session,
@@ -76,7 +77,7 @@ async def _login_session(
     token = await create_session(
         user_id,
         ttl_hours=eff.values["ipambox_session_hours"],
-        ip=request.client.host if request.client else "",
+        ip=client_ip(request),
         ua=request.headers.get("user-agent", ""),
     )
     _set_session_cookie(response, token, eff.values["ipambox_session_hours"])
@@ -138,17 +139,17 @@ async def login(
     if get_settings().ipambox_allow_insecure:
         return {"ok": True, "username": None}
     await ensure_env_password_user(session)
-    ip = request.client.host if request.client else "unknown"
-    if await is_locked_out(ip):
+    ip = client_ip(request)
+    if await is_locked_out(body.username, ip):
         raise HTTPException(429, "too many failed attempts — try again later")
     user = (
         await session.execute(select(User).where(User.username == body.username))
     ).scalar_one_or_none()
     if user is None or not verify_password(body.password, user.password_hash):
-        if await record_login_failure(ip):
+        if await record_login_failure(body.username, ip):
             raise HTTPException(429, "too many failed attempts — try again later")
         raise HTTPException(401, "invalid credentials")
-    await clear_login_failures(ip)
+    await clear_login_failures(body.username, ip)
     await _login_session(session, request, response, user.id)
     return {"ok": True, "username": user.username}
 

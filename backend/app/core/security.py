@@ -1,3 +1,4 @@
+import ipaddress
 import json
 import secrets
 from contextvars import ContextVar
@@ -11,7 +12,8 @@ from app.core.config import get_settings
 from app.core.redis import get_redis
 
 SESSION_COOKIE = "ipambox_session"
-_LOCKOUT_AFTER = 5
+_LOCKOUT_AFTER = 5      # per (username, ip) pair
+_LOCKOUT_IP_AFTER = 20  # per-IP aggregate — credential-stuffing backstop
 _LOCKOUT_SECONDS = 900  # 15 minutes
 
 # Who is making changes — set per-request by require_auth, "scanner" in the
@@ -58,12 +60,70 @@ def _session_key(token: str) -> str:
     return f"{_SESSION_PREFIX}{token}"
 
 
-def _fails_key(ip: str) -> str:
-    return f"ipam:loginfails:{ip}"
+def _uname(username: str) -> str:
+    """Normalize a username for counter keys (case-folded, key-safe)."""
+    return username.strip().lower().replace(":", "_")[:64]
 
 
-def _lock_key(ip: str) -> str:
-    return f"ipam:lockout:{ip}"
+def _fails_key(username: str, ip: str) -> str:
+    return f"ipam:loginfails:{_uname(username)}:{ip}"
+
+
+def _ip_fails_key(ip: str) -> str:
+    return f"ipam:loginfails_ip:{ip}"
+
+
+def _lock_key(username: str, ip: str) -> str:
+    return f"ipam:lockout:{_uname(username)}:{ip}"
+
+
+def _ip_lock_key(ip: str) -> str:
+    return f"ipam:lockout_ip:{ip}"
+
+
+def _trusted_nets() -> list:
+    nets = []
+    for part in get_settings().ipambox_trusted_proxies.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            nets.append(ipaddress.ip_network(part, strict=False))
+        except ValueError:
+            continue
+    return nets
+
+
+def _in_trusted(host: str, nets) -> bool:
+    try:
+        addr = ipaddress.ip_address(host.split("%")[0])
+    except ValueError:
+        return False
+    return any(addr in n for n in nets)
+
+
+def client_ip(request) -> str:
+    """Resolve the real client IP for lockout keying/session metadata.
+
+    X-Forwarded-For is honored only when the socket peer itself sits inside
+    ipambox_trusted_proxies — otherwise the header is client-controlled and
+    would let an attacker rotate IPs to dodge (or trigger) lockouts. The
+    chain is walked right-to-left, skipping trusted hops, matching how
+    uvicorn's --proxy-headers resolves it.
+    """
+    peer = request.client.host if request.client else "unknown"
+    nets = _trusted_nets()
+    if not nets or not _in_trusted(peer, nets):
+        return peer
+    hops = [
+        h.strip()
+        for h in request.headers.get("x-forwarded-for", "").split(",")
+        if h.strip()
+    ]
+    for hop in reversed(hops):
+        if not _in_trusted(hop, nets):
+            return hop
+    return peer
 
 
 def _session_meta(raw: str | None) -> dict[str, Any] | None:
@@ -179,31 +239,45 @@ async def destroy_other_sessions(user_id: int, keep_token: str | None) -> int:
     return removed
 
 
-async def is_locked_out(ip: str) -> bool:
+async def is_locked_out(username: str, ip: str) -> bool:
+    """True when either the (username, ip) pair or the whole IP is locked.
+
+    The per-IP aggregate is a credential-stuffing backstop: rotating through
+    usernames still trips it, while one locked pair never silences others.
+    """
     r = get_redis()
     try:
-        return await r.get(_lock_key(ip)) is not None
+        hits = await r.mget(_lock_key(username, ip), _ip_lock_key(ip))
+        return any(h is not None for h in hits)
     finally:
         await r.aclose()
 
 
-async def record_login_failure(ip: str) -> bool:
-    """Bump the failure counter; returns True once the IP is locked out."""
+async def record_login_failure(username: str, ip: str) -> bool:
+    """Bump (username, ip) + per-IP counters; True once either locks out."""
     r = get_redis()
     try:
-        n = await r.incr(_fails_key(ip))
-        await r.expire(_fails_key(ip), _LOCKOUT_SECONDS)
+        n = await r.incr(_fails_key(username, ip))
+        await r.expire(_fails_key(username, ip), _LOCKOUT_SECONDS)
+        m = await r.incr(_ip_fails_key(ip))
+        await r.expire(_ip_fails_key(ip), _LOCKOUT_SECONDS)
+        locked = False
         if n >= _LOCKOUT_AFTER:
-            await r.set(_lock_key(ip), "1", ex=_LOCKOUT_SECONDS)
-            return True
-        return False
+            await r.set(_lock_key(username, ip), "1", ex=_LOCKOUT_SECONDS)
+            locked = True
+        if m >= _LOCKOUT_IP_AFTER:
+            await r.set(_ip_lock_key(ip), "1", ex=_LOCKOUT_SECONDS)
+            locked = True
+        return locked
     finally:
         await r.aclose()
 
 
-async def clear_login_failures(ip: str) -> None:
+async def clear_login_failures(username: str, ip: str) -> None:
+    """Successful login clears the (username, ip) pair only — the per-IP
+    aggregate keeps its TTL so valid logins can't reset a stuffing attack."""
     r = get_redis()
     try:
-        await r.delete(_fails_key(ip), _lock_key(ip))
+        await r.delete(_fails_key(username, ip), _lock_key(username, ip))
     finally:
         await r.aclose()
