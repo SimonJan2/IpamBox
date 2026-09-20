@@ -4,10 +4,12 @@ import { api } from "@/lib/api";
 import { useAsyncData } from "@/lib/use-async-data";
 import { usePolling } from "@/lib/use-polling";
 import { timeAgo } from "@/lib/utils";
-import { useUrlText } from "@/lib/url-state";
+import { useUrlParams, useUrlText } from "@/lib/url-state";
 import type { ChangeLogEntry } from "@/types";
 import { AsyncPanel } from "@/components/async-panel";
+import { SavedViews } from "@/components/saved-views";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -50,8 +52,17 @@ function ChangeSummary({ entry }: { entry: ChangeLogEntry }) {
 }
 
 export default function ChangelogPage() {
-  const entriesQ = useAsyncData(() =>
-    api.get<ChangeLogEntry[]>("/api/v1/changelog?limit=300")
+  const { searchParams, setParams } = useUrlParams();
+  const objectType = searchParams.get("object_type");
+  const objectId = searchParams.get("object_id");
+  const scoped = objectType !== null || objectId !== null;
+  const scopedUrl =
+    "/api/v1/changelog?limit=300" +
+    (objectType ? `&object_type=${encodeURIComponent(objectType)}` : "") +
+    (objectId ? `&object_id=${encodeURIComponent(objectId)}` : "");
+  const entriesQ = useAsyncData(
+    () => api.get<ChangeLogEntry[]>(scopedUrl),
+    [scopedUrl]
   );
   const [q, setQ] = useUrlText("q");
 
@@ -79,12 +90,31 @@ export default function ChangelogPage() {
         what changed.
       </p>
 
-      <Input
-        placeholder="Filter by object, type or actor…"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        className="max-w-xs"
-      />
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          placeholder="Filter by object, type or actor…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          className="max-w-xs"
+        />
+        {scoped && (
+          <Badge variant="secondary" className="gap-1.5">
+            Scoped to {objectType ?? "any type"}
+            {objectId !== null && ` #${objectId}`}
+            <button
+              type="button"
+              aria-label="Clear object filter"
+              className="ml-0.5 hover:text-foreground"
+              onClick={() =>
+                setParams({ object_type: null, object_id: null })
+              }
+            >
+              ✕
+            </button>
+          </Badge>
+        )}
+        <SavedViews pageKey="changelog" className="ml-auto" />
+      </div>
 
       <div className="rounded-lg border">
         <AsyncPanel

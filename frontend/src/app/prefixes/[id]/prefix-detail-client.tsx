@@ -5,8 +5,10 @@ import Link from "next/link";
 import {
   ArrowLeft,
   Download,
+  History,
   Loader2,
   Plus,
+  Printer,
   Split,
   Trash2,
   Upload,
@@ -25,7 +27,7 @@ import {
   useUrlSet,
   useUrlText,
 } from "@/lib/url-state";
-import { cn } from "@/lib/utils";
+import { cn, intToIp } from "@/lib/utils";
 import type {
   AddressPage,
   IpAddress,
@@ -39,7 +41,9 @@ import { AddressFilterPanel } from "@/components/address-filter-panel";
 import { AsyncPanel } from "@/components/async-panel";
 import { PrefixBreadcrumbs } from "@/components/breadcrumbs";
 import { AddressList, AddrMapViewSwitcher } from "@/components/address-list";
+import { HistoryDialog } from "@/components/history-panel";
 import { IpDrawer } from "@/components/ip-drawer";
+import { SavedViews } from "@/components/saved-views";
 import { PrefixStatusBadge } from "@/components/status-badge";
 import { SubnetGrid } from "@/components/subnet-grid";
 import { TagChip, useTags } from "@/components/tag-picker";
@@ -105,19 +109,28 @@ function RangeDialog({
   onOpenChange,
   prefix,
   onSaved,
+  initial,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   prefix: Prefix;
   onSaved: () => void;
+  /** Pre-filled bounds, e.g. from a subnet-grid span selection. */
+  initial?: { start: string; end: string } | null;
 }) {
   const [form, setForm] = useState({ start: "", end: "", role: "dhcp", description: "" });
   const [busy, setBusy] = useState(false);
   const uid = useId();
 
   useEffect(() => {
-    if (open) setForm({ start: "", end: "", role: "dhcp", description: "" });
-  }, [open]);
+    if (open)
+      setForm({
+        start: initial?.start ?? "",
+        end: initial?.end ?? "",
+        role: "dhcp",
+        description: "",
+      });
+  }, [open, initial]);
 
   const submit = async () => {
     setBusy(true);
@@ -500,7 +513,16 @@ export default function PrefixDetailPage({ id }: { id: string }) {
   const ranges = rangesQ.data ?? [];
   const [drawer, setDrawer] = useState<{ ip: string; addr: IpAddress | null } | null>(null);
   const [rangeOpen, setRangeOpen] = useState(false);
+  const [rangePrefill, setRangePrefill] = useState<{
+    start: string;
+    end: string;
+  } | null>(null);
   const [splitOpen, setSplitOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  // Subnet-grid span selection (W7) — address-int bounds, not DOM nodes.
+  const [spanSel, setSpanSel] = useState<{ lo: number; hi: number } | null>(
+    null
+  );
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [search, setSearch, setSearchNow] = useUrlText("q");
   const [statusSel, setStatusSel] = useUrlSet<IpStatus>("status");
@@ -568,13 +590,15 @@ export default function PrefixDetailPage({ id }: { id: string }) {
     }
   };
 
-  const bulk = async (payload: {
-    action: string;
-    status?: IpStatus;
-    role?: IpRole | null;
-    tag_id?: number;
-  }) => {
-    const ids = [...selected];
+  const bulk = async (
+    payload: {
+      action: string;
+      status?: IpStatus;
+      role?: IpRole | null;
+      tag_id?: number;
+    },
+    ids: number[] = [...selected]
+  ) => {
     try {
       const r = await api.post<{ affected: number; not_found: number[] }>(
         "/api/v1/addresses/bulk",
@@ -591,6 +615,50 @@ export default function PrefixDetailPage({ id }: { id: string }) {
       toast.error("Bulk update failed", { description: String(e) });
     }
   };
+
+  // Optimistic single-field patch used by the inline-editable cells in the
+  // address list — rolls the field back on failure.
+  const patchAddr = async (id: number, patch: Partial<IpAddress>) => {
+    let prev: IpAddress | undefined;
+    pageQ.setData((cur) => {
+      if (!cur) return cur;
+      prev = cur.items.find((a) => a.id === id);
+      return {
+        ...cur,
+        items: cur.items.map((a) => (a.id === id ? { ...a, ...patch } : a)),
+      };
+    });
+    try {
+      await api.patch(`/api/v1/addresses/${id}`, patch);
+    } catch (e) {
+      pageQ.setData((cur) =>
+        cur
+          ? {
+              ...cur,
+              items: cur.items.map((a) =>
+                a.id === id && prev ? prev : a
+              ),
+            }
+          : cur
+      );
+      toast.error("Save failed", { description: String(e) });
+      throw e;
+    }
+  };
+
+  const spanIds = useMemo(
+    () =>
+      spanSel == null
+        ? []
+        : (page?.items ?? [])
+            .filter(
+              (a) =>
+                Number(a.address_int) >= spanSel.lo &&
+                Number(a.address_int) <= spanSel.hi
+            )
+            .map((a) => a.id),
+    [spanSel, page]
+  );
 
   const isV4 = !!prefix && !prefix.prefix.includes(":");
   const showGrid = isV4 && (page?.total ?? 0) <= MAX_GRID;
@@ -694,6 +762,19 @@ export default function PrefixDetailPage({ id }: { id: string }) {
               <Download /> Export
             </a>
           </Button>
+          <Button size="sm" variant="outline" asChild>
+            <Link href={`/prefixes/${prefixId}/print`}>
+              <Printer /> Print report
+            </Link>
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setHistoryOpen(true)}
+          >
+            <History /> History
+          </Button>
+          <SavedViews pageKey="prefix-detail" />
           {canWrite && (
             <>
               <Button size="sm" variant="outline" onClick={() => setRangeOpen(true)}>
@@ -841,6 +922,10 @@ export default function PrefixDetailPage({ id }: { id: string }) {
                     matchIds={matchIds}
                     highlight={highlight}
                     focusInt={focusInt}
+                    spanSel={spanSel}
+                    onSpanSelect={(lo, hi) => setSpanSel({ lo, hi })}
+                    onClearSpan={() => setSpanSel(null)}
+                    spanSelectable={canWrite}
                   />
                 ) : (
                   <AddressList
@@ -854,6 +939,8 @@ export default function PrefixDetailPage({ id }: { id: string }) {
                     focusInt={focusInt}
                     selectable={canWrite}
                     canDelete={canDelete}
+                    onPatchAddr={patchAddr}
+                    editable={canWrite}
                     selected={selected}
                     onToggle={(id, on) => {
                       const next = new Set(selected);
@@ -901,6 +988,64 @@ export default function PrefixDetailPage({ id }: { id: string }) {
           </AsyncPanel>
         </CardContent>
       </Card>
+
+      {spanSel !== null && canWrite && view === "grid" && (
+        <div className="sticky bottom-4 z-10 mx-auto flex w-fit items-center gap-3 rounded-lg border bg-card px-4 py-2 shadow-lg">
+          <span role="status" className="text-sm text-muted-foreground">
+            {spanSel.hi - spanSel.lo + 1} selected (
+            <span className="font-mono">
+              {intToIp(spanSel.lo)}–{intToIp(spanSel.hi)}
+            </span>
+            )
+          </span>
+          <Select
+            onValueChange={(v) =>
+              void bulk(
+                { action: "set_status", status: v as IpStatus },
+                spanIds
+              ).then(() => setSpanSel(null))
+            }
+            disabled={spanIds.length === 0}
+          >
+            <SelectTrigger className="h-8 w-40">
+              <SelectValue
+                placeholder={
+                  spanIds.length
+                    ? `Set status (${spanIds.length} addrs)…`
+                    : "No addresses in span"
+                }
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {IP_STATUSES.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {s}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setRangePrefill({
+                start: intToIp(spanSel.lo),
+                end: intToIp(spanSel.hi),
+              });
+              setRangeOpen(true);
+            }}
+          >
+            <Plus /> Create range
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setSpanSel(null)}
+          >
+            Clear
+          </Button>
+        </div>
+      )}
 
       {selected.size > 0 && canWrite && (
         <div className="sticky bottom-4 z-10 mx-auto flex w-fit items-center gap-3 rounded-lg border bg-card px-4 py-2 shadow-lg">
@@ -987,11 +1132,22 @@ export default function PrefixDetailPage({ id }: { id: string }) {
       {prefix && (
         <RangeDialog
           open={rangeOpen}
-          onOpenChange={setRangeOpen}
+          onOpenChange={(o) => {
+            setRangeOpen(o);
+            if (!o) setRangePrefill(null);
+          }}
           prefix={prefix}
           onSaved={refresh}
+          initial={rangePrefill}
         />
       )}
+      <HistoryDialog
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+        objectType="Prefix"
+        objectId={prefixId}
+        title={prefix?.prefix}
+      />
       {prefix && (
         <SplitDialog
           open={splitOpen}

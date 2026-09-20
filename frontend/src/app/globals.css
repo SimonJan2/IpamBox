@@ -126,6 +126,13 @@
   .text-range {
     @apply text-sky-400;
   }
+
+  /* Drag-selection band on subnet-grid cells — an inset outline over the
+     existing status surface, so status stays readable under the selection. */
+  .ipcell-sel {
+    @apply outline outline-2 -outline-offset-2 outline-primary;
+    z-index: 1;
+  }
 }
 
 :root[data-theme="light"] .ipcell-free {
@@ -158,4 +165,37 @@
 }
 :root[data-theme="light"] .text-range {
   @apply text-sky-700;
+}
+
+/* Print: white paper, no app chrome (sidebar/header/drawers carry
+   print:hidden), no interactive clutter, no mid-row page breaks. */
+@media print {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --muted-foreground: 240 3.8% 35%;
+    --border: 240 5.9% 80%;
+  }
+  body {
+    @apply bg-white text-black;
+  }
+  /* Radix portals: dialogs, sheets, toasts, tooltips, dropdowns. */
+  [data-radix-portal],
+  [data-sonner-toaster],
+  [role="tooltip"] {
+    display: none !important;
+  }
+  tr,
+  td,
+  th {
+    break-inside: avoid;
+  }
+  thead {
+    display: table-header-group; /* repeat table headers on each page */
+  }
+  a[href]::after {
+    content: none !important;
+  }
 }

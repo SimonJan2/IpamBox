@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { History, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   flexRender,
@@ -18,8 +18,12 @@ import { usePrefs } from "@/lib/prefs";
 import { PERM } from "@/lib/permissions";
 import { foldHebrew } from "@/lib/utils";
 import { useUrlSorting, useUrlText } from "@/lib/url-state";
+import { useRowNav } from "@/lib/row-nav";
 import { SortHeader, columnAriaSort } from "@/components/sort-header";
 import { AsyncPanel } from "@/components/async-panel";
+import { HistoryDialog } from "@/components/history-panel";
+import { InlineText } from "@/components/inline-edit";
+import { SavedViews } from "@/components/saved-views";
 import type { Site } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -277,9 +281,34 @@ export default function SitesPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Site | null>(null);
   const [deleting, setDeleting] = useState<Site | null>(null);
+  const [historyFor, setHistoryFor] = useState<Site | null>(null);
 
   const sites = sitesQ.data ?? [];
   const refresh = () => void sitesQ.reload();
+
+  // Optimistic single-field patch for inline-editable cells — rolls back
+  // just that field on failure so other pending edits survive.
+  const saveField = useCallback(
+    async (id: number, field: "description", value: string | null) => {
+      let prev: Site | undefined;
+      sitesQ.setData((cur) => {
+        prev = (cur ?? []).find((s) => s.id === id);
+        return (cur ?? []).map((s) =>
+          s.id === id ? { ...s, [field]: value } : s
+        );
+      });
+      try {
+        await api.patch(`/api/v1/sites/${id}`, { [field]: value });
+      } catch (e) {
+        sitesQ.setData((cur) =>
+          (cur ?? []).map((s) => (s.id === id && prev ? prev : s))
+        );
+        toast.error("Save failed", { description: String(e) });
+        throw e;
+      }
+    },
+    [sitesQ.setData]
+  );
 
   const filtered = useMemo(() => {
     const needle = foldHebrew(q.toLowerCase());
@@ -361,9 +390,13 @@ export default function SitesPage() {
           <SortHeader column={column}>Description</SortHeader>
         ),
         cell: (c) => (
-          <span dir="auto" className="text-muted-foreground">
-            {c.getValue<string | null>() ?? "—"}
-          </span>
+          <InlineText
+            value={c.getValue<string | null>()}
+            onSave={(v) => saveField(c.row.original.id, "description", v || null)}
+            disabled={!canWrite}
+            dir="auto"
+            label={`Edit description for ${c.row.original.name}`}
+          />
         ),
       },
       {
@@ -372,6 +405,14 @@ export default function SitesPage() {
         enableSorting: false,
         cell: (c) => (
           <div className="flex justify-end gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={`History of ${c.row.original.name}`}
+              onClick={() => setHistoryFor(c.row.original)}
+            >
+              <History className="h-4 w-4" />
+            </Button>
             {canWrite && (
               <Button
                 variant="ghost"
@@ -399,7 +440,7 @@ export default function SitesPage() {
         ),
       },
     ],
-    [canWrite, canDelete, prefs.showSlugs]
+    [canWrite, canDelete, prefs.showSlugs, saveField]
   );
 
   const table = useReactTable({
@@ -409,6 +450,21 @@ export default function SitesPage() {
     getSortedRowModel: getSortedRowModel(),
     state: { sorting },
     onSortingChange: setSorting,
+  });
+
+  const tableRows = table.getRowModel().rows;
+  const { rowProps } = useRowNav({
+    count: tableRows.length,
+    onOpen: (i) => {
+      const s = tableRows[i]?.original;
+      if (!s) return;
+      if (canWrite) {
+        setEditing(s);
+        setDialogOpen(true);
+      } else {
+        setHistoryFor(s);
+      }
+    },
   });
 
   return (
@@ -436,8 +492,9 @@ export default function SitesPage() {
           className="max-w-xs"
         />
         <span className="ml-auto text-sm text-muted-foreground">
-          {table.getRowModel().rows.length} of {sites.length}
+          {tableRows.length} of {sites.length}
         </span>
+        <SavedViews pageKey="sites" />
       </div>
 
       <div className="rounded-lg border">
@@ -461,8 +518,12 @@ export default function SitesPage() {
             ))}
           </TableHeader>
           <TableBody>
-            {table.getRowModel().rows.map((row) => (
-              <TableRow key={row.id}>
+            {tableRows.map((row, i) => (
+              <TableRow
+                key={row.id}
+                {...rowProps(i)}
+                className="focus-visible:bg-muted/50 focus-visible:outline-none"
+              >
                 {row.getVisibleCells().map((cell) => (
                   <TableCell key={cell.id}>
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -470,7 +531,7 @@ export default function SitesPage() {
                 ))}
               </TableRow>
             ))}
-            {table.getRowModel().rows.length === 0 && sites.length > 0 && (
+            {tableRows.length === 0 && sites.length > 0 && (
               <TableRow>
                 <TableCell
                   colSpan={7}
@@ -495,6 +556,13 @@ export default function SitesPage() {
         site={deleting}
         onOpenChange={() => setDeleting(null)}
         onDeleted={refresh}
+      />
+      <HistoryDialog
+        open={historyFor !== null}
+        onOpenChange={() => setHistoryFor(null)}
+        objectType="Site"
+        objectId={historyFor?.id ?? null}
+        title={historyFor?.name}
       />
     </div>
   );

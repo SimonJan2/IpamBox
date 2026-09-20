@@ -8,7 +8,8 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useAsyncData } from "@/lib/use-async-data";
 import { PERM } from "@/lib/permissions";
-import { timeAgo } from "@/lib/utils";
+import { STATUS_TOKENS } from "@/lib/status-tokens";
+import { cn, timeAgo } from "@/lib/utils";
 import type { IpAddress, Prefix } from "@/types";
 import { AsyncPanel } from "@/components/async-panel";
 import { ConfirmDialog } from "@/components/confirm-action";
@@ -201,6 +202,106 @@ export default function DiscoveryPage() {
             empty={items.length === 0}
             emptyMessage="Inbox zero — nothing pending review."
           >
+          {/* Under md the 10-column table is unreadable — condensed cards
+              carry the same checkbox/bulk-select model and actions. */}
+          <div className="space-y-2 md:hidden">
+            {items.map((a) => {
+              const st = STATUS_TOKENS[a.status];
+              return (
+                <div key={a.id} className="rounded-lg border p-3">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      checked={selected.has(a.id)}
+                      disabled={pending.has(a.id)}
+                      aria-label={`Select ${a.address}`}
+                      onCheckedChange={(on) => {
+                        const next = new Set(selected);
+                        if (on) next.add(a.id);
+                        else next.delete(a.id);
+                        setSelected(next);
+                      }}
+                    />
+                    <span className="font-mono text-sm font-medium">
+                      {a.address}
+                    </span>
+                    <span
+                      className={cn(
+                        "ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground"
+                      )}
+                      title={a.status}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          "inline-flex h-3.5 w-3.5 items-center justify-center rounded-sm text-[9px]",
+                          st.cell
+                        )}
+                      >
+                        {st.glyph}
+                      </span>
+                      {a.status}
+                    </span>
+                    {pending.has(a.id) && (
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    )}
+                  </div>
+                  <div className="mt-1.5 space-y-0.5 pl-7 text-xs text-muted-foreground">
+                    {a.hostname && <div dir="auto">{a.hostname}</div>}
+                    <div className="font-mono">
+                      {a.mac_address ?? "—"}
+                      {a.vendor ? ` · ${a.vendor}` : ""}
+                    </div>
+                    <div>
+                      {prefixes[a.prefix_id] ?? ""} · seen{" "}
+                      {timeAgo(a.last_seen)}
+                      {a.open_ports?.length
+                        ? ` · ports ${a.open_ports.join(" ")}`
+                        : ""}
+                    </div>
+                  </div>
+                  {(canWrite || canDelete) && (
+                    <div className="mt-2 flex justify-end gap-1 pl-7">
+                      {canWrite && (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={bulkBusy || pending.has(a.id)}
+                            onClick={() => act(a.id, "active")}
+                          >
+                            <Check className="text-emerald-400" /> Active
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={bulkBusy || pending.has(a.id)}
+                            onClick={() => act(a.id, "reserved")}
+                          >
+                            <ShieldCheck className="text-amber-400" /> Reserve
+                          </Button>
+                        </>
+                      )}
+                      {canDelete && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          aria-label={`Delete ${a.address}`}
+                          disabled={bulkBusy || pending.has(a.id)}
+                          onClick={() =>
+                            setConfirmDel({ kind: "one", id: a.id })
+                          }
+                        >
+                          <Trash2 className="text-red-400" />
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="hidden md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -307,6 +408,7 @@ export default function DiscoveryPage() {
               ))}
             </TableBody>
           </Table>
+          </div>
           </AsyncPanel>
         </CardContent>
       </Card>

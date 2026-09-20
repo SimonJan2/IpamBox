@@ -8,8 +8,8 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
 import { fmtTs } from "@/lib/prefs";
-import { timeAgo } from "@/lib/utils";
-import type { ChangeLogEntry, IpAddress, IpRole, IpStatus, Tag } from "@/types";
+import type { IpAddress, IpRole, IpStatus, Tag } from "@/types";
+import { HistoryPanel } from "@/components/history-panel";
 import { IpStatusBadge } from "@/components/status-badge";
 import { TagChip, TagPicker } from "@/components/tag-picker";
 import { Button } from "@/components/ui/button";
@@ -67,7 +67,6 @@ export function IpDrawer({
     notes: "",
   });
   const [busy, setBusy] = useState(false);
-  const [history, setHistory] = useState<ChangeLogEntry[]>([]);
   const [natOptions, setNatOptions] = useState<IpAddress[]>([]);
   const [natError, setNatError] = useState<string | null>(null);
   const natTouched = useRef(false);
@@ -116,19 +115,6 @@ export function IpDrawer({
             description: String(e),
           })
         );
-    }
-    if (open && addr) {
-      api
-        .get<ChangeLogEntry[]>(
-          `/api/v1/changelog?object_type=IPAddress&object_id=${addr.id}&limit=20`
-        )
-        .then(setHistory)
-        .catch((e) => {
-          setHistory([]);
-          toast.error("Could not load history", { description: String(e) });
-        });
-    } else {
-      setHistory([]);
     }
     return () => {
       if (natTimer.current) clearTimeout(natTimer.current);
@@ -387,37 +373,16 @@ export function IpDrawer({
             </div>
           )}
 
-          {history.length > 0 && (
+          {addr && open && (
             <div className="border-t pt-3">
               <div className="mb-2 text-xs font-medium text-muted-foreground">
                 History
               </div>
-              <div className="space-y-1.5 text-xs text-muted-foreground">
-                {history.map((h) => (
-                  <div key={h.id} className="flex items-baseline gap-2">
-                    <span
-                      className={
-                        h.action === "create"
-                          ? "text-emerald-400"
-                          : h.action === "delete"
-                            ? "text-rose-400"
-                            : "text-amber-400"
-                      }
-                    >
-                      {h.action}
-                    </span>
-                    <span className="flex-1 truncate">
-                      {h.action === "update"
-                        ? h.changes
-                            .map((c) => c.field)
-                            .slice(0, 3)
-                            .join(", ")
-                        : h.actor}
-                    </span>
-                    <span className="shrink-0">{timeAgo(h.ts)}</span>
-                  </div>
-                ))}
-              </div>
+              <HistoryPanel
+                objectType="IPAddress"
+                objectId={addr.id}
+                limit={20}
+              />
             </div>
           )}
         </div>

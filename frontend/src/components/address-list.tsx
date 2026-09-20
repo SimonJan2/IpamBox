@@ -18,8 +18,10 @@ import { toast } from "sonner";
 
 import { api } from "@/lib/api";
 import type { AddrMapView } from "@/lib/prefs";
+import { useRowNav } from "@/lib/row-nav";
 import { cn, intToIp, ipToInt, timeAgo } from "@/lib/utils";
-import type { AddressPage, IpAddress, IpRange, Tag } from "@/types";
+import type { AddressPage, IpAddress, IpRange, IpStatus, Tag } from "@/types";
+import { InlineSelect, InlineText } from "@/components/inline-edit";
 import { IpStatusBadge } from "@/components/status-badge";
 import { TagChip, TagPicker } from "@/components/tag-picker";
 import { Badge } from "@/components/ui/badge";
@@ -38,6 +40,14 @@ import { TableCell, TableHead, TableRow } from "@/components/ui/table";
 // Above this many addresses, expanding free space into per-IP rows is pointless —
 // grouping is forced.
 const UNGROUPED_CAP = 4096;
+
+const IP_STATUSES: IpStatus[] = [
+  "active",
+  "reserved",
+  "dhcp",
+  "discovered",
+  "offline",
+];
 
 type Row =
   | { kind: "addr"; addr: IpAddress; pos: number; key: string }
@@ -222,6 +232,8 @@ export function AddressList({
   onSelect,
   onSelectFree,
   onChanged,
+  onPatchAddr,
+  editable = false,
 }: {
   page: AddressPage;
   ranges: IpRange[];
@@ -241,6 +253,9 @@ export function AddressList({
   onSelect: (a: IpAddress) => void;
   onSelectFree: (ip: string) => void;
   onChanged: () => void;
+  /** Inline-cell saves (W6): parent owns the optimistic update + rollback. */
+  onPatchAddr?: (id: number, patch: Partial<IpAddress>) => Promise<void>;
+  editable?: boolean;
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
   const [groupFree, setGroupFree] = useState(true);
@@ -276,6 +291,19 @@ export function AddressList({
     getScrollElement: () => parentRef.current,
     estimateSize: () => 41,
     overscan: 12,
+  });
+
+  // j/k + Enter row navigation — virtualized, so an unmounted target is
+  // scrolled into view first (row-nav's pending-focus pass does the rest).
+  const { rowProps } = useRowNav({
+    count: rows.length,
+    scrollToIndex: (i) => virtualizer.scrollToIndex(i, { align: "auto" }),
+    onOpen: (i) => {
+      const r = rows[i];
+      if (!r) return;
+      if (r.kind === "addr") onSelect(r.addr);
+      else if (r.kind === "free") onSelectFree(intToIp(r.start));
+    },
   });
 
   useEffect(() => {
@@ -351,17 +379,24 @@ export function AddressList({
     : 0;
 
   const renderRow = (row: Row, index: number) => {
-    const measure = {
-      ref: virtualizer.measureElement,
+    const nav = rowProps(index);
+    const rowP = {
       "data-index": index,
+      ref: (el: HTMLTableRowElement | null) => {
+        virtualizer.measureElement(el);
+        nav.ref(el);
+      },
+      tabIndex: nav.tabIndex,
+      onFocus: nav.onFocus,
+      onKeyDown: nav.onKeyDown,
     } as const;
     if (row.kind === "free") {
       const count = row.end - row.start + 1;
       return (
         <tr
           key={row.key}
-          {...measure}
-          className="cursor-pointer border-b transition-colors hover:bg-muted/50"
+          {...rowP}
+          className="cursor-pointer border-b transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none"
           onClick={() => onSelectFree(intToIp(row.start))}
         >
           {selectable && <TableCell className="py-2" />}
@@ -400,7 +435,11 @@ export function AddressList({
     if (row.kind === "range") {
       const count = row.end - row.start + 1;
       return (
-        <tr key={row.key} {...measure} className="border-b transition-colors">
+        <tr
+          key={row.key}
+          {...rowP}
+          className="border-b transition-colors focus-visible:bg-muted/50 focus-visible:outline-none"
+        >
           {selectable && <TableCell className="py-2" />}
           <TableCell className="py-2 font-mono text-sky-400/80">
             {row.start === row.end
@@ -427,7 +466,11 @@ export function AddressList({
 
     if (row.kind === "boundary") {
       return (
-        <tr key={row.key} {...measure} className="border-b transition-colors">
+        <tr
+          key={row.key}
+          {...rowP}
+          className="border-b transition-colors focus-visible:bg-muted/50 focus-visible:outline-none"
+        >
           {selectable && <TableCell className="py-2" />}
           <TableCell className="py-2 font-mono text-zinc-600">
             {intToIp(row.intIp)}
@@ -449,8 +492,8 @@ export function AddressList({
     return (
       <tr
         key={row.key}
-        {...measure}
-        className="cursor-pointer border-b transition-colors hover:bg-muted/50"
+        {...rowP}
+        className="cursor-pointer border-b transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none"
         style={hl ? { boxShadow: `inset 3px 0 0 ${hl}` } : undefined}
         onClick={() => onSelect(a)}
       >
@@ -481,9 +524,19 @@ export function AddressList({
             </span>
           )}
         </TableCell>
-        <TableCell className="py-2">
+        <TableCell
+          className="py-2"
+          onClick={editable ? (e) => e.stopPropagation() : undefined}
+        >
           <span className="inline-flex items-center gap-1">
-            <IpStatusBadge s={a.status} />
+            <InlineSelect
+              value={a.status}
+              options={IP_STATUSES}
+              disabled={!editable || !onPatchAddr}
+              label={`Edit status for ${a.address}`}
+              display={(s) => <IpStatusBadge s={s} />}
+              onSave={(v) => onPatchAddr!(a.id, { status: v })}
+            />
             {a.role && (
               <Badge variant="outline" className="text-muted-foreground">
                 {a.role}
@@ -491,8 +544,18 @@ export function AddressList({
             )}
           </span>
         </TableCell>
-        <TableCell dir="auto" className="max-w-48 truncate py-2">
-          {a.hostname ?? "—"}
+        <TableCell
+          dir="auto"
+          className="max-w-48 truncate py-2"
+          onClick={editable ? (e) => e.stopPropagation() : undefined}
+        >
+          <InlineText
+            value={a.hostname}
+            onSave={(v) => onPatchAddr!(a.id, { hostname: v || null })}
+            disabled={!editable || !onPatchAddr}
+            dir="auto"
+            label={`Edit hostname for ${a.address}`}
+          />
         </TableCell>
         <TableCell className="max-w-52 truncate py-2">
           <span dir="ltr" className="font-mono text-xs">

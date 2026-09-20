@@ -12,8 +12,8 @@ export const TableHeader = ({ className, ...props }: React.HTMLAttributes<HTMLTa
 export const TableBody = ({ className, ...props }: React.HTMLAttributes<HTMLTableSectionElement>) => (
   <tbody className={cn("[&_tr:last-child]:border-0", className)} {...props} />
 );
-export const TableRow = ({ className, ...props }: React.HTMLAttributes<HTMLTableRowElement>) => (
-  <tr className={cn("border-b transition-colors hover:bg-muted/50", className)} {...props} />
+export const TableRow = ({ className, ref, ...props }: React.HTMLAttributes<HTMLTableRowElement> & { ref?: React.Ref<HTMLTableRowElement> }) => (
+  <tr ref={ref} className={cn("border-b transition-colors hover:bg-muted/50", className)} {...props} />
 );
 export const TableHead = ({ className, ...props }: React.ThHTMLAttributes<HTMLTableCellElement>) => (
   <th className={cn("h-10 px-3 text-left align-middle text-xs font-medium uppercase tracking-wide text-muted-foreground", className)} {...props} />

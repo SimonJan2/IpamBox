@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Download, Pencil, Plus, Trash2 } from "lucide-react";
+import { Download, History, Pencil, Plus, Trash2 } from "lucide-react";
 import {
   flexRender,
   getCoreRowModel,
@@ -19,8 +19,11 @@ import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
 import { foldHebrew, ipToInt } from "@/lib/utils";
 import { useUrlParam, useUrlSorting, useUrlText } from "@/lib/url-state";
+import { useRowNav } from "@/lib/row-nav";
 import { SortHeader, columnAriaSort } from "@/components/sort-header";
 import { AsyncPanel } from "@/components/async-panel";
+import { HistoryDialog } from "@/components/history-panel";
+import { SavedViews } from "@/components/saved-views";
 import type { Prefix, Site, Vlan, Vrf } from "@/types";
 import { PrefixStatusBadge } from "@/components/status-badge";
 import { TagChip, TagPicker, useTags } from "@/components/tag-picker";
@@ -479,6 +482,7 @@ export default function PrefixesPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<Prefix | null>(null);
   const [deleting, setDeleting] = useState<Prefix | null>(null);
+  const [historyFor, setHistoryFor] = useState<Prefix | null>(null);
   const { tags, byObject: prefixTags, refresh: refreshTags } = useTags("Prefix");
 
   const prefixes = prefixesQ.data ?? [];
@@ -608,6 +612,14 @@ export default function PrefixesPage() {
             className="flex justify-end gap-1"
             onClick={(e) => e.stopPropagation()}
           >
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={`History of ${c.row.original.prefix}`}
+              onClick={() => setHistoryFor(c.row.original)}
+            >
+              <History className="h-4 w-4" />
+            </Button>
             {canWrite && (
               <Button
                 variant="ghost"
@@ -665,6 +677,15 @@ export default function PrefixesPage() {
       ),
   });
 
+  const tableRows = table.getRowModel().rows;
+  const { rowProps } = useRowNav({
+    count: tableRows.length,
+    onOpen: (i) => {
+      const p = tableRows[i]?.original;
+      if (p) router.push(`/prefixes/${p.id}`);
+    },
+  });
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -703,6 +724,7 @@ export default function PrefixesPage() {
             ))}
           </SelectContent>
         </Select>
+        <SavedViews pageKey="prefixes" className="ml-auto" />
       </div>
 
       <div className="rounded-lg border">
@@ -726,10 +748,11 @@ export default function PrefixesPage() {
             ))}
           </TableHeader>
           <TableBody>
-            {table.getRowModel().rows.map((row) => (
+            {tableRows.map((row, i) => (
               <TableRow
                 key={row.id}
-                className="cursor-pointer"
+                {...rowProps(i)}
+                className="cursor-pointer focus-visible:bg-muted/50 focus-visible:outline-none"
                 onClick={() => router.push(`/prefixes/${row.original.id}`)}
               >
                 {row.getVisibleCells().map((cell) => (
@@ -739,7 +762,7 @@ export default function PrefixesPage() {
                 ))}
               </TableRow>
             ))}
-            {table.getRowModel().rows.length === 0 && prefixes.length > 0 && (
+            {tableRows.length === 0 && prefixes.length > 0 && (
               <TableRow>
                 <TableCell colSpan={9} className="py-10 text-center text-muted-foreground">
                   No prefixes match this filter.
@@ -771,6 +794,13 @@ export default function PrefixesPage() {
         prefix={deleting}
         onOpenChange={() => setDeleting(null)}
         onDeleted={refresh}
+      />
+      <HistoryDialog
+        open={historyFor !== null}
+        onOpenChange={() => setHistoryFor(null)}
+        objectType="Prefix"
+        objectId={historyFor?.id ?? null}
+        title={historyFor?.prefix}
       />
     </div>
   );
