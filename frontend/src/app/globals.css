@@ -77,3 +77,85 @@
   padding-bottom: 0.3rem;
   height: auto;
 }
+
+/* Card padding follows the density pref via this var (consumed as
+   p-[var(--card-pad)] in ui/card.tsx, so per-call padding overrides still win
+   through tailwind-merge). */
+:root {
+  --card-pad: 1.5rem;
+}
+[data-density="compact"] {
+  --card-pad: 1rem;
+}
+
+/* Subnet-grid cell states — the classes referenced by STATUS_TOKENS /
+   GRID_CELL_TOKENS in lib/status-tokens.ts. Dark values are the default
+   (:root carries the dark token set); :root[data-theme="light"] overrides
+   keep the grid legible in light mode. */
+@layer components {
+  .ipcell-free {
+    @apply bg-zinc-800/40 text-zinc-600 hover:bg-zinc-700/60;
+  }
+  .ipcell-boundary {
+    @apply bg-zinc-800 text-zinc-600;
+    background-image: repeating-linear-gradient(
+      45deg, transparent, transparent 4px,
+      rgb(255 255 255 / 0.04) 4px, rgb(255 255 255 / 0.04) 8px
+    );
+  }
+  .ipcell-range {
+    @apply border border-dashed border-sky-700/40 bg-sky-900/40 text-sky-400/70 hover:bg-sky-800/50;
+  }
+  .ipcell-active {
+    @apply border border-emerald-500/30 bg-emerald-500/25 text-emerald-300 hover:bg-emerald-500/40;
+  }
+  .ipcell-reserved {
+    @apply border border-amber-500/30 bg-amber-500/20 text-amber-300 hover:bg-amber-500/35;
+  }
+  .ipcell-dhcp {
+    @apply border border-cyan-500/30 bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/35;
+  }
+  .ipcell-discovered {
+    @apply border border-violet-500/40 bg-violet-500/25 text-violet-300 hover:bg-violet-500/40;
+  }
+  .ipcell-offline {
+    @apply border border-zinc-600/40 bg-zinc-600/40 text-zinc-500 hover:bg-zinc-600/60;
+  }
+
+  /* Ink color for range references outside cells (grid tooltip, counts). */
+  .text-range {
+    @apply text-sky-400;
+  }
+}
+
+:root[data-theme="light"] .ipcell-free {
+  @apply bg-zinc-200/60 text-zinc-400 hover:bg-zinc-300/70;
+}
+:root[data-theme="light"] .ipcell-boundary {
+  @apply bg-zinc-200 text-zinc-400;
+  background-image: repeating-linear-gradient(
+    45deg, transparent, transparent 4px,
+    rgb(0 0 0 / 0.05) 4px, rgb(0 0 0 / 0.05) 8px
+  );
+}
+:root[data-theme="light"] .ipcell-range {
+  @apply border-sky-600/40 bg-sky-500/10 text-sky-700/80 hover:bg-sky-500/20;
+}
+:root[data-theme="light"] .ipcell-active {
+  @apply border-emerald-600/40 bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25;
+}
+:root[data-theme="light"] .ipcell-reserved {
+  @apply border-amber-600/40 bg-amber-500/15 text-amber-700 hover:bg-amber-500/25;
+}
+:root[data-theme="light"] .ipcell-dhcp {
+  @apply border-cyan-600/40 bg-cyan-500/15 text-cyan-700 hover:bg-cyan-500/25;
+}
+:root[data-theme="light"] .ipcell-discovered {
+  @apply border-violet-600/40 bg-violet-500/15 text-violet-700 hover:bg-violet-500/25;
+}
+:root[data-theme="light"] .ipcell-offline {
+  @apply border-zinc-400/50 bg-zinc-400/20 text-zinc-500 hover:bg-zinc-400/40;
+}
+:root[data-theme="light"] .text-range {
+  @apply text-sky-700;
+}

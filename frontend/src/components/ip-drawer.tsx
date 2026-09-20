@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
+import { fmtTs } from "@/lib/prefs";
 import { timeAgo } from "@/lib/utils";
 import type { ChangeLogEntry, IpAddress, IpRole, IpStatus, Tag } from "@/types";
 import { IpStatusBadge } from "@/components/status-badge";
@@ -232,7 +233,7 @@ export function IpDrawer({
                 </div>
               )}
               {addr.last_seen && (
-                <div>last seen: {new Date(addr.last_seen).toLocaleString()}</div>
+                <div>last seen: {fmtTs(addr.last_seen)}</div>
               )}
             </div>
           )}

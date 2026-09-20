@@ -9,6 +9,7 @@ import { useAsyncData } from "@/lib/use-async-data";
 import { useAuth } from "@/lib/auth";
 import { useFeatureFlag } from "@/lib/features";
 import { PERM } from "@/lib/permissions";
+import { fmtTs } from "@/lib/prefs";
 import { slugify } from "@/lib/utils";
 import { useUrlText } from "@/lib/url-state";
 import type { Site, Vrf } from "@/types";
@@ -342,7 +343,7 @@ export default function VrfsPage() {
                   {v.description ?? "—"}
                 </TableCell>
                 <TableCell className="text-muted-foreground">
-                  {new Date(v.created_at).toLocaleDateString()}
+                  {fmtTs(v.created_at)}
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1">

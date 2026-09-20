@@ -3,30 +3,22 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
+import { usePrefs } from "@/lib/prefs";
+import { GRID_CELL_TOKENS, STATUS_TOKENS } from "@/lib/status-tokens";
 import { cn, intToIp, ipToInt, timeAgo } from "@/lib/utils";
 import type { AddressPage, IpAddress, IpRange, Tag } from "@/types";
 import { TagChip } from "@/components/tag-picker";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
-const CELL = 40;
 const COLS = 16;
+/** Subnet-grid cell edge (px) per density pref — compact packs more in. */
+const CELL_SIZE = { comfortable: 40, compact: 28 } as const;
 
 export type CellState =
   | { kind: "free" }
   | { kind: "boundary" }
   | { kind: "range"; range: IpRange }
   | { kind: "used"; addr: IpAddress };
-
-const stateClass: Record<string, string> = {
-  free: "bg-zinc-800/40 hover:bg-zinc-700/60 text-zinc-600",
-  boundary: "bg-zinc-800 text-zinc-600 [background:repeating-linear-gradient(45deg,transparent,transparent_4px,rgba(255,255,255,0.03)_4px,rgba(255,255,255,0.03)_8px)]",
-  range: "bg-sky-900/40 text-sky-400/70 hover:bg-sky-800/50 border border-sky-700/40 border-dashed",
-  active: "bg-emerald-500/25 text-emerald-300 hover:bg-emerald-500/40 border border-emerald-500/30",
-  reserved: "bg-amber-500/20 text-amber-300 hover:bg-amber-500/35 border border-amber-500/30",
-  dhcp: "bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/35 border border-cyan-500/30",
-  discovered: "bg-violet-500/25 text-violet-300 hover:bg-violet-500/40 border border-violet-500/40",
-  offline: "bg-zinc-600/40 text-zinc-500 hover:bg-zinc-600/60 border border-zinc-600/40",
-};
 
 export function SubnetGrid({
   page,
@@ -46,6 +38,8 @@ export function SubnetGrid({
   focusInt?: number | null;
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
+  const [prefs] = usePrefs();
+  const cellSize = CELL_SIZE[prefs.density];
 
   const byInt = useMemo(() => {
     const m = new Map<number, IpAddress>();
@@ -71,9 +65,14 @@ export function SubnetGrid({
   const virtualizer = useVirtualizer({
     count: rows,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => CELL + 4,
+    estimateSize: () => cellSize + 4,
     overscan: 8,
   });
+
+  // Re-measure cached row positions when the density pref changes cell size.
+  useEffect(() => {
+    virtualizer.measure();
+  }, [cellSize, virtualizer]);
 
   useEffect(() => {
     if (focusInt == null) return;
@@ -102,11 +101,11 @@ export function SubnetGrid({
           <div
             key={vRow.key}
             className="absolute left-0 flex gap-1"
-            style={{ top: vRow.start, height: CELL }}
+            style={{ top: vRow.start, height: cellSize }}
           >
             {Array.from({ length: COLS }, (_, col) => {
               const idx = vRow.index * COLS + col;
-              if (idx >= total) return <div key={col} style={{ width: CELL }} />;
+              if (idx >= total) return <div key={col} style={{ width: cellSize }} />;
               const intIp = base + idx;
               const ip = intToIp(intIp);
               const st = cellState(intIp);
@@ -129,12 +128,14 @@ export function SubnetGrid({
                   }
                   className={cn(
                     "relative flex items-center justify-center rounded text-[10px] font-mono transition-colors",
-                    st.kind === "used" ? stateClass[st.addr.status] : stateClass[st.kind],
+                    st.kind === "used"
+                      ? STATUS_TOKENS[st.addr.status].cell
+                      : GRID_CELL_TOKENS[st.kind],
                     dimmed && "opacity-25"
                   )}
                   style={{
-                    width: CELL,
-                    height: CELL,
+                    width: cellSize,
+                    height: cellSize,
                     ...(hl ? { boxShadow: `inset 0 0 0 2px ${hl}` } : {}),
                   }}
                 >
@@ -183,7 +184,7 @@ export function SubnetGrid({
                       <div className="text-muted-foreground">
                         <div>
                           in range{" "}
-                          <span className="font-mono text-sky-300">
+                          <span className="text-range font-mono">
                             {st.range.start_address}–{st.range.end_address}
                           </span>
                         </div>

@@ -16,8 +16,14 @@ export function PrefsInit() {
         document.documentElement.dataset.theme === "light" ? "light" : "dark"
       );
     sync();
-    window.addEventListener("ipam:prefs-changed", sync);
-    return () => window.removeEventListener("ipam:prefs-changed", sync);
+    // Watch data-theme rather than the prefs event — it flips for both pref
+    // changes and system-theme (prefers-color-scheme) changes.
+    const mo = new MutationObserver(sync);
+    mo.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+    return () => mo.disconnect();
   }, []);
 
   return <Toaster theme={theme} position="bottom-right" />;

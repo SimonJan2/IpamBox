@@ -28,6 +28,7 @@ import {
 
 import { api } from "@/lib/api";
 import { useAsyncData } from "@/lib/use-async-data";
+import { useChartTheme } from "@/lib/use-chart-theme";
 import { usePolling } from "@/lib/use-polling";
 import { timeAgo } from "@/lib/utils";
 import type { ChangeLogEntry, DashboardStats, Prefix, ScanJob } from "@/types";
@@ -107,6 +108,7 @@ export default function DashboardPage() {
     return () => window.removeEventListener("ipam:refresh", onEv);
   }, [refresh]);
 
+  const chartTheme = useChartTheme();
   const stats = statsQ.data;
   const prefixes = prefixesQ.data ?? [];
   const scans = scansQ.data ?? [];
@@ -306,20 +308,25 @@ export default function DashboardPage() {
                 <BarChart data={chartData} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
                   <XAxis
                     dataKey="name"
-                    tick={{ fill: "#71717a", fontSize: 11 }}
+                    tick={{ fill: chartTheme.axis, fontSize: 11 }}
                     interval={0}
                     angle={-35}
                     textAnchor="end"
                     height={60}
                   />
-                  <YAxis tick={{ fill: "#71717a", fontSize: 11 }} unit="%" width={42} />
+                  <YAxis
+                    tick={{ fill: chartTheme.axis, fontSize: 11 }}
+                    unit="%"
+                    width={42}
+                  />
                   <RTooltip
-                    cursor={{ fill: "rgba(255,255,255,0.04)" }}
+                    cursor={{ fill: chartTheme.cursor }}
                     contentStyle={{
-                      background: "#18181b",
-                      border: "1px solid #27272a",
+                      background: chartTheme.tooltipBg,
+                      border: `1px solid ${chartTheme.tooltipBorder}`,
                       borderRadius: 8,
                       fontSize: 12,
+                      color: chartTheme.tooltipText,
                     }}
                     formatter={(v) => [`${v}%`, "utilization"]}
                   />

@@ -5,7 +5,9 @@ import Link from "next/link";
 import {
   ArrowLeft,
   Download,
+  Loader2,
   Plus,
+  Split,
   Trash2,
   Upload,
   Zap,
@@ -23,6 +25,7 @@ import {
   useUrlSet,
   useUrlText,
 } from "@/lib/url-state";
+import { cn } from "@/lib/utils";
 import type {
   AddressPage,
   IpAddress,
@@ -43,6 +46,7 @@ import { TagChip, useTags } from "@/components/tag-picker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -196,6 +200,264 @@ function RangeDialog({
   );
 }
 
+interface SplitPlan {
+  mask: number;
+  children: string[];
+  existing: string[];
+}
+
+function SplitDialog({
+  open,
+  onOpenChange,
+  prefix,
+  onSaved,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  prefix: Prefix;
+  onSaved: () => void;
+}) {
+  const curMask = Number(prefix.prefix.split("/")[1] ?? 0);
+  const isV4 = !prefix.prefix.includes(":");
+  // Cap at 64 children per split — beyond that bulk-create is unwieldy.
+  const maxMask = Math.min(curMask + 6, isV4 ? 32 : 128);
+  const maskOptions = useMemo(
+    () =>
+      Array.from(
+        { length: Math.max(0, maxMask - curMask) },
+        (_, i) => curMask + i + 1
+      ),
+    [curMask, maxMask]
+  );
+
+  const [mask, setMask] = useState(curMask + 1);
+  const [childStatus, setChildStatus] = useState("active");
+  const [plan, setPlan] = useState<SplitPlan | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+
+  const loadPlan = useCallback(
+    async (m: number) => {
+      setLoading(true);
+      try {
+        const r = await api.get<SplitPlan>(
+          `/api/v1/prefixes/${prefix.id}/split?mask=${m}`
+        );
+        setPlan(r);
+        const existing = new Set(r.existing);
+        setSel(new Set(r.children.filter((c) => !existing.has(c))));
+      } catch (e) {
+        setPlan(null);
+        setSel(new Set());
+        toast.error("Split preview failed", { description: String(e) });
+      } finally {
+        setLoading(false);
+      }
+    },
+    [prefix.id]
+  );
+
+  useEffect(() => {
+    if (open) {
+      setMask(curMask + 1);
+      setChildStatus("active");
+      void loadPlan(curMask + 1);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset on each open
+  }, [open]);
+
+  const existingSet = useMemo(
+    () => new Set(plan?.existing ?? []),
+    [plan]
+  );
+  const creatable = plan ? plan.children.length - existingSet.size : 0;
+  const isContainer = prefix.status === "container";
+
+  const toggleAll = () => {
+    if (!plan) return;
+    setSel(
+      sel.size >= creatable
+        ? new Set()
+        : new Set(plan.children.filter((c) => !existingSet.has(c)))
+    );
+  };
+
+  const create = async () => {
+    if (!plan) return;
+    setBusy(true);
+    let created = 0;
+    const failed: string[] = [];
+    for (const c of plan.children.filter((c) => sel.has(c))) {
+      try {
+        await api.post("/api/v1/prefixes", {
+          prefix: c,
+          vrf_id: prefix.vrf_id,
+          site_id: prefix.site_id,
+          vlan_id: prefix.vlan_id,
+          status: childStatus,
+        });
+        created++;
+      } catch {
+        failed.push(c);
+      }
+    }
+    setBusy(false);
+    if (created > 0) {
+      toast.success(`Created ${created} subnet${created === 1 ? "" : "s"}`);
+      onSaved();
+    }
+    if (failed.length > 0) {
+      toast.error(`${failed.length} subnet(s) could not be created`, {
+        description:
+          failed.slice(0, 3).join(", ") + (failed.length > 3 ? "…" : ""),
+      });
+      void loadPlan(mask); // refresh so new children show as existing
+    } else {
+      onOpenChange(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Split {prefix.prefix}</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-1.5">
+              <Label>New mask</Label>
+              <Select
+                value={String(mask)}
+                onValueChange={(v) => {
+                  const m = Number(v);
+                  setMask(m);
+                  void loadPlan(m);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {maskOptions.map((m) => (
+                    <SelectItem key={m} value={String(m)}>
+                      /{m} · {2 ** (m - curMask)} subnets
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Child status</Label>
+              <Select value={childStatus} onValueChange={setChildStatus}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {["active", "container", "reserved"].map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {s}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {!isContainer && (
+            <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-400">
+              Children of a &quot;{prefix.status}&quot; prefix overlap it and
+              will be rejected — set the prefix status to &quot;container&quot;
+              first.
+            </p>
+          )}
+
+          <div className="grid gap-1.5">
+            <div className="flex items-center justify-between">
+              <Label>Subnets to create</Label>
+              {plan && creatable > 0 && (
+                <button
+                  onClick={toggleAll}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                >
+                  {sel.size >= creatable ? "Deselect all" : "Select all"}
+                </button>
+              )}
+            </div>
+            <div className="max-h-56 space-y-0.5 overflow-auto rounded-md border p-2">
+              {loading && (
+                <div className="flex items-center gap-2 p-2 text-xs text-muted-foreground">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> Computing…
+                </div>
+              )}
+              {!loading && !plan && (
+                <p className="p-2 text-xs text-muted-foreground">
+                  No split plan available.
+                </p>
+              )}
+              {!loading &&
+                plan?.children.map((c) => {
+                  const exists = existingSet.has(c);
+                  return (
+                    <div
+                      key={c}
+                      onClick={() => {
+                        if (exists) return;
+                        const next = new Set(sel);
+                        if (next.has(c)) next.delete(c);
+                        else next.add(c);
+                        setSel(next);
+                      }}
+                      className={cn(
+                        "flex items-center gap-2 rounded px-1.5 py-1 font-mono text-xs",
+                        exists
+                          ? "text-muted-foreground"
+                          : "cursor-pointer hover:bg-accent/50"
+                      )}
+                    >
+                      <Checkbox
+                        checked={exists || sel.has(c)}
+                        disabled={exists}
+                        onCheckedChange={(v) => {
+                          const next = new Set(sel);
+                          if (v) next.add(c);
+                          else next.delete(c);
+                          setSel(next);
+                        }}
+                      />
+                      {c}
+                      {exists && (
+                        <Badge variant="outline" className="ml-auto">
+                          exists
+                        </Badge>
+                      )}
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            onClick={create}
+            disabled={busy || sel.size === 0 || !isContainer}
+            title={
+              !isContainer
+                ? "Only container prefixes can be split"
+                : undefined
+            }
+          >
+            {busy
+              ? "Creating…"
+              : `Create ${sel.size} subnet${sel.size === 1 ? "" : "s"}`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function PrefixDetailPage({ id }: { id: string }) {
   const prefixId = Number(id);
   const { can } = useAuth();
@@ -226,6 +488,7 @@ export default function PrefixDetailPage({ id }: { id: string }) {
   const ranges = rangesQ.data ?? [];
   const [drawer, setDrawer] = useState<{ ip: string; addr: IpAddress | null } | null>(null);
   const [rangeOpen, setRangeOpen] = useState(false);
+  const [splitOpen, setSplitOpen] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [search, setSearch, setSearchNow] = useUrlText("q");
   const [statusSel, setStatusSel] = useUrlSet<IpStatus>("status");
@@ -424,6 +687,15 @@ export default function PrefixDetailPage({ id }: { id: string }) {
               <Button size="sm" variant="outline" onClick={() => setRangeOpen(true)}>
                 <Plus /> IP range
               </Button>
+              {prefix && Number(prefix.prefix.split("/")[1]) < (isV4 ? 32 : 128) && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setSplitOpen(true)}
+                >
+                  <Split /> Split subnet
+                </Button>
+              )}
               <Button size="sm" onClick={allocNext}>
                 <Zap /> Allocate next free IP
               </Button>
@@ -521,13 +793,13 @@ export default function PrefixDetailPage({ id }: { id: string }) {
               )}
             </span>
             <span className="flex gap-3 text-xs font-normal text-muted-foreground">
-              <i className="flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-sm bg-emerald-500/60" />active</i>
-              <i className="flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-sm bg-violet-500/60" />discovered</i>
-              <i className="flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-sm bg-amber-500/60" />reserved</i>
-              <i className="flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-sm bg-cyan-500/60" />dhcp</i>
-              <i className="flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-sm border border-dashed border-sky-700 bg-sky-900/40" />range</i>
-              <i className="flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-sm bg-zinc-600/60" />offline</i>
-              <i className="flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-sm bg-zinc-800" />free</i>
+              <i className="flex items-center gap-1"><i className="ipcell-active h-2.5 w-2.5 rounded-sm" />active</i>
+              <i className="flex items-center gap-1"><i className="ipcell-discovered h-2.5 w-2.5 rounded-sm" />discovered</i>
+              <i className="flex items-center gap-1"><i className="ipcell-reserved h-2.5 w-2.5 rounded-sm" />reserved</i>
+              <i className="flex items-center gap-1"><i className="ipcell-dhcp h-2.5 w-2.5 rounded-sm" />dhcp</i>
+              <i className="flex items-center gap-1"><i className="ipcell-range h-2.5 w-2.5 rounded-sm" />range</i>
+              <i className="flex items-center gap-1"><i className="ipcell-offline h-2.5 w-2.5 rounded-sm" />offline</i>
+              <i className="flex items-center gap-1"><i className="ipcell-free h-2.5 w-2.5 rounded-sm" />free</i>
             </span>
           </CardTitle>
         </CardHeader>
@@ -699,6 +971,14 @@ export default function PrefixDetailPage({ id }: { id: string }) {
         <RangeDialog
           open={rangeOpen}
           onOpenChange={setRangeOpen}
+          prefix={prefix}
+          onSaved={refresh}
+        />
+      )}
+      {prefix && (
+        <SplitDialog
+          open={splitOpen}
+          onOpenChange={setSplitOpen}
           prefix={prefix}
           onSaved={refresh}
         />
