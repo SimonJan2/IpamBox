@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { History, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
@@ -12,8 +12,12 @@ import { PERM } from "@/lib/permissions";
 import { fmtTs } from "@/lib/prefs";
 import { slugify } from "@/lib/utils";
 import { useUrlText } from "@/lib/url-state";
+import { useRowNav } from "@/lib/row-nav";
 import type { Site, Vrf } from "@/types";
 import { AsyncPanel } from "@/components/async-panel";
+import { HistoryDialog } from "@/components/history-panel";
+import { InlineText } from "@/components/inline-edit";
+import { SavedViews } from "@/components/saved-views";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -278,10 +282,34 @@ export default function VrfsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Vrf | null>(null);
   const [deleting, setDeleting] = useState<Vrf | null>(null);
+  const [historyFor, setHistoryFor] = useState<Vrf | null>(null);
 
   const vrfs = vrfsQ.data ?? [];
   const sites = sitesQ.data ?? [];
   const refresh = () => void vrfsQ.reload();
+
+  // Optimistic single-field patch for inline-editable cells.
+  const saveField = useCallback(
+    async (id: number, field: "description", value: string | null) => {
+      let prev: Vrf | undefined;
+      vrfsQ.setData((cur) => {
+        prev = (cur ?? []).find((v) => v.id === id);
+        return (cur ?? []).map((v) =>
+          v.id === id ? { ...v, [field]: value } : v
+        );
+      });
+      try {
+        await api.patch(`/api/v1/vrfs/${id}`, { [field]: value });
+      } catch (e) {
+        vrfsQ.setData((cur) =>
+          (cur ?? []).map((v) => (v.id === id && prev ? prev : v))
+        );
+        toast.error("Save failed", { description: String(e) });
+        throw e;
+      }
+    },
+    [vrfsQ.setData]
+  );
 
   const siteName = useMemo(
     () => Object.fromEntries(sites.map((s) => [s.id, s.name])),
@@ -293,6 +321,20 @@ export default function VrfsPage() {
       v.name.toLowerCase().includes(q.toLowerCase()) ||
       (v.rd ?? "").toLowerCase().includes(q.toLowerCase())
   );
+
+  const { rowProps } = useRowNav({
+    count: filtered.length,
+    onOpen: (i) => {
+      const v = filtered[i];
+      if (!v) return;
+      if (canWrite) {
+        setEditing(v);
+        setDialogOpen(true);
+      } else {
+        setHistoryFor(v);
+      }
+    },
+  });
 
   return (
     <div className="space-y-4">
@@ -311,12 +353,15 @@ export default function VrfsPage() {
         )}
       </div>
 
-      <Input
-        placeholder="Search VRFs…"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        className="max-w-xs"
-      />
+      <div className="flex items-center gap-2">
+        <Input
+          placeholder="Search VRFs…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          className="max-w-xs"
+        />
+        <SavedViews pageKey="vrfs" className="ml-auto" />
+      </div>
 
       <div className="rounded-lg border">
         <AsyncPanel
@@ -338,8 +383,12 @@ export default function VrfsPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.map((v) => (
-              <TableRow key={v.id}>
+            {filtered.map((v, i) => (
+              <TableRow
+                key={v.id}
+                {...rowProps(i)}
+                className="focus-visible:bg-muted/50 focus-visible:outline-none"
+              >
                 <TableCell className="font-medium">{v.name}</TableCell>
                 <TableCell className="font-mono text-muted-foreground">
                   {v.rd ?? "—"}
@@ -348,13 +397,27 @@ export default function VrfsPage() {
                   {v.site_id ? siteName[v.site_id] ?? "—" : "—"}
                 </TableCell>
                 <TableCell className="text-muted-foreground">
-                  {v.description ?? "—"}
+                  <InlineText
+                    value={v.description}
+                    onSave={(nv) => saveField(v.id, "description", nv || null)}
+                    disabled={!canWrite}
+                    dir="auto"
+                    label={`Edit description for ${v.name}`}
+                  />
                 </TableCell>
                 <TableCell className="text-muted-foreground">
                   {fmtTs(v.created_at)}
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`History of ${v.name}`}
+                      onClick={() => setHistoryFor(v)}
+                    >
+                      <History className="h-4 w-4" />
+                    </Button>
                     {canWrite && (
                       <Button
                         variant="ghost"
@@ -409,6 +472,13 @@ export default function VrfsPage() {
         vrf={deleting}
         onOpenChange={() => setDeleting(null)}
         onDeleted={refresh}
+      />
+      <HistoryDialog
+        open={historyFor !== null}
+        onOpenChange={() => setHistoryFor(null)}
+        objectType="VRF"
+        objectId={historyFor?.id ?? null}
+        title={historyFor?.name}
       />
     </div>
   );

@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { History, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   flexRender,
@@ -17,8 +17,12 @@ import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
 import { foldHebrew } from "@/lib/utils";
 import { useUrlParam, useUrlSorting, useUrlText } from "@/lib/url-state";
+import { useRowNav } from "@/lib/row-nav";
 import { SortHeader, columnAriaSort } from "@/components/sort-header";
 import { AsyncPanel } from "@/components/async-panel";
+import { HistoryDialog } from "@/components/history-panel";
+import { InlineText } from "@/components/inline-edit";
+import { SavedViews } from "@/components/saved-views";
 import type { Asset, AssetKind, Site } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -86,12 +90,36 @@ export default function InventoryPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Asset | null>(null);
   const [deleting, setDeleting] = useState<Asset | null>(null);
+  const [historyFor, setHistoryFor] = useState<Asset | null>(null);
   const [form, setForm] = useState(EMPTY);
   const [busy, setBusy] = useState(false);
 
   const items = itemsQ.data ?? [];
   const sites = sitesQ.data ?? [];
   const refresh = () => void itemsQ.reload();
+
+  // Optimistic single-field patch for inline-editable cells.
+  const saveField = useCallback(
+    async (id: number, field: "purpose", value: string | null) => {
+      let prev: Asset | undefined;
+      itemsQ.setData((cur) => {
+        prev = (cur ?? []).find((a) => a.id === id);
+        return (cur ?? []).map((a) =>
+          a.id === id ? { ...a, [field]: value } : a
+        );
+      });
+      try {
+        await api.patch(`/api/v1/assets/${id}`, { [field]: value });
+      } catch (e) {
+        itemsQ.setData((cur) =>
+          (cur ?? []).map((a) => (a.id === id && prev ? prev : a))
+        );
+        toast.error("Save failed", { description: String(e) });
+        throw e;
+      }
+    },
+    [itemsQ.setData]
+  );
 
   useEffect(() => {
     if (dialogOpen) {
@@ -263,13 +291,14 @@ export default function InventoryPage() {
           <SortHeader column={column}>Purpose</SortHeader>
         ),
         cell: (c) => (
-          <span
+          <InlineText
+            value={c.getValue<string | null>()}
+            onSave={(v) => saveField(c.row.original.id, "purpose", v || null)}
+            disabled={!canWrite}
             dir="auto"
-            title={c.getValue<string | null>() ?? undefined}
-            className="block max-w-[200px] truncate text-muted-foreground"
-          >
-            {c.getValue<string | null>() ?? "—"}
-          </span>
+            label={`Edit purpose for ${c.row.original.model ?? c.row.original.id}`}
+            className="max-w-[200px]"
+          />
         ),
       },
       {
@@ -305,6 +334,14 @@ export default function InventoryPage() {
         enableSorting: false,
         cell: (c) => (
           <div className="flex justify-end gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={`History of asset ${c.row.original.model ?? c.row.original.serial_number ?? c.row.original.id}`}
+              onClick={() => setHistoryFor(c.row.original)}
+            >
+              <History className="h-4 w-4" />
+            </Button>
             {canWrite && (
               <Button
                 variant="ghost"
@@ -332,7 +369,7 @@ export default function InventoryPage() {
         ),
       },
     ],
-    [canWrite, canDelete]
+    [canWrite, canDelete, saveField]
   );
 
   const table = useReactTable({
@@ -342,6 +379,21 @@ export default function InventoryPage() {
     getSortedRowModel: getSortedRowModel(),
     state: { sorting },
     onSortingChange: setSorting,
+  });
+
+  const tableRows = table.getRowModel().rows;
+  const { rowProps } = useRowNav({
+    count: tableRows.length,
+    onOpen: (i) => {
+      const a = tableRows[i]?.original;
+      if (!a) return;
+      if (canWrite) {
+        setEditing(a);
+        setDialogOpen(true);
+      } else {
+        setHistoryFor(a);
+      }
+    },
   });
 
   const set = (k: keyof typeof EMPTY) => (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -383,8 +435,9 @@ export default function InventoryPage() {
           </SelectContent>
         </Select>
         <span className="ml-auto text-sm text-muted-foreground">
-          {table.getRowModel().rows.length} of {items.length}
+          {tableRows.length} of {items.length}
         </span>
+        <SavedViews pageKey="inventory" />
       </div>
 
       <div className="rounded-lg border">
@@ -408,8 +461,12 @@ export default function InventoryPage() {
             ))}
           </TableHeader>
           <TableBody>
-            {table.getRowModel().rows.map((row) => (
-              <TableRow key={row.id}>
+            {tableRows.map((row, i) => (
+              <TableRow
+                key={row.id}
+                {...rowProps(i)}
+                className="focus-visible:bg-muted/50 focus-visible:outline-none"
+              >
                 {row.getVisibleCells().map((cell) => (
                   <TableCell key={cell.id}>
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -417,7 +474,7 @@ export default function InventoryPage() {
                 ))}
               </TableRow>
             ))}
-            {table.getRowModel().rows.length === 0 && items.length > 0 && (
+            {tableRows.length === 0 && items.length > 0 && (
               <TableRow>
                 <TableCell
                   colSpan={10}
@@ -585,6 +642,14 @@ export default function InventoryPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <HistoryDialog
+        open={historyFor !== null}
+        onOpenChange={() => setHistoryFor(null)}
+        objectType="Asset"
+        objectId={historyFor?.id ?? null}
+        title={historyFor?.model ?? historyFor?.serial_number}
+      />
     </div>
   );
 }

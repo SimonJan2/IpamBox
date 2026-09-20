@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Building2,
   Cable,
@@ -34,10 +34,12 @@ import { api } from "@/lib/api";
 import { AuthProvider, authCtxValue } from "@/lib/auth";
 import { PERM, ROLE_META } from "@/lib/permissions";
 import { usePrefs } from "@/lib/prefs";
+import { useGlobalShortcuts } from "@/lib/shortcuts";
 import type { AuthStatus } from "@/types";
 import { Button } from "@/components/ui/button";
 import { QuickScanDialog } from "@/components/quick-scan";
 import { CommandPalette } from "@/components/command-palette";
+import { ShortcutsOverlay } from "@/components/shortcuts-overlay";
 import {
   Sheet,
   SheetContent,
@@ -237,6 +239,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [scanOpen, setScanOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [auth, setAuth] = useState<AuthStatus | null>(null);
   const [prefs, setPrefs] = usePrefs();
   const isAuthRoute = AUTH_ROUTES.includes(pathname);
@@ -272,32 +275,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Route changes close the mobile drawer.
   useEffect(() => setDrawerOpen(false), [pathname]);
 
-  // ⌘K / Ctrl+K toggles the palette; "/" opens it outside text inputs.
-  useEffect(() => {
-    if (isAuthRoute) return;
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        setPaletteOpen((v) => !v);
-        return;
-      }
-      if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        const el = e.target as HTMLElement;
-        const tag = el.tagName;
-        if (
-          tag === "INPUT" ||
-          tag === "TEXTAREA" ||
-          tag === "SELECT" ||
-          el.isContentEditable
-        )
-          return;
-        e.preventDefault();
-        setPaletteOpen(true);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [isAuthRoute]);
+  // ⌘K / Ctrl+K palette, "/" search, "?" overlay, g-chords, j/k row nav.
+  const paletteToggle = useCallback(() => setPaletteOpen((v) => !v), []);
+  const paletteOpenCb = useCallback(() => setPaletteOpen(true), []);
+  const helpOpenCb = useCallback(() => setHelpOpen(true), []);
+  useGlobalShortcuts({
+    enabled: !isAuthRoute,
+    onPaletteToggle: paletteToggle,
+    onPaletteOpen: paletteOpenCb,
+    onHelpOpen: helpOpenCb,
+  });
 
   const signOut = async () => {
     try {
@@ -340,7 +327,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="flex min-h-screen">
       <aside
         className={cn(
-          "fixed inset-y-0 z-30 hidden flex-col border-r bg-card transition-[width] md:flex",
+          "fixed inset-y-0 z-30 hidden flex-col border-r bg-card transition-[width] md:flex print:hidden",
           collapsed ? "w-16" : "w-60"
         )}
       >
@@ -450,11 +437,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <div
         className={cn(
-          "flex min-h-screen min-w-0 flex-1 flex-col transition-[margin]",
+          "flex min-h-screen min-w-0 flex-1 flex-col transition-[margin] print:ml-0",
           collapsed ? "md:ml-16" : "md:ml-60"
         )}
       >
-        <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-2 border-b bg-background/80 px-4 backdrop-blur md:px-6">
+        <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-2 border-b bg-background/80 px-4 backdrop-blur md:px-6 print:hidden">
           <div className="flex items-center gap-2">
             <Button
               variant="ghost"
@@ -499,6 +486,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         onFinished={() => window.dispatchEvent(new Event("ipam:refresh"))}
       />
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+      <ShortcutsOverlay open={helpOpen} onOpenChange={setHelpOpen} />
       </div>
     </AuthProvider>
   );

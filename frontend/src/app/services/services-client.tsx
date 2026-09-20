@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { History, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   flexRender,
@@ -18,8 +18,12 @@ import { useFeatureFlag } from "@/lib/features";
 import { PERM } from "@/lib/permissions";
 import { foldHebrew } from "@/lib/utils";
 import { useUrlSorting, useUrlText } from "@/lib/url-state";
+import { useRowNav } from "@/lib/row-nav";
 import { SortHeader, columnAriaSort } from "@/components/sort-header";
 import { AsyncPanel } from "@/components/async-panel";
+import { HistoryDialog } from "@/components/history-panel";
+import { InlineText } from "@/components/inline-edit";
+import { SavedViews } from "@/components/saved-views";
 import type { Service, Site } from "@/types";
 import { Button } from "@/components/ui/button";
 import {
@@ -82,6 +86,7 @@ export default function ServicesPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Service | null>(null);
   const [deleting, setDeleting] = useState<Service | null>(null);
+  const [historyFor, setHistoryFor] = useState<Service | null>(null);
   const followSiteCode = useFeatureFlag("site_code_follow_site");
   const [form, setForm] = useState(EMPTY);
   const [codeManual, setCodeManual] = useState(false);
@@ -181,6 +186,29 @@ export default function ServicesPage() {
     if (on && formSite) setForm({ ...form, site_code: formSite.code ?? "" });
   };
 
+  // Optimistic single-field patch for inline-editable cells.
+  const saveField = useCallback(
+    async (id: number, field: "notes", value: string | null) => {
+      let prev: Service | undefined;
+      itemsQ.setData((cur) => {
+        prev = (cur ?? []).find((s) => s.id === id);
+        return (cur ?? []).map((s) =>
+          s.id === id ? { ...s, [field]: value } : s
+        );
+      });
+      try {
+        await api.patch(`/api/v1/services/${id}`, { [field]: value });
+      } catch (e) {
+        itemsQ.setData((cur) =>
+          (cur ?? []).map((s) => (s.id === id && prev ? prev : s))
+        );
+        toast.error("Save failed", { description: String(e) });
+        throw e;
+      }
+    },
+    [itemsQ.setData]
+  );
+
   const rows = useMemo<ServiceRow[]>(
     () =>
       items.map((s) => ({
@@ -278,13 +306,14 @@ export default function ServicesPage() {
         header: "Notes",
         enableSorting: false,
         cell: (c) => (
-          <span
+          <InlineText
+            value={c.getValue<string | null>()}
+            onSave={(v) => saveField(c.row.original.id, "notes", v || null)}
+            disabled={!canWrite}
             dir="auto"
-            title={c.getValue<string | null>() ?? undefined}
-            className="block max-w-[220px] truncate text-muted-foreground"
-          >
-            {c.getValue<string | null>() ?? "—"}
-          </span>
+            label={`Edit notes for ${c.row.original.name ?? c.row.original.id}`}
+            className="max-w-[220px]"
+          />
         ),
       },
       {
@@ -293,6 +322,14 @@ export default function ServicesPage() {
         enableSorting: false,
         cell: (c) => (
           <div className="flex justify-end gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={`History of service ${c.row.original.name ?? c.row.original.id}`}
+              onClick={() => setHistoryFor(c.row.original)}
+            >
+              <History className="h-4 w-4" />
+            </Button>
             {canWrite && (
               <Button
                 variant="ghost"
@@ -320,7 +357,7 @@ export default function ServicesPage() {
         ),
       },
     ],
-    [canWrite, canDelete]
+    [canWrite, canDelete, saveField]
   );
 
   const table = useReactTable({
@@ -330,6 +367,21 @@ export default function ServicesPage() {
     getSortedRowModel: getSortedRowModel(),
     state: { sorting },
     onSortingChange: setSorting,
+  });
+
+  const tableRows = table.getRowModel().rows;
+  const { rowProps } = useRowNav({
+    count: tableRows.length,
+    onOpen: (i) => {
+      const s = tableRows[i]?.original;
+      if (!s) return;
+      if (canWrite) {
+        setEditing(s);
+        setDialogOpen(true);
+      } else {
+        setHistoryFor(s);
+      }
+    },
   });
 
   const set = (k: keyof typeof EMPTY) => (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -361,8 +413,9 @@ export default function ServicesPage() {
           className="max-w-xs"
         />
         <span className="ml-auto text-sm text-muted-foreground">
-          {table.getRowModel().rows.length} of {items.length}
+          {tableRows.length} of {items.length}
         </span>
+        <SavedViews pageKey="services" />
       </div>
 
       <div className="rounded-lg border">
@@ -386,8 +439,12 @@ export default function ServicesPage() {
             ))}
           </TableHeader>
           <TableBody>
-            {table.getRowModel().rows.map((row) => (
-              <TableRow key={row.id}>
+            {tableRows.map((row, i) => (
+              <TableRow
+                key={row.id}
+                {...rowProps(i)}
+                className="focus-visible:bg-muted/50 focus-visible:outline-none"
+              >
                 {row.getVisibleCells().map((cell) => (
                   <TableCell key={cell.id}>
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -395,7 +452,7 @@ export default function ServicesPage() {
                 ))}
               </TableRow>
             ))}
-            {table.getRowModel().rows.length === 0 && items.length > 0 && (
+            {tableRows.length === 0 && items.length > 0 && (
               <TableRow>
                 <TableCell
                   colSpan={8}
@@ -536,6 +593,14 @@ export default function ServicesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <HistoryDialog
+        open={historyFor !== null}
+        onOpenChange={() => setHistoryFor(null)}
+        objectType="Service"
+        objectId={historyFor?.id ?? null}
+        title={historyFor?.name}
+      />
     </div>
   );
 }

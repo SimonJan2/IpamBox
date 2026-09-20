@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { History, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   flexRender,
@@ -19,8 +19,12 @@ import { useFeatureFlag } from "@/lib/features";
 import { PERM } from "@/lib/permissions";
 import { cn, foldHebrew } from "@/lib/utils";
 import { useUrlParam, useUrlSorting, useUrlText } from "@/lib/url-state";
+import { useRowNav } from "@/lib/row-nav";
 import { SortHeader, columnAriaSort } from "@/components/sort-header";
 import { AsyncPanel } from "@/components/async-panel";
+import { HistoryDialog } from "@/components/history-panel";
+import { InlineText } from "@/components/inline-edit";
+import { SavedViews } from "@/components/saved-views";
 import type { Circuit, Site } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -335,10 +339,34 @@ export default function CircuitsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Circuit | null>(null);
   const [deleting, setDeleting] = useState<Circuit | null>(null);
+  const [historyFor, setHistoryFor] = useState<Circuit | null>(null);
 
   const items = itemsQ.data ?? [];
   const sites = sitesQ.data ?? [];
   const refresh = () => void itemsQ.reload();
+
+  // Optimistic single-field patch for inline-editable cells.
+  const saveField = useCallback(
+    async (id: number, field: "notes", value: string | null) => {
+      let prev: Circuit | undefined;
+      itemsQ.setData((cur) => {
+        prev = (cur ?? []).find((c) => c.id === id);
+        return (cur ?? []).map((c) =>
+          c.id === id ? { ...c, [field]: value } : c
+        );
+      });
+      try {
+        await api.patch(`/api/v1/circuits/${id}`, { [field]: value });
+      } catch (e) {
+        itemsQ.setData((cur) =>
+          (cur ?? []).map((c) => (c.id === id && prev ? prev : c))
+        );
+        toast.error("Save failed", { description: String(e) });
+        throw e;
+      }
+    },
+    [itemsQ.setData]
+  );
 
   // legacy imports (קוי בזק ישן) live in the Retired Circuits tab
   const activeItems = useMemo(() => items.filter((c) => !c.is_retired), [items]);
@@ -486,13 +514,14 @@ export default function CircuitsPage() {
         header: "Notes",
         enableSorting: false,
         cell: (c) => (
-          <span
+          <InlineText
+            value={c.getValue<string | null>()}
+            onSave={(v) => saveField(c.row.original.id, "notes", v || null)}
+            disabled={!canWrite}
             dir="auto"
-            title={c.getValue<string | null>() ?? undefined}
-            className="block max-w-[220px] truncate text-muted-foreground"
-          >
-            {c.getValue<string | null>() ?? "—"}
-          </span>
+            label={`Edit notes for circuit ${c.row.original.bezeq_circuit_id ?? c.row.original.id}`}
+            className="max-w-[220px]"
+          />
         ),
       },
       {
@@ -501,6 +530,14 @@ export default function CircuitsPage() {
         enableSorting: false,
         cell: (c) => (
           <div className="flex justify-end gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={`History of circuit ${c.row.original.bezeq_circuit_id ?? c.row.original.site_name ?? c.row.original.id}`}
+              onClick={() => setHistoryFor(c.row.original)}
+            >
+              <History className="h-4 w-4" />
+            </Button>
             {canWrite && (
               <Button
                 variant="ghost"
@@ -528,7 +565,7 @@ export default function CircuitsPage() {
         ),
       },
     ],
-    [canWrite, canDelete]
+    [canWrite, canDelete, saveField]
   );
 
   const table = useReactTable({
@@ -545,6 +582,21 @@ export default function CircuitsPage() {
       return Object.values(row.original).some(
         (v) => v != null && foldHebrew(String(v).toLowerCase()).includes(needle)
       );
+    },
+  });
+
+  const tableRows = table.getRowModel().rows;
+  const { rowProps } = useRowNav({
+    count: tableRows.length,
+    onOpen: (i) => {
+      const c = tableRows[i]?.original;
+      if (!c) return;
+      if (canWrite) {
+        setEditing(c);
+        setDialogOpen(true);
+      } else {
+        setHistoryFor(c);
+      }
     },
   });
 
@@ -673,8 +725,9 @@ export default function CircuitsPage() {
           </Button>
         )}
         <span className="ml-auto text-sm text-muted-foreground">
-          {table.getRowModel().rows.length} of {scopedItems.length}
+          {tableRows.length} of {scopedItems.length}
         </span>
+        <SavedViews pageKey="circuits" />
       </div>
 
       <div className="rounded-lg border">
@@ -702,8 +755,12 @@ export default function CircuitsPage() {
             ))}
           </TableHeader>
           <TableBody>
-            {table.getRowModel().rows.map((row) => (
-              <TableRow key={row.id}>
+            {tableRows.map((row, i) => (
+              <TableRow
+                key={row.id}
+                {...rowProps(i)}
+                className="focus-visible:bg-muted/50 focus-visible:outline-none"
+              >
                 {row.getVisibleCells().map((cell) => (
                   <TableCell key={cell.id}>
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -711,7 +768,7 @@ export default function CircuitsPage() {
                 ))}
               </TableRow>
             ))}
-            {table.getRowModel().rows.length === 0 && scopedItems.length > 0 && (
+            {tableRows.length === 0 && scopedItems.length > 0 && (
               <TableRow>
                 <TableCell
                   colSpan={columns.length}
@@ -757,6 +814,14 @@ export default function CircuitsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <HistoryDialog
+        open={historyFor !== null}
+        onOpenChange={() => setHistoryFor(null)}
+        objectType="Circuit"
+        objectId={historyFor?.id ?? null}
+        title={historyFor?.bezeq_circuit_id ?? historyFor?.site_name}
+      />
     </div>
   );
 }

@@ -20,6 +20,7 @@ import {
   siteKey,
   vrfKey,
 } from "@/components/prefix-tree";
+import { SavedViews } from "@/components/saved-views";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -363,6 +364,7 @@ export default function TreePage() {
             {matchCount} match{matchCount === 1 ? "" : "es"}
           </span>
         )}
+        <SavedViews pageKey="tree" className="ml-auto" />
       </div>
 
       {tree === null && !error && (

@@ -9,6 +9,13 @@ export type DensityChoice = "comfortable" | "compact";
 export type TsFormat = "local" | "iso";
 export type AddrMapView = "grid" | "list";
 
+/** A named, stored filter state for one page — `query` is the literal
+ *  URLSearchParams string that reproduces the view. */
+export interface SavedView {
+  name: string;
+  query: string;
+}
+
 export interface Prefs {
   theme: ThemeChoice;
   density: DensityChoice;
@@ -22,6 +29,8 @@ export interface Prefs {
   sidebarGroups: Record<string, boolean>;
   /** Recent command-palette picks, newest first (max 5). */
   searchRecent: { label: string; href: string }[];
+  /** Per-page named saved views (page key -> presets). */
+  savedViews: Record<string, SavedView[]>;
 }
 
 export const DEFAULT_PREFS: Prefs = {
@@ -35,6 +44,7 @@ export const DEFAULT_PREFS: Prefs = {
   sidebarCollapsed: false,
   sidebarGroups: {},
   searchRecent: [],
+  savedViews: {},
 };
 
 const KEY = "ipambox:prefs";

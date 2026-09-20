@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { History, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   flexRender,
@@ -17,8 +17,12 @@ import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
 import { foldHebrew } from "@/lib/utils";
 import { useUrlSorting, useUrlText } from "@/lib/url-state";
+import { useRowNav } from "@/lib/row-nav";
 import { expiryBadge } from "@/components/expiry-badge";
 import { AsyncPanel } from "@/components/async-panel";
+import { HistoryDialog } from "@/components/history-panel";
+import { InlineText } from "@/components/inline-edit";
+import { SavedViews } from "@/components/saved-views";
 import { SortHeader, columnAriaSort } from "@/components/sort-header";
 import type { Certificate } from "@/types";
 import { Button } from "@/components/ui/button";
@@ -64,11 +68,35 @@ export default function CertificatesPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Certificate | null>(null);
   const [deleting, setDeleting] = useState<Certificate | null>(null);
+  const [historyFor, setHistoryFor] = useState<Certificate | null>(null);
   const [form, setForm] = useState(EMPTY);
   const [busy, setBusy] = useState(false);
 
   const items = itemsQ.data ?? [];
   const refresh = () => void itemsQ.reload();
+
+  // Optimistic single-field patch for inline-editable cells.
+  const saveField = useCallback(
+    async (id: number, field: "notes", value: string | null) => {
+      let prev: Certificate | undefined;
+      itemsQ.setData((cur) => {
+        prev = (cur ?? []).find((c) => c.id === id);
+        return (cur ?? []).map((c) =>
+          c.id === id ? { ...c, [field]: value } : c
+        );
+      });
+      try {
+        await api.patch(`/api/v1/certificates/${id}`, { [field]: value });
+      } catch (e) {
+        itemsQ.setData((cur) =>
+          (cur ?? []).map((c) => (c.id === id && prev ? prev : c))
+        );
+        toast.error("Save failed", { description: String(e) });
+        throw e;
+      }
+    },
+    [itemsQ.setData]
+  );
 
   useEffect(() => {
     if (dialogOpen) {
@@ -199,13 +227,14 @@ export default function CertificatesPage() {
         header: "Notes",
         enableSorting: false,
         cell: (c) => (
-          <span
+          <InlineText
+            value={c.getValue<string | null>()}
+            onSave={(v) => saveField(c.row.original.id, "notes", v || null)}
+            disabled={!canWrite}
             dir="auto"
-            title={c.getValue<string | null>() ?? undefined}
-            className="block max-w-[220px] truncate text-muted-foreground"
-          >
-            {c.getValue<string | null>() ?? "—"}
-          </span>
+            label={`Edit notes for ${c.row.original.cert_name ?? c.row.original.id}`}
+            className="max-w-[220px]"
+          />
         ),
       },
       {
@@ -214,6 +243,14 @@ export default function CertificatesPage() {
         enableSorting: false,
         cell: (c) => (
           <div className="flex justify-end gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={`History of certificate ${c.row.original.cert_name ?? c.row.original.server_name ?? c.row.original.id}`}
+              onClick={() => setHistoryFor(c.row.original)}
+            >
+              <History className="h-4 w-4" />
+            </Button>
             {canWrite && (
               <Button
                 variant="ghost"
@@ -241,7 +278,7 @@ export default function CertificatesPage() {
         ),
       },
     ],
-    [canWrite, canDelete]
+    [canWrite, canDelete, saveField]
   );
 
   const table = useReactTable({
@@ -251,6 +288,21 @@ export default function CertificatesPage() {
     getSortedRowModel: getSortedRowModel(),
     state: { sorting },
     onSortingChange: setSorting,
+  });
+
+  const tableRows = table.getRowModel().rows;
+  const { rowProps } = useRowNav({
+    count: tableRows.length,
+    onOpen: (i) => {
+      const cert = tableRows[i]?.original;
+      if (!cert) return;
+      if (canWrite) {
+        setEditing(cert);
+        setDialogOpen(true);
+      } else {
+        setHistoryFor(cert);
+      }
+    },
   });
 
   const set = (k: keyof typeof EMPTY) => (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -282,8 +334,9 @@ export default function CertificatesPage() {
           className="max-w-xs"
         />
         <span className="ml-auto text-sm text-muted-foreground">
-          {table.getRowModel().rows.length} of {items.length}
+          {tableRows.length} of {items.length}
         </span>
+        <SavedViews pageKey="certificates" />
       </div>
 
       <div className="rounded-lg border">
@@ -307,8 +360,12 @@ export default function CertificatesPage() {
             ))}
           </TableHeader>
           <TableBody>
-            {table.getRowModel().rows.map((row) => (
-              <TableRow key={row.id}>
+            {tableRows.map((row, i) => (
+              <TableRow
+                key={row.id}
+                {...rowProps(i)}
+                className="focus-visible:bg-muted/50 focus-visible:outline-none"
+              >
                 {row.getVisibleCells().map((cell) => (
                   <TableCell key={cell.id}>
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -316,7 +373,7 @@ export default function CertificatesPage() {
                 ))}
               </TableRow>
             ))}
-            {table.getRowModel().rows.length === 0 && items.length > 0 && (
+            {tableRows.length === 0 && items.length > 0 && (
               <TableRow>
                 <TableCell
                   colSpan={7}
@@ -437,6 +494,14 @@ export default function CertificatesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <HistoryDialog
+        open={historyFor !== null}
+        onOpenChange={() => setHistoryFor(null)}
+        objectType="Certificate"
+        objectId={historyFor?.id ?? null}
+        title={historyFor?.cert_name}
+      />
     </div>
   );
 }

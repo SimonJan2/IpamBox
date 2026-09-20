@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
-import { ListFilter, Pencil, Plus, Trash2, X } from "lucide-react";
+import { History, ListFilter, Pencil, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import {
   flexRender,
@@ -17,8 +17,12 @@ import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
 import { foldHebrew } from "@/lib/utils";
 import { useUrlParam, useUrlSorting, useUrlText } from "@/lib/url-state";
+import { useRowNav } from "@/lib/row-nav";
 import { SortHeader, columnAriaSort } from "@/components/sort-header";
 import { AsyncPanel } from "@/components/async-panel";
+import { HistoryDialog } from "@/components/history-panel";
+import { InlineText } from "@/components/inline-edit";
+import { SavedViews } from "@/components/saved-views";
 import type { Site, Vlan, VlanGroup, VlanStatus } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -316,6 +320,11 @@ export default function VlansPage() {
   const [filterGroup, setFilterGroupRaw] = useUrlParam("group");
   const setFilterGroup = (id: number | null) =>
     setFilterGroupRaw(id === null ? "" : String(id));
+  const [historyFor, setHistoryFor] = useState<{
+    type: "VLAN" | "VLANGroup";
+    id: number;
+    title: string;
+  } | null>(null);
 
   const vlansQ = useAsyncData(
     () =>
@@ -369,6 +378,29 @@ export default function VlansPage() {
       }
     },
     [refresh]
+  );
+
+  // Optimistic single-field patch for inline-editable cells.
+  const saveField = useCallback(
+    async (id: number, field: "description", value: string | null) => {
+      let prev: Vlan | undefined;
+      vlansQ.setData((cur) => {
+        prev = (cur ?? []).find((v) => v.id === id);
+        return (cur ?? []).map((v) =>
+          v.id === id ? { ...v, [field]: value } : v
+        );
+      });
+      try {
+        await api.patch(`/api/v1/vlans/${id}`, { [field]: value });
+      } catch (e) {
+        vlansQ.setData((cur) =>
+          (cur ?? []).map((v) => (v.id === id && prev ? prev : v))
+        );
+        toast.error("Save failed", { description: String(e) });
+        throw e;
+      }
+    },
+    [vlansQ.setData]
   );
 
   const rows = useMemo<VlanRow[]>(
@@ -451,9 +483,13 @@ export default function VlansPage() {
           <SortHeader column={column}>Description</SortHeader>
         ),
         cell: (c) => (
-          <span dir="auto" className="text-muted-foreground">
-            {c.getValue<string | null>() ?? "—"}
-          </span>
+          <InlineText
+            value={c.getValue<string | null>()}
+            onSave={(v) => saveField(c.row.original.id, "description", v || null)}
+            disabled={!canWrite}
+            dir="auto"
+            label={`Edit description for VLAN ${c.row.original.vid}`}
+          />
         ),
       },
       {
@@ -462,6 +498,20 @@ export default function VlansPage() {
         enableSorting: false,
         cell: (c) => (
           <div className="flex justify-end gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={`History of VLAN ${c.row.original.vid}`}
+              onClick={() =>
+                setHistoryFor({
+                  type: "VLAN",
+                  id: c.row.original.id,
+                  title: `VLAN ${c.row.original.vid} ${c.row.original.name}`,
+                })
+              }
+            >
+              <History className="h-4 w-4" />
+            </Button>
             {canWrite && (
               <Button
                 variant="ghost"
@@ -489,7 +539,7 @@ export default function VlansPage() {
         ),
       },
     ],
-    [canWrite, canDelete, remove]
+    [canWrite, canDelete, remove, saveField]
   );
 
   const table = useReactTable({
@@ -499,6 +549,25 @@ export default function VlansPage() {
     getSortedRowModel: getSortedRowModel(),
     state: { sorting },
     onSortingChange: setSorting,
+  });
+
+  const tableRows = table.getRowModel().rows;
+  const { rowProps } = useRowNav({
+    count: tableRows.length,
+    onOpen: (i) => {
+      const v = tableRows[i]?.original;
+      if (!v) return;
+      if (canWrite) {
+        setEditing(v);
+        setDialogOpen(true);
+      } else {
+        setHistoryFor({
+          type: "VLAN",
+          id: v.id,
+          title: `VLAN ${v.vid} ${v.name}`,
+        });
+      }
+    },
   });
 
   const removeGroup = async (g: VlanGroup) => {
@@ -574,6 +643,20 @@ export default function VlansPage() {
                     >
                       <ListFilter className="h-4 w-4" />
                     </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`History of group ${g.name}`}
+                      onClick={() =>
+                        setHistoryFor({
+                          type: "VLANGroup",
+                          id: g.id,
+                          title: g.name,
+                        })
+                      }
+                    >
+                      <History className="h-4 w-4" />
+                    </Button>
                     {canWrite && (
                       <Button
                         variant="ghost"
@@ -625,8 +708,9 @@ export default function VlansPage() {
           </Badge>
         )}
         <span className="ml-auto text-sm text-muted-foreground">
-          {table.getRowModel().rows.length} of {vlans.length}
+          {tableRows.length} of {vlans.length}
         </span>
+        <SavedViews pageKey="vlans" />
       </div>
 
       <div className="rounded-lg border">
@@ -650,8 +734,12 @@ export default function VlansPage() {
             ))}
           </TableHeader>
           <TableBody>
-            {table.getRowModel().rows.map((row) => (
-              <TableRow key={row.id}>
+            {tableRows.map((row, i) => (
+              <TableRow
+                key={row.id}
+                {...rowProps(i)}
+                className="focus-visible:bg-muted/50 focus-visible:outline-none"
+              >
                 {row.getVisibleCells().map((cell) => (
                   <TableCell key={cell.id}>
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -659,7 +747,7 @@ export default function VlansPage() {
                 ))}
               </TableRow>
             ))}
-            {table.getRowModel().rows.length === 0 && vlans.length > 0 && (
+            {tableRows.length === 0 && vlans.length > 0 && (
               <TableRow>
                 <TableCell
                   colSpan={7}
@@ -687,6 +775,13 @@ export default function VlansPage() {
         onOpenChange={setGroupDialogOpen}
         group={editingGroup}
         onSaved={refresh}
+      />
+      <HistoryDialog
+        open={historyFor !== null}
+        onOpenChange={() => setHistoryFor(null)}
+        objectType={historyFor?.type ?? null}
+        objectId={historyFor?.id ?? null}
+        title={historyFor?.title}
       />
     </div>
   );

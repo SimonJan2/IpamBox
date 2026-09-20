@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import { useVirtualizer } from "@tanstack/react-virtual";
 
 import { usePrefs } from "@/lib/prefs";
+import { useRowNavMove } from "@/lib/row-nav";
 import { GRID_CELL_TOKENS, STATUS_TOKENS } from "@/lib/status-tokens";
 import { cn, intToIp, ipToInt, timeAgo } from "@/lib/utils";
 import type {
@@ -106,6 +107,10 @@ export function SubnetGrid({
   matchIds = null,
   highlight,
   focusInt = null,
+  spanSel = null,
+  onSpanSelect,
+  onClearSpan,
+  spanSelectable = false,
 }: {
   page: AddressPage;
   ranges?: IpRange[];
@@ -114,6 +119,13 @@ export function SubnetGrid({
   matchIds?: Set<number> | null;
   highlight?: Map<number, string>;
   focusInt?: number | null;
+  /** Committed drag-selection span as address-int bounds (data, not DOM). */
+  spanSel?: { lo: number; hi: number } | null;
+  onSpanSelect?: (lo: number, hi: number) => void;
+  onClearSpan?: () => void;
+  /** Gate drag-select on the caller's write permission; touch devices are
+   *  excluded automatically below (drag fights scroll). */
+  spanSelectable?: boolean;
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
   const cellRefs = useRef(new Map<number, HTMLButtonElement>());
@@ -121,6 +133,24 @@ export function SubnetGrid({
   const legendId = useId();
   const [prefs] = usePrefs();
   const cellSize = CELL_SIZE[prefs.density];
+
+  // Drag-select state: `drag` is the in-progress gesture (cell indices),
+  // `dragSpan` is the live preview as address-int bounds. Coarse pointers
+  // (touch) get no drag-select — it fights scroll; row actions cover it.
+  const drag = useRef<{ start: number; end: number; moved: boolean } | null>(
+    null
+  );
+  const justDragged = useRef(false);
+  const [dragSpan, setDragSpan] = useState<{ lo: number; hi: number } | null>(
+    null
+  );
+  const coarse = useMemo(
+    () =>
+      typeof window !== "undefined" &&
+      window.matchMedia("(pointer: coarse)").matches,
+    []
+  );
+  const dragOk = spanSelectable && !coarse;
 
   const byInt = useMemo(() => {
     const m = new Map<number, IpAddress>();
@@ -199,6 +229,47 @@ export function SubnetGrid({
     }
   }, [focusInt, base, rows, virtualized, virtualizer]);
 
+  // Global j/k move one grid row — the grid owns row-nav while mounted.
+  const moveRow = useCallback(
+    (d: number) => {
+      const cur = Math.min(focusIdx, total - 1);
+      focusCell(Math.min(Math.max(cur + d * COLS, 0), total - 1));
+    },
+    [focusIdx, total, focusCell]
+  );
+  useRowNavMove(moveRow);
+
+  // Commit/cancel a drag on pointerup/cancel anywhere — release may land on a
+  // different cell or outside the grid entirely.
+  useEffect(() => {
+    if (!dragOk) return;
+    const finish = () => {
+      const d = drag.current;
+      drag.current = null;
+      setDragSpan(null);
+      if (d?.moved) {
+        const lo = base + Math.min(d.start, d.end);
+        const hi = base + Math.max(d.start, d.end);
+        // Suppress the click that follows pointerup — a drag is not a select.
+        justDragged.current = true;
+        setTimeout(() => {
+          justDragged.current = false;
+        }, 0);
+        onSpanSelect?.(lo, hi);
+      }
+    };
+    const cancel = () => {
+      drag.current = null;
+      setDragSpan(null);
+    };
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", cancel);
+    return () => {
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", cancel);
+    };
+  }, [dragOk, base, onSpanSelect]);
+
   function cellState(intIp: number): CellState {
     const addr = byInt.get(intIp);
     if (addr) return { kind: "used", addr };
@@ -209,6 +280,12 @@ export function SubnetGrid({
   }
 
   const onGridKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape") {
+      drag.current = null;
+      setDragSpan(null);
+      onClearSpan?.();
+      return;
+    }
     const idx = Math.min(focusIdx, total - 1);
     let target: number | null = null;
     switch (e.key) {
@@ -304,6 +381,10 @@ export function SubnetGrid({
                 const intIp = base + idx;
                 const ip = intToIp(intIp);
                 const st = cellState(intIp);
+                // Live drag preview wins over the committed span for display.
+                const sel = dragSpan ?? spanSel;
+                const inSpan =
+                  sel != null && intIp >= sel.lo && intIp <= sel.hi;
                 const last = ip.split(".")[3];
                 const cellTags =
                   st.kind === "used" ? (tags?.get(st.addr.id) ?? []) : [];
@@ -326,20 +407,47 @@ export function SubnetGrid({
                     aria-colindex={col + 1}
                     aria-label={cellLabel(ip, st)}
                     tabIndex={idx === tabbableIdx ? 0 : -1}
+                    aria-selected={inSpan || undefined}
                     ref={(el) => {
                       if (el) cellRefs.current.set(idx, el);
                       else cellRefs.current.delete(idx);
                     }}
                     onFocus={() => setFocusIdx(idx)}
-                    onClick={() =>
-                      onSelect(ip, st.kind === "used" ? st.addr : null)
-                    }
+                    onPointerDown={(e) => {
+                      if (!dragOk || e.pointerType === "touch" || e.button !== 0)
+                        return;
+                      drag.current = { start: idx, end: idx, moved: false };
+                      justDragged.current = false;
+                    }}
+                    onPointerEnter={() => {
+                      const d = drag.current;
+                      if (!d) return;
+                      // Crossing into another cell makes it a drag — a ~4px+
+                      // move by construction (cells are >=28px), so plain
+                      // clicks stay plain clicks.
+                      if (idx !== d.start) d.moved = true;
+                      if (d.moved) {
+                        d.end = idx;
+                        setDragSpan({
+                          lo: base + Math.min(d.start, d.end),
+                          hi: base + Math.max(d.start, d.end),
+                        });
+                      }
+                    }}
+                    onClick={() => {
+                      if (justDragged.current) {
+                        justDragged.current = false;
+                        return;
+                      }
+                      onSelect(ip, st.kind === "used" ? st.addr : null);
+                    }}
                     className={cn(
                       "relative flex items-center justify-center rounded text-[10px] font-mono transition-colors",
                       st.kind === "used"
                         ? STATUS_TOKENS[st.addr.status].cell
                         : GRID_CELL_TOKENS[st.kind].cell,
-                      dimmed && "opacity-25"
+                      dimmed && "opacity-25",
+                      inSpan && "ipcell-sel"
                     )}
                     style={{
                       width: cellSize,
