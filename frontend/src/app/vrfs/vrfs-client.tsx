@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -72,6 +72,7 @@ function VrfDialog({
   });
   const [autoName, setAutoName] = useState(true);
   const [busy, setBusy] = useState(false);
+  const uid = useId();
 
   useEffect(() => {
     if (open) {
@@ -143,9 +144,9 @@ function VrfDialog({
         </DialogHeader>
         <div className="grid gap-3">
           <div className="grid gap-1.5">
-            <Label>Site</Label>
+            <Label htmlFor={`${uid}-site`}>Site</Label>
             <Select value={form.site_id} onValueChange={onSiteChange}>
-              <SelectTrigger>
+              <SelectTrigger id={`${uid}-site`}>
                 <SelectValue placeholder="None" />
               </SelectTrigger>
               <SelectContent>
@@ -163,13 +164,18 @@ function VrfDialog({
           </div>
           <div className="grid gap-1.5">
             <div className="flex items-center justify-between">
-              <Label>Name</Label>
+              <Label htmlFor={`${uid}-name`}>Name</Label>
               <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Switch checked={autoName} onCheckedChange={onAutoName} />
+                <Switch
+                  checked={autoName}
+                  onCheckedChange={onAutoName}
+                  aria-label="Derive name from site code"
+                />
                 from site code
               </label>
             </div>
             <Input
+              id={`${uid}-name`}
               placeholder={autoName ? "select a site" : "production"}
               value={form.name}
               disabled={autoName}
@@ -177,16 +183,18 @@ function VrfDialog({
             />
           </div>
           <div className="grid gap-1.5">
-            <Label>Route distinguisher</Label>
+            <Label htmlFor={`${uid}-rd`}>Route distinguisher</Label>
             <Input
+              id={`${uid}-rd`}
               placeholder="65000:1 (optional)"
               value={form.rd}
               onChange={(e) => setForm({ ...form, rd: e.target.value })}
             />
           </div>
           <div className="grid gap-1.5">
-            <Label>Description</Label>
+            <Label htmlFor={`${uid}-description`}>Description</Label>
             <Input
+              id={`${uid}-description`}
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
             />
@@ -351,6 +359,7 @@ export default function VrfsPage() {
                       <Button
                         variant="ghost"
                         size="icon"
+                        aria-label={`Edit ${v.name}`}
                         onClick={() => {
                           setEditing(v);
                           setDialogOpen(true);
@@ -363,6 +372,7 @@ export default function VrfsPage() {
                       <Button
                         variant="ghost"
                         size="icon"
+                        aria-label={`Delete ${v.name}`}
                         onClick={() => setDeleting(v)}
                       >
                         <Trash2 className="h-4 w-4 text-rose-400" />

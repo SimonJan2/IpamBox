@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -18,7 +18,7 @@ import { useFeatureFlag } from "@/lib/features";
 import { PERM } from "@/lib/permissions";
 import { foldHebrew } from "@/lib/utils";
 import { useUrlSorting, useUrlText } from "@/lib/url-state";
-import { SortHeader } from "@/components/sort-header";
+import { SortHeader, columnAriaSort } from "@/components/sort-header";
 import { AsyncPanel } from "@/components/async-panel";
 import type { Service, Site } from "@/types";
 import { Button } from "@/components/ui/button";
@@ -297,6 +297,7 @@ export default function ServicesPage() {
               <Button
                 variant="ghost"
                 size="icon"
+                aria-label={`Edit service ${c.row.original.name ?? c.row.original.id}`}
                 onClick={() => {
                   setEditing(c.row.original);
                   setDialogOpen(true);
@@ -309,6 +310,7 @@ export default function ServicesPage() {
               <Button
                 variant="ghost"
                 size="icon"
+                aria-label={`Delete service ${c.row.original.name ?? c.row.original.id}`}
                 onClick={() => setDeleting(c.row.original)}
               >
                 <Trash2 className="h-4 w-4 text-rose-400" />
@@ -332,6 +334,7 @@ export default function ServicesPage() {
 
   const set = (k: keyof typeof EMPTY) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm({ ...form, [k]: e.target.value });
+  const uid = useId();
 
   return (
     <div className="space-y-4">
@@ -375,7 +378,7 @@ export default function ServicesPage() {
             {table.getHeaderGroups().map((hg) => (
               <TableRow key={hg.id}>
                 {hg.headers.map((h) => (
-                  <TableHead key={h.id}>
+                  <TableHead key={h.id} aria-sort={columnAriaSort(h.column)}>
                     {flexRender(h.column.columnDef.header, h.getContext())}
                   </TableHead>
                 ))}
@@ -414,12 +417,18 @@ export default function ServicesPage() {
           </DialogHeader>
           <div className="grid gap-3">
             <div className="grid gap-1.5">
-              <Label>Name</Label>
-              <Input dir="auto" value={form.name} onChange={set("name")} />
+              <Label htmlFor={`${uid}-name`}>Name</Label>
+              <Input
+                id={`${uid}-name`}
+                dir="auto"
+                value={form.name}
+                onChange={set("name")}
+              />
             </div>
             <div className="grid gap-1.5">
-              <Label>Beneficiary</Label>
+              <Label htmlFor={`${uid}-beneficiary`}>Beneficiary</Label>
               <Input
+                id={`${uid}-beneficiary`}
                 dir="auto"
                 value={form.beneficiary}
                 onChange={set("beneficiary")}
@@ -427,9 +436,9 @@ export default function ServicesPage() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="grid gap-1.5">
-                <Label>Site</Label>
+                <Label htmlFor={`${uid}-site`}>Site</Label>
                 <Select value={form.site_id} onValueChange={onSiteChange}>
-                  <SelectTrigger>
+                  <SelectTrigger id={`${uid}-site`}>
                     <SelectValue placeholder="None" />
                   </SelectTrigger>
                   <SelectContent>
@@ -447,18 +456,20 @@ export default function ServicesPage() {
               </div>
               <div className="grid gap-1.5">
                 <div className="flex items-center justify-between">
-                  <Label>Site code</Label>
+                  <Label htmlFor={`${uid}-site-code`}>Site code</Label>
                   {formSite?.code && (
                     <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       <Switch
                         checked={!codeManual}
                         onCheckedChange={onCodeAuto}
+                        aria-label="Derive site code from site"
                       />
                       from site
                     </label>
                   )}
                 </div>
                 <Input
+                  id={`${uid}-site-code`}
                   dir="ltr"
                   value={form.site_code}
                   disabled={codeLocked}
@@ -467,8 +478,9 @@ export default function ServicesPage() {
               </div>
             </div>
             <div className="grid gap-1.5">
-              <Label>Documentation path</Label>
+              <Label htmlFor={`${uid}-doc-path`}>Documentation path</Label>
               <Input
+                id={`${uid}-doc-path`}
                 dir="ltr"
                 value={form.doc_path}
                 onChange={set("doc_path")}
@@ -476,16 +488,22 @@ export default function ServicesPage() {
               />
             </div>
             <div className="grid gap-1.5">
-              <Label>Test info</Label>
+              <Label htmlFor={`${uid}-test-info`}>Test info</Label>
               <Input
+                id={`${uid}-test-info`}
                 dir="auto"
                 value={form.test_info}
                 onChange={set("test_info")}
               />
             </div>
             <div className="grid gap-1.5">
-              <Label>Notes</Label>
-              <Input dir="auto" value={form.notes} onChange={set("notes")} />
+              <Label htmlFor={`${uid}-notes`}>Notes</Label>
+              <Input
+                id={`${uid}-notes`}
+                dir="auto"
+                value={form.notes}
+                onChange={set("notes")}
+              />
             </div>
           </div>
           <DialogFooter>

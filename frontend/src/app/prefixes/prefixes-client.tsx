@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Download, Pencil, Plus, Trash2 } from "lucide-react";
 import {
@@ -19,7 +19,7 @@ import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
 import { foldHebrew, ipToInt } from "@/lib/utils";
 import { useUrlParam, useUrlSorting, useUrlText } from "@/lib/url-state";
-import { SortHeader } from "@/components/sort-header";
+import { SortHeader, columnAriaSort } from "@/components/sort-header";
 import { AsyncPanel } from "@/components/async-panel";
 import type { Prefix, Site, Vlan, Vrf } from "@/types";
 import { PrefixStatusBadge } from "@/components/status-badge";
@@ -81,6 +81,7 @@ function NewPrefixDialog({
     description: "",
   });
   const [busy, setBusy] = useState(false);
+  const uid = useId();
 
   const submit = async () => {
     setBusy(true);
@@ -111,8 +112,9 @@ function NewPrefixDialog({
         </DialogHeader>
         <div className="grid gap-3">
           <div className="grid gap-1.5">
-            <Label>CIDR</Label>
+            <Label htmlFor={`${uid}-cidr`}>CIDR</Label>
             <Input
+              id={`${uid}-cidr`}
               placeholder="192.168.20.0/24"
               value={form.prefix}
               onChange={(e) => setForm({ ...form, prefix: e.target.value })}
@@ -120,12 +122,12 @@ function NewPrefixDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
-              <Label>VRF</Label>
+              <Label htmlFor={`${uid}-vrf`}>VRF</Label>
               <Select
                 value={form.vrf_id}
                 onValueChange={(v) => setForm({ ...form, vrf_id: v })}
               >
-                <SelectTrigger>
+                <SelectTrigger id={`${uid}-vrf`}>
                   <SelectValue placeholder="Select VRF" />
                 </SelectTrigger>
                 <SelectContent>
@@ -138,12 +140,12 @@ function NewPrefixDialog({
               </Select>
             </div>
             <div className="grid gap-1.5">
-              <Label>Site</Label>
+              <Label htmlFor={`${uid}-site`}>Site</Label>
               <Select
                 value={form.site_id}
                 onValueChange={(v) => setForm({ ...form, site_id: v })}
               >
-                <SelectTrigger>
+                <SelectTrigger id={`${uid}-site`}>
                   <SelectValue placeholder="None" />
                 </SelectTrigger>
                 <SelectContent>
@@ -158,12 +160,12 @@ function NewPrefixDialog({
             </div>
           </div>
           <div className="grid gap-1.5">
-            <Label>VLAN</Label>
+            <Label htmlFor={`${uid}-vlan`}>VLAN</Label>
             <Select
               value={form.vlan_id}
               onValueChange={(v) => setForm({ ...form, vlan_id: v })}
             >
-              <SelectTrigger>
+              <SelectTrigger id={`${uid}-vlan`}>
                 <SelectValue placeholder="None" />
               </SelectTrigger>
               <SelectContent>
@@ -177,12 +179,12 @@ function NewPrefixDialog({
             </Select>
           </div>
           <div className="grid gap-1.5">
-            <Label>Status</Label>
+            <Label htmlFor={`${uid}-status`}>Status</Label>
             <Select
               value={form.status}
               onValueChange={(v) => setForm({ ...form, status: v })}
             >
-              <SelectTrigger>
+              <SelectTrigger id={`${uid}-status`}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -195,8 +197,9 @@ function NewPrefixDialog({
             </Select>
           </div>
           <div className="grid gap-1.5">
-            <Label>Description</Label>
+            <Label htmlFor={`${uid}-description`}>Description</Label>
             <Input
+              id={`${uid}-description`}
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
             />
@@ -235,6 +238,7 @@ function EditPrefixDialog({
     description: "",
   });
   const [busy, setBusy] = useState(false);
+  const uid = useId();
 
   useEffect(() => {
     if (prefix) {
@@ -280,12 +284,12 @@ function EditPrefixDialog({
         <div className="grid gap-3">
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
-              <Label>VRF</Label>
+              <Label htmlFor={`${uid}-vrf`}>VRF</Label>
               <Select
                 value={form.vrf_id}
                 onValueChange={(v) => setForm({ ...form, vrf_id: v })}
               >
-                <SelectTrigger>
+                <SelectTrigger id={`${uid}-vrf`}>
                   <SelectValue placeholder="Select VRF" />
                 </SelectTrigger>
                 <SelectContent>
@@ -298,12 +302,12 @@ function EditPrefixDialog({
               </Select>
             </div>
             <div className="grid gap-1.5">
-              <Label>Site</Label>
+              <Label htmlFor={`${uid}-site`}>Site</Label>
               <Select
                 value={form.site_id}
                 onValueChange={(v) => setForm({ ...form, site_id: v })}
               >
-                <SelectTrigger>
+                <SelectTrigger id={`${uid}-site`}>
                   <SelectValue placeholder="None" />
                 </SelectTrigger>
                 <SelectContent>
@@ -319,12 +323,12 @@ function EditPrefixDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
-              <Label>VLAN</Label>
+              <Label htmlFor={`${uid}-vlan`}>VLAN</Label>
               <Select
                 value={form.vlan_id}
                 onValueChange={(v) => setForm({ ...form, vlan_id: v })}
               >
-                <SelectTrigger>
+                <SelectTrigger id={`${uid}-vlan`}>
                   <SelectValue placeholder="None" />
                 </SelectTrigger>
                 <SelectContent>
@@ -338,12 +342,12 @@ function EditPrefixDialog({
               </Select>
             </div>
             <div className="grid gap-1.5">
-              <Label>Status</Label>
+              <Label htmlFor={`${uid}-status`}>Status</Label>
               <Select
                 value={form.status}
                 onValueChange={(v) => setForm({ ...form, status: v })}
               >
-                <SelectTrigger>
+                <SelectTrigger id={`${uid}-status`}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -357,8 +361,9 @@ function EditPrefixDialog({
             </div>
           </div>
           <div className="grid gap-1.5">
-            <Label>Description</Label>
+            <Label htmlFor={`${uid}-description`}>Description</Label>
             <Input
+              id={`${uid}-description`}
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
             />
@@ -607,6 +612,7 @@ export default function PrefixesPage() {
               <Button
                 variant="ghost"
                 size="icon"
+                aria-label={`Edit ${c.row.original.prefix}`}
                 onClick={() => setEditing(c.row.original)}
               >
                 <Pencil className="h-4 w-4" />
@@ -616,6 +622,7 @@ export default function PrefixesPage() {
               <Button
                 variant="ghost"
                 size="icon"
+                aria-label={`Delete ${c.row.original.prefix}`}
                 onClick={() => setDeleting(c.row.original)}
               >
                 <Trash2 className="h-4 w-4 text-rose-400" />
@@ -711,7 +718,7 @@ export default function PrefixesPage() {
             {table.getHeaderGroups().map((hg) => (
               <TableRow key={hg.id}>
                 {hg.headers.map((h) => (
-                  <TableHead key={h.id}>
+                  <TableHead key={h.id} aria-sort={columnAriaSort(h.column)}>
                     {flexRender(h.column.columnDef.header, h.getContext())}
                   </TableHead>
                 ))}

@@ -572,6 +572,7 @@ export default function ImportPage() {
                       <TableCell>
                         <Checkbox
                           checked={!off}
+                          aria-label={`Include sheet ${s.sheet} in import`}
                           onCheckedChange={(v) => {
                             const next = new Set(skipped);
                             if (v === true) next.delete(s.sheet);
@@ -730,7 +731,10 @@ export default function ImportPage() {
       )}
 
       {canWrite && step === "result" && commitResult && (
-        <div className="space-y-3 rounded-lg border border-emerald-500/30 bg-card p-4">
+        <div
+          role="status"
+          className="space-y-3 rounded-lg border border-emerald-500/30 bg-card p-4"
+        >
           <h2 className="flex items-center gap-2 font-semibold text-emerald-400">
             <CheckCircle2 className="h-4 w-4" /> Import committed
           </h2>
@@ -809,6 +813,7 @@ export default function ImportPage() {
                         <Button
                           variant="ghost"
                           size="icon"
+                          aria-label={`Delete import ${b.filename}`}
                           onClick={() => remove(b.id)}
                         >
                           <Trash2 className="h-4 w-4 text-rose-400" />

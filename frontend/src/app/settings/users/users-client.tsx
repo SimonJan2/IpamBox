@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import {
   Pencil,
   Plus,
@@ -79,6 +79,7 @@ function UserDialog({
     role: "viewer" as RoleName,
   });
   const [busy, setBusy] = useState(false);
+  const uid = useId();
 
   useEffect(() => {
     if (user !== null) {
@@ -131,18 +132,20 @@ function UserDialog({
         </DialogHeader>
         <div className="grid gap-3">
           <div className="grid gap-1.5">
-            <Label>Username</Label>
+            <Label htmlFor={`${uid}-username`}>Username</Label>
             <Input
+              id={`${uid}-username`}
               autoComplete="off"
               value={form.username}
               onChange={(e) => setForm({ ...form, username: e.target.value })}
             />
           </div>
           <div className="grid gap-1.5">
-            <Label>
+            <Label htmlFor={`${uid}-password`}>
               {editing ? "New password (leave blank to keep)" : "Temporary password"}
             </Label>
             <Input
+              id={`${uid}-password`}
               type="password"
               autoComplete="new-password"
               placeholder={editing ? "unchanged" : "min 8 characters"}
@@ -156,12 +159,12 @@ function UserDialog({
             )}
           </div>
           <div className="grid gap-1.5">
-            <Label>Role</Label>
+            <Label htmlFor={`${uid}-role`}>Role</Label>
             <Select
               value={form.role}
               onValueChange={(v) => setForm({ ...form, role: v as RoleName })}
             >
-              <SelectTrigger>
+              <SelectTrigger id={`${uid}-role`}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -390,6 +393,7 @@ export default function UsersPage() {
                       <Button
                         variant="ghost"
                         size="icon"
+                        aria-label={`Edit user ${u.username}`}
                         title="Edit user"
                         onClick={() => setEditing(u)}
                       >
@@ -399,6 +403,11 @@ export default function UsersPage() {
                         <Button
                           variant="ghost"
                           size="icon"
+                          aria-label={
+                            soleAdmin
+                              ? "Cannot delete the only administrator"
+                              : `Delete user ${u.username}`
+                          }
                           title={soleAdmin ? "Cannot delete the only administrator" : "Delete user"}
                           onClick={() => setDeleting(u)}
                         >

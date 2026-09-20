@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
@@ -34,6 +34,7 @@ export function TagDialog({
 }) {
   const [form, setForm] = useState({ name: "", color: TAG_COLORS[0], description: "" });
   const [busy, setBusy] = useState(false);
+  const uid = useId();
 
   useEffect(() => {
     if (open) {
@@ -73,20 +74,28 @@ export function TagDialog({
         </DialogHeader>
         <div className="grid gap-3">
           <div className="grid gap-1.5">
-            <Label>Name</Label>
+            <Label htmlFor={`${uid}-name`}>Name</Label>
             <Input
+              id={`${uid}-name`}
               placeholder="production, iot, servers…"
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
             />
           </div>
           <div className="grid gap-1.5">
-            <Label>Color</Label>
-            <div className="flex gap-1.5">
+            <Label id={`${uid}-color`}>Color</Label>
+            <div
+              role="radiogroup"
+              aria-labelledby={`${uid}-color`}
+              className="flex gap-1.5"
+            >
               {TAG_COLORS.map((c) => (
                 <button
                   key={c}
                   type="button"
+                  role="radio"
+                  aria-checked={form.color === c}
+                  aria-label={c}
                   onClick={() => setForm({ ...form, color: c })}
                   className={`h-7 w-7 rounded-md border-2 transition-all ${
                     form.color === c ? "border-foreground" : "border-transparent"
@@ -97,8 +106,9 @@ export function TagDialog({
             </div>
           </div>
           <div className="grid gap-1.5">
-            <Label>Description</Label>
+            <Label htmlFor={`${uid}-description`}>Description</Label>
             <Input
+              id={`${uid}-description`}
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
             />

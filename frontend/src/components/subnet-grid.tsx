@@ -1,24 +1,102 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
 import { usePrefs } from "@/lib/prefs";
 import { GRID_CELL_TOKENS, STATUS_TOKENS } from "@/lib/status-tokens";
 import { cn, intToIp, ipToInt, timeAgo } from "@/lib/utils";
-import type { AddressPage, IpAddress, IpRange, Tag } from "@/types";
+import type {
+  AddressPage,
+  IpAddress,
+  IpRange,
+  IpStatus,
+  Tag,
+} from "@/types";
 import { TagChip } from "@/components/tag-picker";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 const COLS = 16;
 /** Subnet-grid cell edge (px) per density pref — compact packs more in. */
 const CELL_SIZE = { comfortable: 40, compact: 28 } as const;
+/** Grids at or below this many cells render every row — cheap and makes
+ *  keyboard navigation trivial. Larger grids keep row virtualization and
+ *  move focus via scrollToIndex + a pending-focus pass after render. */
+const VIRTUALIZE_ABOVE = 256;
 
 export type CellState =
   | { kind: "free" }
   | { kind: "boundary" }
   | { kind: "range"; range: IpRange }
   | { kind: "used"; addr: IpAddress };
+
+const STATUS_ORDER: IpStatus[] = [
+  "active",
+  "reserved",
+  "dhcp",
+  "discovered",
+  "offline",
+];
+
+function cellLabel(ip: string, st: CellState): string {
+  switch (st.kind) {
+    case "used": {
+      const parts = [`${ip} — ${st.addr.status}`];
+      if (st.addr.hostname) parts.push(`host ${st.addr.hostname}`);
+      if (st.addr.mac_address) parts.push(`mac ${st.addr.mac_address}`);
+      return parts.join(", ");
+    }
+    case "boundary":
+      return `${ip} — network/broadcast, not usable for hosts`;
+    case "range":
+      return `${ip} — ${st.range.role} range ${st.range.start_address}–${st.range.end_address}${
+        st.range.description ? `, ${st.range.description}` : ""
+      }`;
+    case "free":
+      return `${ip} — free, click to reserve`;
+  }
+}
+
+/** Legend swatches are driven by the same tokens as the cells, so a new
+ *  status automatically appears here. */
+function GridLegend({ id }: { id: string }) {
+  return (
+    <div
+      id={id}
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground"
+    >
+      {STATUS_ORDER.map((s) => (
+        <span key={s} className="inline-flex items-center gap-1">
+          <span
+            aria-hidden="true"
+            className={cn(
+              "inline-flex h-3.5 w-3.5 items-center justify-center rounded-sm text-[8px] leading-none",
+              STATUS_TOKENS[s].cell
+            )}
+          >
+            {STATUS_TOKENS[s].glyph}
+          </span>
+          {s}
+        </span>
+      ))}
+      {(["free", "boundary", "range"] as const).map((k) => (
+        <span key={k} className="inline-flex items-center gap-1">
+          <span
+            aria-hidden="true"
+            className={cn(
+              "inline-flex h-3.5 w-3.5 items-center justify-center rounded-sm text-[8px] leading-none",
+              GRID_CELL_TOKENS[k].cell
+            )}
+          />
+          {GRID_CELL_TOKENS[k].label}
+        </span>
+      ))}
+      <span className="ml-auto text-[10px]">
+        Tab enters grid · arrow keys move · Enter selects
+      </span>
+    </div>
+  );
+}
 
 export function SubnetGrid({
   page,
@@ -38,6 +116,9 @@ export function SubnetGrid({
   focusInt?: number | null;
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
+  const cellRefs = useRef(new Map<number, HTMLButtonElement>());
+  const pendingFocus = useRef<number | null>(null);
+  const legendId = useId();
   const [prefs] = usePrefs();
   const cellSize = CELL_SIZE[prefs.density];
 
@@ -56,6 +137,10 @@ export function SubnetGrid({
   const firstBound = page.usable_first ? ipToInt(page.usable_first) : null;
   const lastBound = page.usable_last ? ipToInt(page.usable_last) : null;
   const rows = Math.ceil(total / COLS);
+  const virtualized = total > VIRTUALIZE_ABOVE;
+
+  // Roving tabindex — index of the cell that owns the single Tab stop.
+  const [focusIdx, setFocusIdx] = useState(0);
 
   const rangeSpans = useMemo(
     () => ranges.map((r) => ({ ...r, s: Number(r.start_int), e: Number(r.end_int) })),
@@ -74,13 +159,45 @@ export function SubnetGrid({
     virtualizer.measure();
   }, [cellSize, virtualizer]);
 
+  const focusCell = useCallback(
+    (idx: number) => {
+      setFocusIdx(idx);
+      const el = cellRefs.current.get(idx);
+      if (el) {
+        el.focus();
+        return;
+      }
+      // Target row isn't mounted — only possible on virtualized grids.
+      pendingFocus.current = idx;
+      virtualizer.scrollToIndex(Math.floor(idx / COLS), { align: "auto" });
+    },
+    [virtualizer]
+  );
+
+  // Flush a pending arrow-key focus once the virtualizer mounts the row.
+  useEffect(() => {
+    const idx = pendingFocus.current;
+    if (idx == null) return;
+    const el = cellRefs.current.get(idx);
+    if (el) {
+      pendingFocus.current = null;
+      el.focus();
+    }
+  });
+
   useEffect(() => {
     if (focusInt == null) return;
-    const row = Math.floor((focusInt - base) / COLS);
+    const idx = focusInt - base;
+    const row = Math.floor(idx / COLS);
     if (row >= 0 && row < rows) {
-      virtualizer.scrollToIndex(row, { align: "center" });
+      setFocusIdx(idx);
+      if (virtualized) virtualizer.scrollToIndex(row, { align: "center" });
+      else
+        cellRefs.current
+          .get(idx)
+          ?.scrollIntoView({ block: "nearest" });
     }
-  }, [focusInt, base, rows, virtualizer]);
+  }, [focusInt, base, rows, virtualized, virtualizer]);
 
   function cellState(intIp: number): CellState {
     const addr = byInt.get(intIp);
@@ -91,118 +208,219 @@ export function SubnetGrid({
     return { kind: "free" };
   }
 
+  const onGridKeyDown = (e: React.KeyboardEvent) => {
+    const idx = Math.min(focusIdx, total - 1);
+    let target: number | null = null;
+    switch (e.key) {
+      case "ArrowRight":
+        target = Math.min(idx + 1, total - 1);
+        break;
+      case "ArrowLeft":
+        target = Math.max(idx - 1, 0);
+        break;
+      case "ArrowDown":
+        target = Math.min(idx + COLS, total - 1);
+        break;
+      case "ArrowUp":
+        target = Math.max(idx - COLS, 0);
+        break;
+      case "Home":
+        target = idx - (idx % COLS);
+        break;
+      case "End":
+        target = Math.min(idx - (idx % COLS) + COLS - 1, total - 1);
+        break;
+      case "PageDown":
+        target = Math.min(idx + COLS * 8, total - 1);
+        break;
+      case "PageUp":
+        target = Math.max(idx - COLS * 8, 0);
+        break;
+      default:
+        return;
+    }
+    e.preventDefault();
+    if (target !== idx) focusCell(target);
+  };
+
+  const rowList = virtualized
+    ? virtualizer
+        .getVirtualItems()
+        .map((v) => ({ index: v.index, start: v.start, key: v.key }))
+    : Array.from({ length: rows }, (_, i) => ({
+        index: i,
+        start: i * (cellSize + 4),
+        key: i,
+      }));
+
+  // If the roving cell scrolled out of the DOM (or the prefix shrank),
+  // hand the Tab stop to the first rendered cell so the grid stays reachable.
+  const clampedFocus = Math.min(focusIdx, total - 1);
+  const focusRowRendered = rowList.some(
+    (r) => r.index === Math.floor(clampedFocus / COLS)
+  );
+  const tabbableIdx = focusRowRendered
+    ? clampedFocus
+    : rowList.length > 0
+      ? rowList[0].index * COLS
+      : -1;
+
   return (
-    <div ref={parentRef} className="max-h-[65vh] overflow-auto rounded-lg border p-3">
+    <>
       <div
-        style={{ height: virtualizer.getTotalSize(), position: "relative" }}
-        className="w-fit"
+        ref={parentRef}
+        className="max-h-[65vh] overflow-auto rounded-lg border p-3"
       >
-        {virtualizer.getVirtualItems().map((vRow) => (
-          <div
-            key={vRow.key}
-            className="absolute left-0 flex gap-1"
-            style={{ top: vRow.start, height: cellSize }}
-          >
-            {Array.from({ length: COLS }, (_, col) => {
-              const idx = vRow.index * COLS + col;
-              if (idx >= total) return <div key={col} style={{ width: cellSize }} />;
-              const intIp = base + idx;
-              const ip = intToIp(intIp);
-              const st = cellState(intIp);
-              const last = ip.split(".")[3];
-              const cellTags =
-                st.kind === "used" ? (tags?.get(st.addr.id) ?? []) : [];
-              const matched =
-                st.kind === "used" &&
-                matchIds != null &&
-                matchIds.has(st.addr.id);
-              const dimmed = matchIds != null && !matched;
-              const hl = matched
-                ? (highlight?.get(st.addr.id) ?? "#38bdf8")
-                : null;
-              const cell = (
-                <button
-                  key={col}
-                  onClick={() =>
-                    onSelect(ip, st.kind === "used" ? st.addr : null)
-                  }
-                  className={cn(
-                    "relative flex items-center justify-center rounded text-[10px] font-mono transition-colors",
-                    st.kind === "used"
-                      ? STATUS_TOKENS[st.addr.status].cell
-                      : GRID_CELL_TOKENS[st.kind],
-                    dimmed && "opacity-25"
-                  )}
-                  style={{
-                    width: cellSize,
-                    height: cellSize,
-                    ...(hl ? { boxShadow: `inset 0 0 0 2px ${hl}` } : {}),
-                  }}
-                >
-                  {last}
-                  {cellTags.length > 0 && (
-                    <span className="absolute bottom-0.5 right-0.5 flex gap-0.5">
-                      {cellTags.slice(0, 3).map((t) => (
-                        <i
-                          key={t.id}
-                          className="h-1 w-1 rounded-full"
-                          style={{ background: t.color }}
-                        />
-                      ))}
-                    </span>
-                  )}
-                </button>
-              );
-              return (
-                <Tooltip key={col}>
-                  <TooltipTrigger asChild>{cell}</TooltipTrigger>
-                  <TooltipContent side="top" className="w-56 space-y-1">
-                    <div className="font-mono text-sm text-foreground">{ip}</div>
-                    {st.kind === "used" ? (
-                      <div className="space-y-0.5 text-muted-foreground">
-                        {st.addr.hostname && <div>host: {st.addr.hostname}</div>}
-                        {st.addr.mac_address && <div>mac: {st.addr.mac_address}</div>}
-                        {st.addr.vendor && <div>vendor: {st.addr.vendor}</div>}
-                        <div>
-                          status: <span className="capitalize">{st.addr.status}</span>
-                          {" · "}seen {timeAgo(st.addr.last_seen)}
-                        </div>
-                        {st.addr.notes && <div>notes: {st.addr.notes}</div>}
-                        {cellTags.length > 0 && (
-                          <div className="flex flex-wrap gap-1 pt-1">
-                            {cellTags.map((t) => (
-                              <TagChip key={t.id} tag={t} />
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ) : st.kind === "boundary" ? (
-                      <div className="text-muted-foreground">
-                        network/broadcast — not usable for hosts
-                      </div>
-                    ) : st.kind === "range" ? (
-                      <div className="text-muted-foreground">
-                        <div>
-                          in range{" "}
-                          <span className="text-range font-mono">
-                            {st.range.start_address}–{st.range.end_address}
-                          </span>
-                        </div>
-                        <div>
-                          role: {st.range.role}
-                          {st.range.description ? ` · ${st.range.description}` : ""}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="text-muted-foreground">free — click to reserve</div>
+        <div
+          role="grid"
+          aria-label={
+            page.prefix ? `Subnet map for ${page.prefix}` : "Subnet map"
+          }
+          aria-describedby={legendId}
+          aria-rowcount={rows}
+          aria-colcount={COLS}
+          onKeyDown={onGridKeyDown}
+          style={{ height: virtualizer.getTotalSize(), position: "relative" }}
+          className="w-fit"
+        >
+          {rowList.map((vRow) => (
+            <div
+              key={vRow.key}
+              role="row"
+              aria-rowindex={vRow.index + 1}
+              className="absolute left-0 flex gap-1"
+              style={{ top: vRow.start, height: cellSize }}
+            >
+              {Array.from({ length: COLS }, (_, col) => {
+                const idx = vRow.index * COLS + col;
+                if (idx >= total)
+                  return (
+                    <div
+                      key={col}
+                      aria-hidden="true"
+                      style={{ width: cellSize }}
+                    />
+                  );
+                const intIp = base + idx;
+                const ip = intToIp(intIp);
+                const st = cellState(intIp);
+                const last = ip.split(".")[3];
+                const cellTags =
+                  st.kind === "used" ? (tags?.get(st.addr.id) ?? []) : [];
+                const matched =
+                  st.kind === "used" &&
+                  matchIds != null &&
+                  matchIds.has(st.addr.id);
+                const dimmed = matchIds != null && !matched;
+                const hl = matched
+                  ? (highlight?.get(st.addr.id) ?? "#38bdf8")
+                  : null;
+                const glyph =
+                  st.kind === "used" ? STATUS_TOKENS[st.addr.status].glyph : "";
+                const cell = (
+                  <button
+                    key={col}
+                    type="button"
+                    role="gridcell"
+                    aria-rowindex={vRow.index + 1}
+                    aria-colindex={col + 1}
+                    aria-label={cellLabel(ip, st)}
+                    tabIndex={idx === tabbableIdx ? 0 : -1}
+                    ref={(el) => {
+                      if (el) cellRefs.current.set(idx, el);
+                      else cellRefs.current.delete(idx);
+                    }}
+                    onFocus={() => setFocusIdx(idx)}
+                    onClick={() =>
+                      onSelect(ip, st.kind === "used" ? st.addr : null)
+                    }
+                    className={cn(
+                      "relative flex items-center justify-center rounded text-[10px] font-mono transition-colors",
+                      st.kind === "used"
+                        ? STATUS_TOKENS[st.addr.status].cell
+                        : GRID_CELL_TOKENS[st.kind].cell,
+                      dimmed && "opacity-25"
                     )}
-                  </TooltipContent>
-                </Tooltip>
-              );
-            })}
-          </div>
-        ))}
+                    style={{
+                      width: cellSize,
+                      height: cellSize,
+                      ...(hl ? { boxShadow: `inset 0 0 0 2px ${hl}` } : {}),
+                    }}
+                  >
+                    {glyph && (
+                      <span
+                        aria-hidden="true"
+                        className="absolute left-0.5 top-0.5 text-[8px] leading-none opacity-80"
+                      >
+                        {glyph}
+                      </span>
+                    )}
+                    {last}
+                    {cellTags.length > 0 && (
+                      <span className="absolute bottom-0.5 right-0.5 flex gap-0.5">
+                        {cellTags.slice(0, 3).map((t) => (
+                          <i
+                            key={t.id}
+                            className="h-1 w-1 rounded-full"
+                            style={{ background: t.color }}
+                          />
+                        ))}
+                      </span>
+                    )}
+                  </button>
+                );
+                return (
+                  <Tooltip key={col}>
+                    <TooltipTrigger asChild>{cell}</TooltipTrigger>
+                    <TooltipContent side="top" className="w-56 space-y-1">
+                      <div className="font-mono text-sm text-foreground">{ip}</div>
+                      {st.kind === "used" ? (
+                        <div className="space-y-0.5 text-muted-foreground">
+                          {st.addr.hostname && <div>host: {st.addr.hostname}</div>}
+                          {st.addr.mac_address && <div>mac: {st.addr.mac_address}</div>}
+                          {st.addr.vendor && <div>vendor: {st.addr.vendor}</div>}
+                          <div>
+                            status: <span className="capitalize">{st.addr.status}</span>
+                            {" · "}seen {timeAgo(st.addr.last_seen)}
+                          </div>
+                          {st.addr.notes && <div>notes: {st.addr.notes}</div>}
+                          {cellTags.length > 0 && (
+                            <div className="flex flex-wrap gap-1 pt-1">
+                              {cellTags.map((t) => (
+                                <TagChip key={t.id} tag={t} />
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : st.kind === "boundary" ? (
+                        <div className="text-muted-foreground">
+                          network/broadcast — not usable for hosts
+                        </div>
+                      ) : st.kind === "range" ? (
+                        <div className="text-muted-foreground">
+                          <div>
+                            in range{" "}
+                            <span className="text-range font-mono">
+                              {st.range.start_address}–{st.range.end_address}
+                            </span>
+                          </div>
+                          <div>
+                            role: {st.range.role}
+                            {st.range.description ? ` · ${st.range.description}` : ""}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-muted-foreground">free — click to reserve</div>
+                      )}
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              })}
+            </div>
+          ))}
+        </div>
       </div>
-    </div>
+      <GridLegend id={legendId} />
+    </>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -57,6 +57,7 @@ export function IpDrawer({
   const { can } = useAuth();
   const canWrite = can(PERM.DATA_WRITE);
   const canDelete = can(PERM.DATA_DELETE);
+  const uid = useId();
   const [form, setForm] = useState({
     hostname: "",
     mac_address: "",
@@ -238,13 +239,14 @@ export function IpDrawer({
             </div>
           )}
           <div className="grid gap-1.5">
-            <Label>Tags</Label>
+            <Label htmlFor={addr ? `${uid}-tags` : undefined}>Tags</Label>
             {addr ? (
               <div className="flex flex-wrap items-center gap-1">
                 {assigned.map((t) => (
                   <TagChip key={t.id} tag={t} />
                 ))}
                 <TagPicker
+                  id={`${uid}-tags`}
                   objectType="IPAddress"
                   objectId={addr.id}
                   allTags={allTags}
@@ -259,8 +261,9 @@ export function IpDrawer({
             )}
           </div>
           <div className="grid gap-1.5">
-            <Label>Hostname</Label>
+            <Label htmlFor={`${uid}-hostname`}>Hostname</Label>
             <Input
+              id={`${uid}-hostname`}
               dir="auto"
               value={form.hostname}
               onChange={(e) => setForm({ ...form, hostname: e.target.value })}
@@ -269,8 +272,9 @@ export function IpDrawer({
             />
           </div>
           <div className="grid gap-1.5">
-            <Label>MAC address</Label>
+            <Label htmlFor={`${uid}-mac`}>MAC address</Label>
             <Input
+              id={`${uid}-mac`}
               dir="ltr"
               value={form.mac_address}
               onChange={(e) => setForm({ ...form, mac_address: e.target.value })}
@@ -281,13 +285,13 @@ export function IpDrawer({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
-              <Label>Status</Label>
+              <Label htmlFor={`${uid}-status`}>Status</Label>
               <Select
                 value={form.status}
                 onValueChange={(v) => setForm({ ...form, status: v as IpStatus })}
                 disabled={!canWrite}
               >
-                <SelectTrigger>
+                <SelectTrigger id={`${uid}-status`}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -300,13 +304,13 @@ export function IpDrawer({
               </Select>
             </div>
             <div className="grid gap-1.5">
-              <Label>Role</Label>
+              <Label htmlFor={`${uid}-role`}>Role</Label>
               <Select
                 value={form.role}
                 onValueChange={(v) => setForm({ ...form, role: v as IpRole | "none" })}
                 disabled={!canWrite}
               >
-                <SelectTrigger>
+                <SelectTrigger id={`${uid}-role`}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -320,8 +324,9 @@ export function IpDrawer({
             </div>
           </div>
           <div className="grid gap-1.5">
-            <Label>NAT inside address</Label>
+            <Label htmlFor={`${uid}-nat`}>NAT inside address</Label>
             <Input
+              id={`${uid}-nat`}
               value={form.nat_inside}
               onChange={(e) => {
                 setForm({ ...form, nat_inside: e.target.value });
@@ -352,8 +357,9 @@ export function IpDrawer({
             </datalist>
           </div>
           <div className="grid gap-1.5">
-            <Label>Notes</Label>
+            <Label htmlFor={`${uid}-notes`}>Notes</Label>
             <Textarea
+              id={`${uid}-notes`}
               dir="auto"
               value={form.notes}
               onChange={(e) => setForm({ ...form, notes: e.target.value })}
@@ -368,7 +374,13 @@ export function IpDrawer({
                 </Button>
               )}
               {addr && canDelete && (
-                <Button variant="destructive" size="icon" onClick={remove} disabled={busy}>
+                <Button
+                  variant="destructive"
+                  size="icon"
+                  aria-label={`Delete ${ip}`}
+                  onClick={remove}
+                  disabled={busy}
+                >
                   <Trash2 className="h-4 w-4" />
                 </Button>
               )}

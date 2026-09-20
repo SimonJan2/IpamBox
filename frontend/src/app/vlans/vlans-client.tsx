@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { ListFilter, Pencil, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -17,7 +17,7 @@ import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
 import { foldHebrew } from "@/lib/utils";
 import { useUrlParam, useUrlSorting, useUrlText } from "@/lib/url-state";
-import { SortHeader } from "@/components/sort-header";
+import { SortHeader, columnAriaSort } from "@/components/sort-header";
 import { AsyncPanel } from "@/components/async-panel";
 import type { Site, Vlan, VlanGroup, VlanStatus } from "@/types";
 import { Badge } from "@/components/ui/badge";
@@ -79,6 +79,7 @@ function VlanDialog({
     description: "",
   });
   const [busy, setBusy] = useState(false);
+  const uid = useId();
 
   useEffect(() => {
     if (open) {
@@ -129,8 +130,9 @@ function VlanDialog({
         <div className="grid gap-3">
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
-              <Label>VLAN ID (1–4094)</Label>
+              <Label htmlFor={`${uid}-vid`}>VLAN ID (1–4094)</Label>
               <Input
+                id={`${uid}-vid`}
                 type="number"
                 min={1}
                 max={4094}
@@ -139,8 +141,9 @@ function VlanDialog({
               />
             </div>
             <div className="grid gap-1.5">
-              <Label>Name</Label>
+              <Label htmlFor={`${uid}-name`}>Name</Label>
               <Input
+                id={`${uid}-name`}
                 placeholder="users"
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -149,12 +152,12 @@ function VlanDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
-              <Label>Group</Label>
+              <Label htmlFor={`${uid}-group`}>Group</Label>
               <Select
                 value={form.group_id}
                 onValueChange={(v) => setForm({ ...form, group_id: v })}
               >
-                <SelectTrigger>
+                <SelectTrigger id={`${uid}-group`}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -168,12 +171,12 @@ function VlanDialog({
               </Select>
             </div>
             <div className="grid gap-1.5">
-              <Label>Site</Label>
+              <Label htmlFor={`${uid}-site`}>Site</Label>
               <Select
                 value={form.site_id}
                 onValueChange={(v) => setForm({ ...form, site_id: v })}
               >
-                <SelectTrigger>
+                <SelectTrigger id={`${uid}-site`}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -188,12 +191,12 @@ function VlanDialog({
             </div>
           </div>
           <div className="grid gap-1.5">
-            <Label>Status</Label>
+            <Label htmlFor={`${uid}-status`}>Status</Label>
             <Select
               value={form.status}
               onValueChange={(v) => setForm({ ...form, status: v as VlanStatus })}
             >
-              <SelectTrigger>
+              <SelectTrigger id={`${uid}-status`}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -206,8 +209,9 @@ function VlanDialog({
             </Select>
           </div>
           <div className="grid gap-1.5">
-            <Label>Description</Label>
+            <Label htmlFor={`${uid}-description`}>Description</Label>
             <Input
+              id={`${uid}-description`}
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
             />
@@ -236,6 +240,7 @@ function GroupDialog({
 }) {
   const [form, setForm] = useState({ name: "", description: "" });
   const [busy, setBusy] = useState(false);
+  const uid = useId();
 
   useEffect(() => {
     if (open) {
@@ -271,16 +276,18 @@ function GroupDialog({
         </DialogHeader>
         <div className="grid gap-3">
           <div className="grid gap-1.5">
-            <Label>Name</Label>
+            <Label htmlFor={`${uid}-name`}>Name</Label>
             <Input
+              id={`${uid}-name`}
               placeholder="e.g. Access, Management…"
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
             />
           </div>
           <div className="grid gap-1.5">
-            <Label>Description</Label>
+            <Label htmlFor={`${uid}-description`}>Description</Label>
             <Input
+              id={`${uid}-description`}
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
             />
@@ -459,6 +466,7 @@ export default function VlansPage() {
               <Button
                 variant="ghost"
                 size="icon"
+                aria-label={`Edit VLAN ${c.row.original.vid}`}
                 onClick={() => {
                   setEditing(c.row.original);
                   setDialogOpen(true);
@@ -471,6 +479,7 @@ export default function VlansPage() {
               <Button
                 variant="ghost"
                 size="icon"
+                aria-label={`Delete VLAN ${c.row.original.vid}`}
                 onClick={() => remove(c.row.original)}
               >
                 <Trash2 className="h-4 w-4 text-rose-400" />
@@ -559,6 +568,7 @@ export default function VlansPage() {
                     <Button
                       variant="ghost"
                       size="icon"
+                      aria-label={`Show VLANs in group ${g.name}`}
                       title="Show VLANs in group"
                       onClick={() => setFilterGroup(g.id)}
                     >
@@ -568,6 +578,7 @@ export default function VlansPage() {
                       <Button
                         variant="ghost"
                         size="icon"
+                        aria-label={`Edit group ${g.name}`}
                         onClick={() => {
                           setEditingGroup(g);
                           setGroupDialogOpen(true);
@@ -580,6 +591,7 @@ export default function VlansPage() {
                       <Button
                         variant="ghost"
                         size="icon"
+                        aria-label={`Delete group ${g.name}`}
                         onClick={() => removeGroup(g)}
                       >
                         <Trash2 className="h-4 w-4 text-rose-400" />
@@ -604,7 +616,10 @@ export default function VlansPage() {
         {filterGroup !== "" && (
           <Badge variant="secondary" className="gap-1.5">
             Group: {groupName[Number(filterGroup)] ?? filterGroup}
-            <button onClick={() => setFilterGroup(null)}>
+            <button
+              aria-label="Clear group filter"
+              onClick={() => setFilterGroup(null)}
+            >
               <X className="h-3 w-3" />
             </button>
           </Badge>
@@ -627,7 +642,7 @@ export default function VlansPage() {
             {table.getHeaderGroups().map((hg) => (
               <TableRow key={hg.id}>
                 {hg.headers.map((h) => (
-                  <TableHead key={h.id}>
+                  <TableHead key={h.id} aria-sort={columnAriaSort(h.column)}>
                     {flexRender(h.column.columnDef.header, h.getContext())}
                   </TableHead>
                 ))}

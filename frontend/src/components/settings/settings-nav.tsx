@@ -42,11 +42,12 @@ export function SettingsNav() {
           <Link
             key={item.href}
             href={item.href}
+            aria-current={active ? "page" : undefined}
             className={cn(
-              "flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm transition-colors",
+              "flex items-center gap-2.5 rounded-md border-l-2 px-3 py-1.5 text-sm transition-colors",
               active
-                ? "bg-emerald-500/10 text-emerald-400"
-                : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                ? "border-emerald-400 bg-emerald-500/10 font-semibold text-emerald-400"
+                : "border-transparent text-muted-foreground hover:bg-accent hover:text-foreground"
             )}
           >
             <item.icon className="h-4 w-4 shrink-0" />

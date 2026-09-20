@@ -14,10 +14,13 @@ export function CidrListEditor({
   value,
   onChange,
   placeholder = "10.0.0.0/8",
+  id,
 }: {
   value: string[];
   onChange: (next: string[]) => void;
   placeholder?: string;
+  /** Applied to the draft input so a parent <Label htmlFor> associates. */
+  id?: string;
 }) {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -42,6 +45,7 @@ export function CidrListEditor({
     <div className="space-y-2">
       <div className="flex gap-2">
         <Input
+          id={id}
           value={draft}
           placeholder={placeholder}
           onChange={(e) => {
@@ -66,6 +70,7 @@ export function CidrListEditor({
               {cidr}
               <button
                 type="button"
+                aria-label={`Remove ${cidr}`}
                 className="text-muted-foreground hover:text-rose-400"
                 onClick={() => onChange(value.filter((c) => c !== cidr))}
               >

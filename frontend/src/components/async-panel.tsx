@@ -33,11 +33,17 @@ export function AsyncPanel({
   children: React.ReactNode;
 }) {
   if (loading) {
-    return <>{skeleton ?? <Skeleton className={cn("h-32 w-full", className)} />}</>;
+    return (
+      <div role="status" aria-busy="true">
+        {skeleton ?? <Skeleton className={cn("h-32 w-full", className)} />}
+        <span className="sr-only">Loading…</span>
+      </div>
+    );
   }
   if (error) {
     return (
       <div
+        role="alert"
         className={cn(
           "flex flex-col items-center gap-3 rounded-lg border border-rose-500/20 px-4 py-10 text-center",
           className
@@ -59,6 +65,7 @@ export function AsyncPanel({
   if (empty) {
     return (
       <div
+        role="status"
         className={cn(
           "py-10 text-center text-sm text-muted-foreground",
           className
