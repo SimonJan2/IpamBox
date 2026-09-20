@@ -6,6 +6,7 @@ import { Check, Plus, Search, X } from "lucide-react";
 
 import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
+import { STATUS_TOKENS } from "@/lib/status-tokens";
 import { cn } from "@/lib/utils";
 import type { IpAddress, IpStatus, Tag } from "@/types";
 import { TagDialog } from "@/components/tag-dialog";
@@ -19,14 +20,6 @@ const STATUSES: IpStatus[] = [
   "discovered",
   "offline",
 ];
-
-const STATUS_DOT: Record<IpStatus, string> = {
-  active: "bg-emerald-500/70",
-  reserved: "bg-amber-500/70",
-  dhcp: "bg-cyan-500/70",
-  discovered: "bg-violet-500/70",
-  offline: "bg-zinc-500/70",
-};
 
 const MAX_RESULTS = 200;
 
@@ -128,7 +121,7 @@ export function AddressFilterPanel({
                     : "border-transparent text-muted-foreground hover:bg-accent/50"
                 )}
               >
-                <i className={cn("h-2 w-2 rounded-full", STATUS_DOT[s])} />
+                <i className={cn("h-2 w-2 rounded-full", STATUS_TOKENS[s].dot)} />
                 {s}
                 <span className="text-muted-foreground">
                   {statusCounts.get(s) ?? 0}
@@ -226,7 +219,10 @@ export function AddressFilterPanel({
                   className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-accent/50"
                 >
                   <i
-                    className={cn("h-2 w-2 shrink-0 rounded-full", STATUS_DOT[a.status])}
+                    className={cn(
+                      "h-2 w-2 shrink-0 rounded-full",
+                      STATUS_TOKENS[a.status].dot
+                    )}
                   />
                   <span className="font-mono text-xs">{a.address}</span>
                   <span className="flex-1 truncate text-xs text-muted-foreground">

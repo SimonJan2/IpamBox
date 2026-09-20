@@ -19,7 +19,7 @@ const PREFS_SNIPPET = `try{var p=JSON.parse(localStorage.getItem("ipambox:prefs"
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="dark" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: PREFS_SNIPPET }} />
       </head>
