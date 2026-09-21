@@ -31,7 +31,7 @@ import { useAsyncData } from "@/lib/use-async-data";
 import { useChartTheme } from "@/lib/use-chart-theme";
 import { usePolling } from "@/lib/use-polling";
 import { timeAgo } from "@/lib/utils";
-import type { ChangeLogEntry, DashboardStats, Prefix, ScanJob } from "@/types";
+import type { ChangeLogEntry, DashboardStats, Page, Prefix, ScanJob } from "@/types";
 import { AsyncPanel } from "@/components/async-panel";
 import { expiryBadge } from "@/components/expiry-badge";
 import { Badge } from "@/components/ui/badge";
@@ -87,7 +87,7 @@ export default function DashboardPage() {
     api.get<ScanJob[]>("/api/v1/scans?limit=6")
   );
   const activityQ = useAsyncData(() =>
-    api.get<ChangeLogEntry[]>("/api/v1/changelog?limit=6")
+    api.get<Page<ChangeLogEntry>>("/api/v1/changelog?limit=6").then((p) => p.items)
   );
 
   const refresh = useCallback(async () => {
@@ -115,10 +115,11 @@ export default function DashboardPage() {
   const activity = activityQ.data ?? [];
 
   const chartData = [...prefixes]
-    .filter((p) => p.status !== "container")
-    .sort((a, b) => b.utilization_pct - a.utilization_pct)
+    // IPv6 prefixes report no utilization — nothing to chart
+    .filter((p) => p.status !== "container" && p.utilization_pct !== null)
+    .sort((a, b) => (b.utilization_pct ?? 0) - (a.utilization_pct ?? 0))
     .slice(0, 12)
-    .map((p) => ({ name: p.prefix, pct: p.utilization_pct }));
+    .map((p) => ({ name: p.prefix, pct: p.utilization_pct ?? 0 }));
 
   return (
     <div className="space-y-6">

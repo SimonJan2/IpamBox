@@ -7,10 +7,10 @@ settable through the API.
 """
 import ipaddress
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
@@ -184,10 +184,14 @@ async def patch(session: AsyncSession, updates: dict[str, Any]) -> None:
     if errors:
         raise SettingsValidationError(errors)
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     for key, raw in updates.items():
         if raw is None:
-            await session.execute(delete(AppSetting).where(AppSetting.key == key))
+            # ORM delete — a Core DELETE would skip the changelog entry for
+            # the reset (AppSetting is audited)
+            row = await session.get(AppSetting, key)
+            if row is not None:
+                await session.delete(row)
             continue
         row = await session.get(AppSetting, key)
         if row is None:

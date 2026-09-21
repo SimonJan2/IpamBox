@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Index, Integer, String, func
+from sqlalchemy import DateTime, Index, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -24,7 +24,7 @@ class ColorRule(Base):
     value: Mapped[str] = mapped_column(String(255))
     color: Mapped[str] = mapped_column(String(7))  # #rrggbb — Tag.color format
     position: Mapped[int] = mapped_column(Integer)
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
         Index("ix_color_rules_scope", "entity_type", "position"),

@@ -16,10 +16,10 @@ async def test_circuit_crud(client):
     cid = r.json()["id"]
 
     r = await client.get("/api/v1/circuits", params={"q": "828328"})
-    assert r.status_code == 200 and len(r.json()) == 1
+    assert r.status_code == 200 and len(r.json()["items"]) == 1
 
     r = await client.get("/api/v1/circuits", params={"q": "פעיל"})
-    assert any(c["id"] == cid for c in r.json())
+    assert any(c["id"] == cid for c in r.json()["items"])
 
     r = await client.patch(f"/api/v1/circuits/{cid}", json={"node": "N5"})
     assert r.json()["node"] == "N5"
@@ -45,7 +45,7 @@ async def test_certificate_crud_and_expiry(client):
     cid = body["id"]
 
     r = await client.get("/api/v1/certificates", params={"q": "example.com"})
-    assert any(c["id"] == cid for c in r.json())
+    assert any(c["id"] == cid for c in r.json()["items"])
 
 
 async def test_asset_and_service_crud(client):
@@ -62,7 +62,7 @@ async def test_asset_and_service_crud(client):
     aid = r.json()["id"]
 
     r = await client.get("/api/v1/assets", params={"q": "FTX1234"})
-    assert any(a["id"] == aid for a in r.json())
+    assert any(a["id"] == aid for a in r.json()["items"])
 
     r = await client.post(
         "/api/v1/services",
@@ -72,7 +72,7 @@ async def test_asset_and_service_crud(client):
     sid = r.json()["id"]
 
     r = await client.get("/api/v1/services", params={"q": "dns"})
-    assert any(s["id"] == sid for s in r.json())
+    assert any(s["id"] == sid for s in r.json()["items"])
 
 
 async def test_site_extended_fields(client):

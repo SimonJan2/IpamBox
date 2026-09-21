@@ -124,17 +124,17 @@ async def test_watchdog_reaps_stale_jobs(client, session):
     """A worker killed mid-scan leaves RUNNING rows that would wedge the
     single-live-job rule forever — the watchdog fails them once they pass
     started_at + job_timeout."""
-    from datetime import datetime, timedelta
+    from datetime import datetime, timezone, timedelta
 
     from app.worker.worker import WorkerSettings, reap_stale_scan_jobs
 
-    old = datetime.utcnow() - timedelta(seconds=WorkerSettings.job_timeout + 60)
+    old = datetime.now(timezone.utc) - timedelta(seconds=WorkerSettings.job_timeout + 60)
     stale_run = ScanJob(cidr="10.220.0.0/24", status=ScanStatus.RUNNING,
                         started_at=old)
     stale_q = ScanJob(cidr="10.221.0.0/24", status=ScanStatus.QUEUED,
                       created_at=old)
     fresh = ScanJob(cidr="10.222.0.0/24", status=ScanStatus.RUNNING,
-                    started_at=datetime.utcnow())
+                    started_at=datetime.now(timezone.utc))
     session.add_all([stale_run, stale_q, fresh])
     await session.commit()
 
@@ -410,3 +410,251 @@ async def test_reconcile_offline_sweep_scoped_to_scanned_net(client, session):
         )
     ).scalars().all()
     assert logged == [addr_ids["10.242.1.9"]]
+
+
+# --------------------------------------------------------------------------
+# cancel/complete race — the worker's stale row copy must never overwrite a
+# terminal status written by the API on another connection
+# --------------------------------------------------------------------------
+
+
+class _FakeRedis:
+    """In-memory stand-in for the worker's redis client (get/set/publish)."""
+
+    def __init__(self):
+        self.store: dict[str, str] = {}
+
+    async def get(self, key):
+        return self.store.get(key)
+
+    async def set(self, key, value, ex=None):
+        self.store[key] = value
+
+    async def publish(self, *args):
+        return 1
+
+    async def aclose(self):
+        pass
+
+
+def _wire_worker(monkeypatch, sf, fake):
+    """Point the worker at the test DB (sf) and the fake redis client."""
+    from app.worker import worker
+
+    monkeypatch.setattr(worker, "SessionLocal", sf)
+    monkeypatch.setattr(worker, "get_redis", lambda: fake)
+    return worker
+
+
+async def _mk_job(session, cidr="10.60.0.0/24"):
+    job = ScanJob(cidr=cidr, status=ScanStatus.QUEUED)
+    session.add(job)
+    await session.commit()
+    return job
+
+
+async def _api_cancel(sf, job_id):
+    """Simulate the API-side cancel: terminal status on a fresh connection."""
+    from datetime import datetime, timezone
+
+    async with sf() as other:
+        j = await other.get(ScanJob, job_id)
+        j.status = ScanStatus.CANCELLED
+        j.finished_at = datetime.now(timezone.utc)
+        await other.commit()
+
+
+async def test_run_scan_cancel_flag_mid_scan(client, session, sf, monkeypatch):
+    """Cancel flag polled between phases -> ScanCancelled -> CANCELLED, and
+    no reconcile writes commit."""
+    from app.worker import worker
+    from app.worker.scanner import ScanCancelled
+
+    fake = _FakeRedis()
+    _wire_worker(monkeypatch, sf, fake)
+    job = await _mk_job(session)
+
+    async def fake_scan(cidr, *, should_stop=None, **kw):
+        assert should_stop is not None
+        if await should_stop():
+            raise ScanCancelled()
+        return [HostResult(ip="10.60.0.9")]
+
+    monkeypatch.setattr(worker, "scan_cidr", fake_scan)
+    await fake.set(worker.cancel_key(job.id), "1")
+
+    out = await worker.run_scan({}, job.id)
+    assert out == {"cancelled": True}
+    await session.refresh(job)
+    assert job.status == ScanStatus.CANCELLED
+    assert (await client.get("/api/v1/addresses")).json() == []
+
+
+async def test_run_scan_does_not_clobber_api_cancel(
+    client, session, sf, monkeypatch
+):
+    """Audit race: API writes CANCELLED mid-scan while the redis flag is
+    lost (expired/restart). The stale worker copy must not overwrite it with
+    COMPLETED, and reconciled rows must roll back."""
+    from app.worker import worker
+
+    fake = _FakeRedis()  # flag never set — only the DB row carries the cancel
+    _wire_worker(monkeypatch, sf, fake)
+    job = await _mk_job(session, "10.61.0.0/24")
+
+    async def fake_scan(cidr, **kw):
+        await _api_cancel(sf, job.id)
+        return [HostResult(ip="10.61.0.9")]
+
+    monkeypatch.setattr(worker, "scan_cidr", fake_scan)
+    out = await worker.run_scan({}, job.id)
+    assert out == {"cancelled": True}
+    await session.refresh(job)
+    assert job.status == ScanStatus.CANCELLED
+    assert (await client.get("/api/v1/addresses")).json() == []
+
+
+async def test_run_scan_cancel_during_reconcile_rolls_back(
+    client, session, sf, monkeypatch
+):
+    """Cancel landing while reconcile writes rows: the flag + row re-check
+    right before the completion commit catches it and rolls back."""
+    from app.worker import worker
+
+    fake = _FakeRedis()
+    _wire_worker(monkeypatch, sf, fake)
+    job = await _mk_job(session, "10.62.0.0/24")
+
+    async def fake_scan(cidr, **kw):
+        return [HostResult(ip="10.62.0.9")]
+
+    real_reconcile = worker.reconcile
+
+    async def cancelling_reconcile(sess, prefix_id, vrf_id, hosts, net):
+        out = await real_reconcile(sess, prefix_id, vrf_id, hosts, net)
+        await fake.set(worker.cancel_key(job.id), "1")
+        await _api_cancel(sf, job.id)
+        return out
+
+    monkeypatch.setattr(worker, "scan_cidr", fake_scan)
+    monkeypatch.setattr(worker, "reconcile", cancelling_reconcile)
+
+    out = await worker.run_scan({}, job.id)
+    assert out == {"cancelled": True}
+    await session.refresh(job)
+    assert job.status == ScanStatus.CANCELLED
+    # reconcile's insert rode the same transaction and rolled back with it
+    assert (await client.get("/api/v1/addresses")).json() == []
+
+
+async def test_run_scan_terminal_job_not_picked_up(session, sf, monkeypatch):
+    """A job already terminal when the worker picks it up is skipped — no
+    RUNNING overwrite (duplicate delivery / cancel-before-pickup)."""
+    from app.worker import worker
+
+    fake = _FakeRedis()
+    _wire_worker(monkeypatch, sf, fake)
+    job = ScanJob(cidr="10.63.0.0/24", status=ScanStatus.CANCELLED)
+    session.add(job)
+    await session.commit()
+
+    called = False
+
+    async def fake_scan(cidr, **kw):
+        nonlocal called
+        called = True
+        return []
+
+    monkeypatch.setattr(worker, "scan_cidr", fake_scan)
+    out = await worker.run_scan({}, job.id)
+    assert out == {"cancelled": True}
+    assert not called
+
+
+# --------------------------------------------------------------------------
+# shared exclusion guard — route, scheduler and worker must all treat
+# scan_exclude_networks as an overlap check in EITHER direction
+# --------------------------------------------------------------------------
+
+
+def test_exclusion_hit_both_directions():
+    from app.services.scan_policy import exclusion_hit
+
+    net = ipaddress.ip_network("10.70.0.0/24")
+    # supernet case: the exclusion is INSIDE the target — the scheduler's
+    # old one-direction subnet_of check missed exactly this
+    assert exclusion_hit(net, ["10.70.0.64/26"]) == "10.70.0.64/26"
+    # subnet case: target inside an excluded block
+    assert exclusion_hit(
+        ipaddress.ip_network("10.70.0.64/26"), ["10.70.0.0/24"]
+    ) == "10.70.0.0/24"
+    assert exclusion_hit(net, ["10.70.0.0/24"]) == "10.70.0.0/24"  # equal
+    # non-overlap / other family / junk entries are ignored, not fatal
+    assert exclusion_hit(net, ["192.168.9.0/24"]) is None
+    assert exclusion_hit(net, ["fd00::/64", "garbage"]) is None
+
+
+async def test_scheduler_and_route_share_exclusion_guard(
+    client, session, sf, monkeypatch
+):
+    """scan_exclude_networks=10.70.0.64/26 inside scan_networks=10.70.0.0/24:
+    the route rejects it AND the scheduler skips it — same helper."""
+    from app.worker import worker
+
+    r = await client.patch(
+        "/api/v1/settings",
+        json={
+            "scan_networks": ["10.70.0.0/24"],
+            "scan_exclude_networks": ["10.70.0.64/26"],
+        },
+    )
+    assert r.status_code == 200, r.text
+
+    # route rejects the supernet target (same helper, raising variant)
+    r = await client.post("/api/v1/scans", json={"cidr": "10.70.0.0/24"})
+    assert r.status_code == 422, r.text
+    assert "excluded" in r.json()["detail"]
+
+    # scheduler logs-and-skips rather than raising
+    monkeypatch.setattr(worker, "SessionLocal", sf)
+    pool = _FakePool()
+
+    async def _pool():
+        return pool
+
+    monkeypatch.setattr(worker, "get_arq_pool", _pool)
+    out = await worker.run_scheduled_scans({})
+    assert out["enqueued"] == []
+
+    # sanity: remove the exclusion and the same target enqueues
+    await client.patch("/api/v1/settings", json={"scan_exclude_networks": []})
+    out = await worker.run_scheduled_scans({})
+    assert out["enqueued"] == ["10.70.0.0/24"]
+
+
+async def test_worker_rechecks_exclusion(client, session, sf, monkeypatch):
+    """A job enqueued before an exclusion was added fails in run_scan
+    instead of scanning (stale-job defence in depth)."""
+    from app.worker import worker
+
+    await client.patch(
+        "/api/v1/settings",
+        json={"scan_exclude_networks": ["10.64.0.0/24"]},
+    )
+    fake = _FakeRedis()
+    _wire_worker(monkeypatch, sf, fake)
+    job = await _mk_job(session, "10.64.0.0/24")
+
+    called = False
+
+    async def fake_scan(cidr, **kw):
+        nonlocal called
+        called = True
+        return []
+
+    monkeypatch.setattr(worker, "scan_cidr", fake_scan)
+    out = await worker.run_scan({}, job.id)
+    assert "excluded" in out["error"]
+    assert not called
+    await session.refresh(job)
+    assert job.status == ScanStatus.FAILED

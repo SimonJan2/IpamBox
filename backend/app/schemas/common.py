@@ -1,8 +1,23 @@
 import ipaddress
 import re
-from typing import Any
+from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, Field
+
+T = TypeVar("T")
+
+
+class Page(BaseModel, Generic[T]):
+    """Paginated list envelope: the rows plus the honest filtered count.
+
+    `limit=None` means the caller asked for the full set — `items` then holds
+    every matching row and `total == len(items)`.
+    """
+
+    items: list[T]
+    total: int
+    limit: int | None = None
+    offset: int = 0
 
 _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 

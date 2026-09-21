@@ -11,7 +11,7 @@ from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.core.deps import require_auth
-from app.core.redis import get_redis
+from app.core.redis import close_arq_pool, close_redis, get_redis
 from app.models.asset import Asset
 from app.models.certificate import Certificate
 from app.models.circuit import Circuit
@@ -43,7 +43,12 @@ async def lifespan(_app: FastAPI):
     else:
         async with SessionLocal() as s:
             await auth.ensure_env_password_user(s)
-    yield
+    get_redis()  # create the shared client up front; closed at shutdown
+    try:
+        yield
+    finally:
+        await close_redis()
+        await close_arq_pool()
 
 
 app = FastAPI(title="IpamBox", version=APP_VERSION, docs_url="/docs", lifespan=lifespan)
@@ -78,11 +83,7 @@ async def readyz() -> JSONResponse:
     except Exception as e:  # noqa: BLE001 — readiness reports, not raises
         errors["db"] = str(e)[:200]
     try:
-        r = get_redis()
-        try:
-            await r.ping()
-        finally:
-            await r.aclose()
+        await get_redis().ping()
     except Exception as e:  # noqa: BLE001
         errors["redis"] = str(e)[:200]
     if errors:

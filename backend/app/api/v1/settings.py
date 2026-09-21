@@ -29,11 +29,8 @@ async def _lan_info() -> LanInfo:
     Falls back to local detection — which inside the bridge-networked api
     container reports the container subnet, so it's flagged as such.
     """
-    r = get_redis()
-    try:
-        raw = await r.get(_LAN_KEY)
-    finally:
-        await r.aclose()
+    r = get_redis()  # shared client — never close per call
+    raw = await r.get(_LAN_KEY)
     if raw:
         try:
             data = json.loads(raw)

@@ -5,7 +5,7 @@ list (+q text search), get, create, patch, delete. A small factory keeps the
 four routers consistent with the hand-written ones (sites.py et al.).
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,7 +23,7 @@ from app.schemas.certificate import (
     CertificateUpdate,
 )
 from app.schemas.circuit import CircuitCreate, CircuitOut, CircuitUpdate
-from app.schemas.common import ReorderBody
+from app.schemas.common import Page, ReorderBody
 from app.schemas.service import ServiceCreate, ServiceOut, ServiceUpdate
 from app.services.colors import stamp_colors
 from app.services.ipam import IPAMError, get_or_404
@@ -35,9 +35,11 @@ def _crud_router(prefix, tag, model, out_schema, create_schema, update_schema,
     entity_type = prefix.lstrip("/")
     router = APIRouter(prefix=prefix, tags=[tag])
 
-    @router.get("", response_model=list[out_schema])
+    @router.get("", response_model=Page[out_schema])
     async def list_items(
         q: str = "",
+        limit: int | None = Query(default=None, ge=1, le=20000),
+        offset: int = 0,
         session: AsyncSession = Depends(get_session),
     ):
         stmt = select(model)
@@ -57,8 +59,18 @@ def _crud_router(prefix, tag, model, out_schema, create_schema, update_schema,
                 )
             )
         stmt = ordered(stmt, model, model.id)
-        rows = (await session.execute(stmt)).scalars().all()
-        return await stamp_colors(session, entity_type, rows)
+        total = await session.scalar(
+            select(func.count()).select_from(stmt.order_by(None).subquery())
+        )
+        rows = (
+            await session.execute(stmt.limit(limit).offset(offset))
+        ).scalars().all()
+        return Page(
+            items=await stamp_colors(session, entity_type, rows),
+            total=total or 0,
+            limit=limit,
+            offset=offset,
+        )
 
     @router.post(
         "",

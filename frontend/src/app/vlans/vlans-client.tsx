@@ -33,7 +33,7 @@ import { HistoryDialog } from "@/components/history-panel";
 import { InlineText } from "@/components/inline-edit";
 import { RowColorLegend, RowColorPicker } from "@/components/row-color";
 import { SavedViews } from "@/components/saved-views";
-import type { Site, Vlan, VlanGroup, VlanStatus } from "@/types";
+import type { Page, Site, Vlan, VlanGroup, VlanStatus } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -338,9 +338,9 @@ export default function VlansPage() {
 
   const vlansQ = useAsyncData(
     () =>
-      api.get<Vlan[]>(
+      api.get<Page<Vlan>>(
         `/api/v1/vlans${filterGroup ? `?group_id=${filterGroup}` : ""}`
-      ),
+      ).then((p) => p.items),
     [filterGroup]
   );
   const groupsQ = useAsyncData(async () => {
@@ -353,7 +353,7 @@ export default function VlansPage() {
   });
   const sitesQ = useAsyncData(async () => {
     try {
-      return await api.get<Site[]>("/api/v1/sites");
+      return await api.get<Page<Site>>("/api/v1/sites").then((p) => p.items);
     } catch (e) {
       toast.error("Could not load sites", { description: String(e) });
       return [];

@@ -82,6 +82,7 @@ async def session(engine, sf):
 @pytest_asyncio.fixture
 async def client(session):
     from app.core.db import get_session
+    from app.core.redis import close_redis
     from app.main import app
 
     async def _override():
@@ -91,3 +92,5 @@ async def client(session):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
     app.dependency_overrides.clear()
+    # the shared client is loop-bound — release it before this test's loop dies
+    await close_redis()

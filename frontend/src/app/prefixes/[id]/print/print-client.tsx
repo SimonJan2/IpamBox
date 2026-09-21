@@ -8,7 +8,7 @@ import { api } from "@/lib/api";
 import { useAsyncData } from "@/lib/use-async-data";
 import { fmtTs } from "@/lib/prefs";
 import { timeAgo } from "@/lib/utils";
-import type { AddressPage, IpRange, Prefix, Site, Vrf } from "@/types";
+import type { AddressPage, IpRange, Page, Prefix, Site, Vrf } from "@/types";
 import { AsyncPanel } from "@/components/async-panel";
 import { IpStatusBadge, PrefixStatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
@@ -38,7 +38,7 @@ export default function PrintClient({ id }: { id: string }) {
   );
   const rangesQ = useAsyncData(async () => {
     try {
-      return await api.get<IpRange[]>(`/api/v1/ranges?prefix_id=${prefixId}`);
+      return await api.get<Page<IpRange>>(`/api/v1/ranges?prefix_id=${prefixId}`).then((p) => p.items);
     } catch (e) {
       toast.error("Could not load IP ranges", { description: String(e) });
       return [];
@@ -47,7 +47,7 @@ export default function PrintClient({ id }: { id: string }) {
   const namesQ = useAsyncData(async () => {
     try {
       const [sites, vrfs] = await Promise.all([
-        api.get<Site[]>("/api/v1/sites"),
+        api.get<Page<Site>>("/api/v1/sites").then((p) => p.items),
         api.get<Vrf[]>("/api/v1/vrfs"),
       ]);
       return {
@@ -139,11 +139,20 @@ export default function PrintClient({ id }: { id: string }) {
                 Utilization
               </h2>
               <p className="text-sm">
-                <b>{prefix.utilization_pct}%</b> used —{" "}
-                {prefix.used_ips.toLocaleString()} used ·{" "}
-                {prefix.free_ips.toLocaleString()} free ·{" "}
-                {prefix.usable_ips.toLocaleString()} usable of{" "}
-                {prefix.total_ips.toLocaleString()} total
+                {prefix.usable_ips === null ? (
+                  <>
+                    <b>{prefix.used_ips.toLocaleString()}</b> addresses tracked —
+                    IPv6 capacity not summarized
+                  </>
+                ) : (
+                  <>
+                    <b>{prefix.utilization_pct}%</b> used —{" "}
+                    {prefix.used_ips.toLocaleString()} used ·{" "}
+                    {prefix.free_ips!.toLocaleString()} free ·{" "}
+                    {prefix.usable_ips.toLocaleString()} usable of{" "}
+                    {prefix.total_ips!.toLocaleString()} total
+                  </>
+                )}
                 {page.usable_first && page.usable_last && (
                   <span className="text-muted-foreground">
                     {" "}

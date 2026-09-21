@@ -208,7 +208,7 @@ async def test_rule_priority_and_reorder(client: AsyncClient):
     r1 = await _mk_rule(client, color=RED)  # pos 1 — first match
     r2 = await _mk_rule(client, color=BLUE)  # pos 2
 
-    site = (await client.get("/api/v1/sites")).json()[0]
+    site = (await client.get("/api/v1/sites")).json()["items"][0]
     assert site["display_color"] == RED
 
     # flip priority: r2 now wins the same match
@@ -217,7 +217,7 @@ async def test_rule_priority_and_reorder(client: AsyncClient):
         json={"entity_type": "sites", "ids": [r2["id"], r1["id"]]},
     )
     assert r.status_code == 204, r.text
-    site = (await client.get("/api/v1/sites")).json()[0]
+    site = (await client.get("/api/v1/sites")).json()["items"][0]
     assert site["display_color"] == BLUE
 
 
@@ -259,7 +259,7 @@ async def test_within_days_boundary(client: AsyncClient):
         value="7",
         color=RED,
     )
-    certs = {c["cert_name"]: c for c in (await client.get("/api/v1/certificates")).json()}
+    certs = {c["cert_name"]: c for c in (await client.get("/api/v1/certificates")).json()["items"]}
     assert certs["past"]["display_color"] == RED  # past-due counts as within
     assert certs["today"]["display_color"] == RED
     assert certs["edge"]["display_color"] == RED

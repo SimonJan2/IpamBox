@@ -108,11 +108,13 @@ export interface Prefix {
   status: PrefixStatus;
   description: string | null;
   created_at: string;
-  total_ips: number;
-  usable_ips: number;
+  // null for IPv6 — 2^n host counts exceed Number.MAX_SAFE_INTEGER and are
+  // meaningless; render '—' for capacity, used_ips stays real
+  total_ips: number | null;
+  usable_ips: number | null;
   used_ips: number;
-  free_ips: number;
-  utilization_pct: number;
+  free_ips: number | null;
+  utilization_pct: number | null;
   unusable_first: boolean;
   unusable_last: boolean;
 }
@@ -212,8 +214,8 @@ export interface PrefixNode {
   vlan_name: string | null;
   description: string | null;
   used_ips: number;
-  usable_ips: number;
-  utilization_pct: number;
+  usable_ips: number | null; // null for IPv6 (see Prefix)
+  utilization_pct: number | null;
   descendant_count: number;
   agg_used_ips: number;
   allocated_pct: number;
@@ -527,4 +529,13 @@ export interface ColorRuleFieldMeta {
   name: string;
   type: "text" | "date" | "bool" | "number" | "enum";
   values: string[] | null;
+}
+
+/** Paginated list envelope returned by the unbounded list routes.
+ * `limit: null` = the caller asked for the full set. */
+export interface Page<T> {
+  items: T[];
+  total: number;
+  limit: number | null;
+  offset: number;
 }

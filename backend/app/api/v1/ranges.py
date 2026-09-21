@@ -1,13 +1,14 @@
 import ipaddress
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
 from app.core.deps import DATA_DELETE, DATA_WRITE, require_perm
 from app.models.ip_range import IPRange
 from app.models.prefix import Prefix
+from app.schemas.common import Page
 from app.schemas.ip_range import IPRangeCreate, IPRangeOut, IPRangeUpdate
 from app.services import prefix_math
 from app.services.ipam import IPAMError, get_or_404
@@ -15,10 +16,12 @@ from app.services.ipam import IPAMError, get_or_404
 router = APIRouter(prefix="/ranges", tags=["ranges"])
 
 
-@router.get("", response_model=list[IPRangeOut])
+@router.get("", response_model=Page[IPRangeOut])
 async def list_ranges(
     prefix_id: int | None = None,
     vrf_id: int | None = None,
+    limit: int | None = Query(default=None, ge=1, le=20000),
+    offset: int = 0,
     session: AsyncSession = Depends(get_session),
 ):
     stmt = select(IPRange).order_by(IPRange.start_int)
@@ -26,7 +29,13 @@ async def list_ranges(
         stmt = stmt.where(IPRange.prefix_id == prefix_id)
     if vrf_id is not None:
         stmt = stmt.where(IPRange.vrf_id == vrf_id)
-    return (await session.execute(stmt)).scalars().all()
+    total = await session.scalar(
+        select(func.count()).select_from(stmt.order_by(None).subquery())
+    )
+    rows = (
+        await session.execute(stmt.limit(limit).offset(offset))
+    ).scalars().all()
+    return Page(items=rows, total=total or 0, limit=limit, offset=offset)
 
 
 async def _check_range_overlap(

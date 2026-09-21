@@ -33,7 +33,7 @@ import { HistoryDialog } from "@/components/history-panel";
 import { InlineText } from "@/components/inline-edit";
 import { RowColorLegend, RowColorPicker } from "@/components/row-color";
 import { SavedViews } from "@/components/saved-views";
-import type { Asset, AssetKind, Site } from "@/types";
+import type { Asset, AssetKind, Page, Site } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -85,10 +85,10 @@ export default function InventoryPage() {
   const { can } = useAuth();
   const canWrite = can(PERM.DATA_WRITE);
   const canDelete = can(PERM.DATA_DELETE);
-  const itemsQ = useAsyncData(() => api.get<Asset[]>("/api/v1/assets"));
+  const itemsQ = useAsyncData(() => api.get<Page<Asset>>("/api/v1/assets").then((p) => p.items));
   const sitesQ = useAsyncData(async () => {
     try {
-      return await api.get<Site[]>("/api/v1/sites");
+      return await api.get<Page<Site>>("/api/v1/sites").then((p) => p.items);
     } catch (e) {
       toast.error("Could not load sites", { description: String(e) });
       return [];

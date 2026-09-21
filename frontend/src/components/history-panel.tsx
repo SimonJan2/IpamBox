@@ -8,7 +8,7 @@ import { api } from "@/lib/api";
 import { fmtTs } from "@/lib/prefs";
 import { useAsyncData } from "@/lib/use-async-data";
 import { cn, timeAgo } from "@/lib/utils";
-import type { ChangeField, ChangeLogEntry } from "@/types";
+import type { ChangeField, ChangeLogEntry, Page } from "@/types";
 import { AsyncPanel } from "@/components/async-panel";
 import {
   Dialog,
@@ -155,9 +155,9 @@ export function HistoryPanel({
 }) {
   const entriesQ = useAsyncData(
     () =>
-      api.get<ChangeLogEntry[]>(
+      api.get<Page<ChangeLogEntry>>(
         `/api/v1/changelog?object_type=${encodeURIComponent(objectType)}&object_id=${objectId}&limit=${limit + 1}`
-      ),
+      ).then((p) => p.items),
     [objectType, objectId, limit]
   );
 

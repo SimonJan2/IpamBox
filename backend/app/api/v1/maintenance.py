@@ -1,5 +1,5 @@
 """Destructive maintenance operations, all behind typed confirmation in the UI."""
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -61,7 +61,7 @@ async def purge_scans(
     """Delete terminal scan jobs (all, or older than N days)."""
     stmt = delete(ScanJob).where(ScanJob.status.in_(_TERMINAL))
     if body.older_than_days is not None:
-        cutoff = datetime.utcnow() - timedelta(days=body.older_than_days)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=body.older_than_days)
         stmt = stmt.where(ScanJob.created_at < cutoff)
     result = await session.execute(stmt)
     deleted = result.rowcount or 0
@@ -79,7 +79,7 @@ async def purge_changelog(
     """Delete changelog entries (all, or older than N days)."""
     stmt = delete(ChangeLog)
     if body.older_than_days is not None:
-        cutoff = datetime.utcnow() - timedelta(days=body.older_than_days)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=body.older_than_days)
         stmt = stmt.where(ChangeLog.ts < cutoff)
     result = await session.execute(stmt)
     deleted = result.rowcount or 0
@@ -106,11 +106,8 @@ async def clear_discovery(
 @router.post("/backup-now", status_code=202)
 async def backup_now(_user=Depends(require_perm(BACKUP_ACCESS))):
     """Enqueue an immediate scheduled-style backup on the worker."""
-    pool = await get_arq_pool()
-    try:
-        job = await pool.enqueue_job("run_scheduled_backup")
-    finally:
-        await pool.close()
+    pool = await get_arq_pool()  # shared pool — never close per call
+    job = await pool.enqueue_job("run_scheduled_backup")
     if job is None:
         raise HTTPException(409, "a backup job is already queued")
     return {"queued": True, "job_id": job.job_id}

@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import Enum, ForeignKey, Text, func
+from sqlalchemy import DateTime, Enum, ForeignKey, Text, func
 from sqlalchemy.dialects.postgresql import CIDR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -34,7 +34,7 @@ class Prefix(Base):
         server_default=PrefixStatus.ACTIVE.value,
     )
     description: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     vrf: Mapped["VRF"] = relationship(back_populates="prefixes")  # noqa: F821
     site: Mapped["Site | None"] = relationship(back_populates="prefixes")  # noqa: F821

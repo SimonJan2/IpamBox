@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,7 +9,7 @@ from app.models.circuit import Circuit
 from app.models.service import Service
 from app.models.site import Site
 from app.models.vrf import VRF
-from app.schemas.common import ReorderBody
+from app.schemas.common import Page, ReorderBody
 from app.schemas.site import SiteCreate, SiteOut, SiteUpdate
 from app.services import runtime_settings
 from app.services.colors import stamp_colors
@@ -19,11 +19,25 @@ from app.services.ordering import ordered, reorder
 router = APIRouter(prefix="/sites", tags=["sites"])
 
 
-@router.get("", response_model=list[SiteOut])
-async def list_sites(session: AsyncSession = Depends(get_session)):
+@router.get("", response_model=Page[SiteOut])
+async def list_sites(
+    limit: int | None = Query(default=None, ge=1, le=20000),
+    offset: int = 0,
+    session: AsyncSession = Depends(get_session),
+):
     stmt = ordered(select(Site), Site, Site.name)
-    rows = (await session.execute(stmt)).scalars().all()
-    return await stamp_colors(session, "sites", rows)
+    total = await session.scalar(
+        select(func.count()).select_from(stmt.order_by(None).subquery())
+    )
+    rows = (
+        await session.execute(stmt.limit(limit).offset(offset))
+    ).scalars().all()
+    return Page(
+        items=await stamp_colors(session, "sites", rows),
+        total=total or 0,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.post(

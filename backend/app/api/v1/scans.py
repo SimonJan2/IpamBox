@@ -1,6 +1,6 @@
 import ipaddress
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -14,7 +14,7 @@ from app.core.redis import get_arq_pool, get_redis
 from app.models.scan_job import ScanJob, ScanStatus
 from app.models.vrf import VRF
 from app.schemas.scan import ScanConfigOut, ScanCreate, ScanJobOut
-from app.services import prefix_math, runtime_settings
+from app.services import prefix_math, runtime_settings, scan_policy
 from app.services.ipam import IPAMError, get_or_404
 from app.worker.scanner import detect_local_cidr
 from app.worker.worker import cancel_key
@@ -27,10 +27,9 @@ _LIVE = (ScanStatus.QUEUED, ScanStatus.RUNNING)
 
 
 def _check_cidr_allowed(net, eff: dict) -> None:
-    for x in eff["scan_exclude_networks"]:
-        xn = ipaddress.ip_network(x, strict=False)
-        if net.subnet_of(xn) or net == xn or xn.subnet_of(net):
-            raise HTTPException(422, f"{net} overlaps excluded network {xn}")
+    hit = scan_policy.exclusion_hit(net, eff["scan_exclude_networks"])
+    if hit:
+        raise HTTPException(422, f"{net} overlaps excluded network {hit}")
     if eff["scan_only_configured"]:
         allowed = [
             ipaddress.ip_network(n, strict=False) for n in eff["scan_networks"]
@@ -100,7 +99,7 @@ async def create_scan(body: ScanCreate, session: AsyncSession = Depends(get_sess
     if live:
         raise HTTPException(429, "a scan is already queued or running")
     if body.cidr:
-        cutoff = datetime.utcnow() - timedelta(
+        cutoff = datetime.now(timezone.utc) - timedelta(
             seconds=eff.values["scan_min_interval_seconds"]
         )
         recent = (
@@ -126,12 +125,9 @@ async def create_scan(body: ScanCreate, session: AsyncSession = Depends(get_sess
     session.add(job)
     await session.flush()
 
-    pool = await get_arq_pool()
-    try:
-        arq_job = await pool.enqueue_job("run_scan", job.id)
-        job.arq_job_id = arq_job.job_id if arq_job else None
-    finally:
-        await pool.close()
+    pool = await get_arq_pool()  # shared pool — never close per call
+    arq_job = await pool.enqueue_job("run_scan", job.id)
+    job.arq_job_id = arq_job.job_id if arq_job else None
     await session.commit()
     await session.refresh(job)
     return job
@@ -149,13 +145,10 @@ async def cancel_scan(scan_id: int, session: AsyncSession = Depends(get_session)
     if job.status in _TERMINAL:
         raise HTTPException(409, f"scan already {job.status.value}")
     # flag for the worker + mark immediately so queued jobs never start
-    r = get_redis()
-    try:
-        await r.set(cancel_key(scan_id), "1", ex=3600)
-    finally:
-        await r.aclose()
+    r = get_redis()  # shared client — never close per call
+    await r.set(cancel_key(scan_id), "1", ex=3600)
     job.status = ScanStatus.CANCELLED
-    job.finished_at = datetime.utcnow()
+    job.finished_at = datetime.now(timezone.utc)
     if job.started_at:
         job.duration_seconds = round(
             (job.finished_at - job.started_at).total_seconds(), 2
@@ -176,7 +169,7 @@ async def get_scan(scan_id: int, session: AsyncSession = Depends(get_session)):
 def _job_payload(job: ScanJob) -> dict:
     eta = None
     if job.status == ScanStatus.RUNNING and job.started_at and job.progress > 0:
-        elapsed = (datetime.utcnow() - job.started_at).total_seconds()
+        elapsed = (datetime.now(timezone.utc) - job.started_at).total_seconds()
         eta = round(elapsed * (100 - job.progress) / job.progress, 1)
     return {
         "scan_id": job.id,
@@ -197,6 +190,8 @@ async def stream_scan(scan_id: int):
 
     async def gen():
         r = get_redis()
+        # the pubsub borrows one connection from the shared client's pool —
+        # closing it returns the connection, the client itself stays open
         pubsub = r.pubsub()
         try:
             async with SessionLocal() as s:
@@ -234,7 +229,7 @@ async def stream_scan(scan_id: int):
                         return
         finally:
             await pubsub.unsubscribe()
-            await r.aclose()
+            await pubsub.aclose()
 
     return StreamingResponse(
         gen(),

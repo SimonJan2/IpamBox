@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, Enum, ForeignKey, Numeric, Text, func
+from sqlalchemy import DateTime, CheckConstraint, Enum, ForeignKey, Numeric, Text, func
 from sqlalchemy.dialects.postgresql import INET
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -41,7 +41,7 @@ class IPRange(Base):
         server_default=IPRangeRole.DHCP.value,
     )
     description: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     prefix: Mapped["Prefix"] = relationship()  # noqa: F821
     vrf: Mapped["VRF"] = relationship()  # noqa: F821

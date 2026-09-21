@@ -34,7 +34,7 @@ import { InlineText } from "@/components/inline-edit";
 import { RowColorLegend, RowColorPicker } from "@/components/row-color";
 import { SavedViews } from "@/components/saved-views";
 import { SortHeader, columnAriaSort } from "@/components/sort-header";
-import type { Certificate } from "@/types";
+import type { Certificate, Page } from "@/types";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -69,7 +69,7 @@ export default function CertificatesPage() {
   const canWrite = can(PERM.DATA_WRITE);
   const canDelete = can(PERM.DATA_DELETE);
   const itemsQ = useAsyncData(() =>
-    api.get<Certificate[]>("/api/v1/certificates")
+    api.get<Page<Certificate>>("/api/v1/certificates").then((p) => p.items)
   );
   const [q, setQ] = useUrlText("q");
   // Default view is the manual order (migration backfilled it by expiry);

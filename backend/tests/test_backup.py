@@ -178,7 +178,7 @@ async def test_backup_roundtrip(client, session):
     assert any(a["object_id"] == by_addr["10.80.0.11"]["id"] for a in assigns)
 
     # changelog history was backed up and restored
-    log = (await client.get("/api/v1/changelog")).json()
+    log = (await client.get("/api/v1/changelog")).json()["items"]
     assert any(e["object_type"] == "Site" for e in log)
 
 
@@ -452,6 +452,26 @@ async def test_dry_run_reports_users(client, session):
 
     n = await session.execute(text("SELECT COUNT(*) FROM users"))
     assert n.scalar() == 4  # preview wrote nothing
+
+
+async def test_restore_drops_orphaned_tag_assignments(client, session):
+    """A backup carrying an assignment for a missing object (e.g. taken while
+    orphans still existed) must not resurrect it — raw inserts bypass the
+    flush hooks, so restore sweeps them before committing."""
+    payload = _envelope_bytes(
+        {
+            "tags": [{"id": 1, "name": "core", "slug": "core"}],
+            "tag_assignments": [
+                {"id": 1, "tag_id": 1, "object_type": "IPAddress", "object_id": 99999},
+                {"id": 2, "tag_id": 1, "object_type": "Nonsense", "object_id": 1},
+            ],
+        }
+    )
+    r = await _restore(client, payload)
+    assert r.status_code == 200, r.text
+    report = r.json()
+    assert "2 orphaned tag assignment(s) dropped on restore" in report["warnings"]
+    assert (await client.get("/api/v1/tags/assignments")).json() == []
 
 
 async def test_users_table_without_flag_is_skipped(client, session):

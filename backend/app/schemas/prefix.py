@@ -54,12 +54,14 @@ class PrefixOut(BaseModel):
     description: str | None
     created_at: datetime
 
-    # Calculated attributes (filled by the service layer)
-    total_ips: int = 0
-    usable_ips: int = 0
+    # Calculated attributes (filled by the service layer). Capacity fields
+    # are null for IPv6 — a /64's count (~1.8e19) exceeds Number.MAX_SAFE_INTEGER
+    # and is meaningless; the UI renders '—' while used_ips stays real.
+    total_ips: int | None = 0
+    usable_ips: int | None = 0
     used_ips: int = 0
-    free_ips: int = 0
-    utilization_pct: float = 0.0
+    free_ips: int | None = 0
+    utilization_pct: float | None = 0.0
     # Marks the network/broadcast boundaries of IPv4 prefixes (None for /31,/32,v6)
     unusable_first: bool = False
     unusable_last: bool = False

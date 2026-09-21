@@ -2,7 +2,7 @@ import ipaddress
 import json
 import secrets
 from contextvars import ContextVar
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -146,57 +146,44 @@ async def create_session(
     hours = ttl_hours if ttl_hours is not None else get_settings().ipambox_session_hours
     meta = {
         "user_id": user_id,
-        "created_at": datetime.utcnow().isoformat(timespec="seconds"),
+        "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "ip": ip,
         "ua": ua[:200],
     }
     r = get_redis()
-    try:
-        await r.set(_session_key(token), json.dumps(meta), ex=hours * 3600)
-    finally:
-        await r.aclose()
+    await r.set(_session_key(token), json.dumps(meta), ex=hours * 3600)
     return token
 
 
 async def get_session_user_id(token: str) -> int | None:
     r = get_redis()
-    try:
-        meta = _session_meta(await r.get(_session_key(token)))
-        return int(meta["user_id"]) if meta else None
-    finally:
-        await r.aclose()
+    meta = _session_meta(await r.get(_session_key(token)))
+    return int(meta["user_id"]) if meta else None
 
 
 async def destroy_session(token: str) -> None:
-    r = get_redis()
-    try:
-        await r.delete(_session_key(token))
-    finally:
-        await r.aclose()
+    await get_redis().delete(_session_key(token))
 
 
 async def list_sessions(user_id: int, current_token: str | None) -> list[dict]:
     """All live sessions for a user; tokens surface only as an 8-char suffix."""
     r = get_redis()
     out: list[dict] = []
-    try:
-        async for key in r.scan_iter(f"{_SESSION_PREFIX}*"):
-            token = key[len(_SESSION_PREFIX) :]
-            meta = _session_meta(await r.get(key))
-            if not meta or int(meta["user_id"]) != user_id:
-                continue
-            out.append(
-                {
-                    "id": token[-8:],
-                    "created_at": meta.get("created_at"),
-                    "ip": meta.get("ip") or None,
-                    "ua": meta.get("ua") or None,
-                    "expires_in": await r.ttl(key),
-                    "current": token == current_token,
-                }
-            )
-    finally:
-        await r.aclose()
+    async for key in r.scan_iter(f"{_SESSION_PREFIX}*"):
+        token = key[len(_SESSION_PREFIX) :]
+        meta = _session_meta(await r.get(key))
+        if not meta or int(meta["user_id"]) != user_id:
+            continue
+        out.append(
+            {
+                "id": token[-8:],
+                "created_at": meta.get("created_at"),
+                "ip": meta.get("ip") or None,
+                "ua": meta.get("ua") or None,
+                "expires_in": await r.ttl(key),
+                "current": token == current_token,
+            }
+        )
     out.sort(key=lambda s: (not s["current"], s["created_at"] or ""))
     return out
 
@@ -204,18 +191,15 @@ async def list_sessions(user_id: int, current_token: str | None) -> list[dict]:
 async def destroy_session_by_suffix(user_id: int, suffix: str) -> bool:
     """Revoke one of the user's sessions identified by its token suffix."""
     r = get_redis()
-    try:
-        async for key in r.scan_iter(f"{_SESSION_PREFIX}*"):
-            token = key[len(_SESSION_PREFIX) :]
-            if not token.endswith(suffix):
-                continue
-            meta = _session_meta(await r.get(key))
-            if meta and int(meta["user_id"]) == user_id:
-                await r.delete(key)
-                return True
-        return False
-    finally:
-        await r.aclose()
+    async for key in r.scan_iter(f"{_SESSION_PREFIX}*"):
+        token = key[len(_SESSION_PREFIX) :]
+        if not token.endswith(suffix):
+            continue
+        meta = _session_meta(await r.get(key))
+        if meta and int(meta["user_id"]) == user_id:
+            await r.delete(key)
+            return True
+    return False
 
 
 async def destroy_user_sessions(user_id: int) -> int:
@@ -226,16 +210,13 @@ async def destroy_other_sessions(user_id: int, keep_token: str | None) -> int:
     """Revoke every session of the user except keep_token. Returns count."""
     r = get_redis()
     removed = 0
-    try:
-        async for key in r.scan_iter(f"{_SESSION_PREFIX}*"):
-            token = key[len(_SESSION_PREFIX) :]
-            if token == keep_token:
-                continue
-            meta = _session_meta(await r.get(key))
-            if meta and int(meta["user_id"]) == user_id:
-                removed += await r.delete(key)
-    finally:
-        await r.aclose()
+    async for key in r.scan_iter(f"{_SESSION_PREFIX}*"):
+        token = key[len(_SESSION_PREFIX) :]
+        if token == keep_token:
+            continue
+        meta = _session_meta(await r.get(key))
+        if meta and int(meta["user_id"]) == user_id:
+            removed += await r.delete(key)
     return removed
 
 
@@ -246,38 +227,28 @@ async def is_locked_out(username: str, ip: str) -> bool:
     usernames still trips it, while one locked pair never silences others.
     """
     r = get_redis()
-    try:
-        hits = await r.mget(_lock_key(username, ip), _ip_lock_key(ip))
-        return any(h is not None for h in hits)
-    finally:
-        await r.aclose()
+    hits = await r.mget(_lock_key(username, ip), _ip_lock_key(ip))
+    return any(h is not None for h in hits)
 
 
 async def record_login_failure(username: str, ip: str) -> bool:
     """Bump (username, ip) + per-IP counters; True once either locks out."""
     r = get_redis()
-    try:
-        n = await r.incr(_fails_key(username, ip))
-        await r.expire(_fails_key(username, ip), _LOCKOUT_SECONDS)
-        m = await r.incr(_ip_fails_key(ip))
-        await r.expire(_ip_fails_key(ip), _LOCKOUT_SECONDS)
-        locked = False
-        if n >= _LOCKOUT_AFTER:
-            await r.set(_lock_key(username, ip), "1", ex=_LOCKOUT_SECONDS)
-            locked = True
-        if m >= _LOCKOUT_IP_AFTER:
-            await r.set(_ip_lock_key(ip), "1", ex=_LOCKOUT_SECONDS)
-            locked = True
-        return locked
-    finally:
-        await r.aclose()
+    n = await r.incr(_fails_key(username, ip))
+    await r.expire(_fails_key(username, ip), _LOCKOUT_SECONDS)
+    m = await r.incr(_ip_fails_key(ip))
+    await r.expire(_ip_fails_key(ip), _LOCKOUT_SECONDS)
+    locked = False
+    if n >= _LOCKOUT_AFTER:
+        await r.set(_lock_key(username, ip), "1", ex=_LOCKOUT_SECONDS)
+        locked = True
+    if m >= _LOCKOUT_IP_AFTER:
+        await r.set(_ip_lock_key(ip), "1", ex=_LOCKOUT_SECONDS)
+        locked = True
+    return locked
 
 
 async def clear_login_failures(username: str, ip: str) -> None:
     """Successful login clears the (username, ip) pair only — the per-IP
     aggregate keeps its TTL so valid logins can't reset a stuffing attack."""
-    r = get_redis()
-    try:
-        await r.delete(_fails_key(username, ip), _lock_key(username, ip))
-    finally:
-        await r.aclose()
+    await get_redis().delete(_fails_key(username, ip), _lock_key(username, ip))

@@ -7,7 +7,7 @@ import { useAsyncData } from "@/lib/use-async-data";
 import { usePolling } from "@/lib/use-polling";
 import { timeAgo } from "@/lib/utils";
 import { useUrlParams, useUrlText } from "@/lib/url-state";
-import type { ChangeLogEntry } from "@/types";
+import type { ChangeLogEntry, Page } from "@/types";
 import { AsyncPanel } from "@/components/async-panel";
 import { ChangeDiff } from "@/components/history-panel";
 import { SavedViews } from "@/components/saved-views";
@@ -63,7 +63,7 @@ export default function ChangelogPage() {
     (objectType ? `&object_type=${encodeURIComponent(objectType)}` : "") +
     (objectId ? `&object_id=${encodeURIComponent(objectId)}` : "");
   const entriesQ = useAsyncData(
-    () => api.get<ChangeLogEntry[]>(scopedUrl),
+    () => api.get<Page<ChangeLogEntry>>(scopedUrl).then((p) => p.items),
     [scopedUrl]
   );
   const [q, setQ] = useUrlText("q");

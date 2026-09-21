@@ -1,8 +1,8 @@
 import ipaddress
 from collections.abc import Iterable
-from datetime import date, timedelta
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -51,8 +51,24 @@ async def check_overlap(
 
 
 def prefix_stats_dict(prefix: Prefix, used: int) -> dict:
-    """Stats payload for one prefix given its address count (no DB access)."""
+    """Stats payload for one prefix given its address count (no DB access).
+
+    IPv6 capacity fields are None: usable_count() returns the full 2^n for
+    v6, which is meaningless as a host count and exceeds JS's
+    Number.MAX_SAFE_INTEGER — one /64 would poison any summed total. The
+    documented-address count (used_ips) stays real; the UI shows '—' for
+    capacity."""
     net = prefix_math.to_network(prefix.prefix)
+    if net.version == 6:
+        return {
+            "total_ips": None,
+            "usable_ips": None,
+            "used_ips": used,
+            "free_ips": None,
+            "utilization_pct": None,
+            "unusable_first": False,
+            "unusable_last": False,
+        }
     usable = prefix_math.usable_count(net)
     return {
         "total_ips": net.num_addresses,
@@ -184,7 +200,11 @@ async def build_tree(session: AsyncSession) -> list[dict]:
         def prefix_node(p: Prefix) -> dict:
             net = nets[p.id]
             kids = [prefix_node(c) for c in children_of[p.id]]
-            usable = prefix_math.usable_count(net)
+            # IPv6 reports no usable capacity (2^64 would poison sums and
+            # JS can't represent it); used_ips stays the documented count.
+            usable = (
+                prefix_math.usable_count(net) if net.version == 4 else None
+            )
             used = int(used_counts.get(p.id, 0))
             return {
                 "id": p.id,
@@ -196,7 +216,11 @@ async def build_tree(session: AsyncSession) -> list[dict]:
                 "description": p.description,
                 "used_ips": used,
                 "usable_ips": usable,
-                "utilization_pct": round(100.0 * used / usable, 1) if usable else 0.0,
+                "utilization_pct": (
+                    round(100.0 * used / usable, 1) if usable else 0.0
+                )
+                if net.version == 4
+                else None,
                 "descendant_count": sum(1 + k["descendant_count"] for k in kids),
                 "agg_used_ips": used + sum(k["agg_used_ips"] for k in kids),
                 "allocated_pct": round(
@@ -241,14 +265,39 @@ async def dashboard_stats(session: AsyncSession) -> dict:
 
     sites_total = int((await session.execute(select(func.count(Site.id)))).scalar_one())
     vrfs_total = int((await session.execute(select(func.count(VRF.id)))).scalar_one())
-    prefixes = (await session.execute(select(Prefix))).scalars().all()
+    prefixes_total = int(
+        (await session.execute(select(func.count(Prefix.id)))).scalar_one()
+    )
 
-    ips_total = 0
-    for p in prefixes:
-        if p.status != PrefixStatus.CONTAINER:
-            ips_total += prefix_math.usable_count(prefix_math.to_network(p.prefix))
-
-    ips_used = int((await session.execute(select(func.count(IPAddress.id)))).scalar_one())
+    # Aggregated in SQL — the old per-prefix Python loop loaded every row.
+    # IPv4 only: usable_count() on v6 returns 2^prefixlen (a /64 ≈ 1.8e19,
+    # beyond Number.MAX_SAFE_INTEGER), so a single documented v6 prefix
+    # would corrupt ips_total/utilization for the whole install. masklen>=31
+    # mirrors usable_bounds: /31 p2p links and /32 hosts use every address.
+    v4_usable = case(
+        (func.masklen(Prefix.prefix) >= 31, func.pow(2, 32 - func.masklen(Prefix.prefix))),
+        else_=func.pow(2, 32 - func.masklen(Prefix.prefix)) - 2,
+    )
+    ips_total = int(
+        (
+            await session.execute(
+                select(func.coalesce(func.sum(v4_usable), 0)).where(
+                    func.family(Prefix.prefix) == 4,
+                    Prefix.status != PrefixStatus.CONTAINER,
+                )
+            )
+        ).scalar_one()
+    )
+    # Same lens for used: only addresses under IPv4 prefixes consume capacity.
+    ips_used = int(
+        (
+            await session.execute(
+                select(func.count(IPAddress.id))
+                .join(Prefix, IPAddress.prefix_id == Prefix.id)
+                .where(func.family(Prefix.prefix) == 4)
+            )
+        ).scalar_one()
+    )
     by_status = {
         s: int(c)
         for s, c in (
@@ -280,7 +329,7 @@ async def dashboard_stats(session: AsyncSession) -> dict:
     certificates_total = int(
         (await session.execute(select(func.count(Certificate.id)))).scalar_one()
     )
-    soon = date.today() + timedelta(days=30)
+    soon = datetime.now(timezone.utc).date() + timedelta(days=30)
     certs_expiring_30d = int(
         (
             await session.execute(
@@ -336,7 +385,7 @@ async def dashboard_stats(session: AsyncSession) -> dict:
     return {
         "sites_total": sites_total,
         "vrfs_total": vrfs_total,
-        "prefixes_total": len(prefixes),
+        "prefixes_total": prefixes_total,
         "ips_total": ips_total,
         "ips_used": ips_used,
         "ips_free": max(0, ips_total - ips_used),

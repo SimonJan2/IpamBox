@@ -2,7 +2,7 @@ import pytest
 from httpx import AsyncClient
 
 from app.core.config import get_settings
-from app.core.redis import get_redis
+from app.core.redis import close_redis, get_redis
 
 
 @pytest.fixture
@@ -19,7 +19,7 @@ async def auth_on():
         for pattern in ("ipam:session:*", "ipam:loginfails*", "ipam:lockout*"):
             async for key in r.scan_iter(pattern):
                 await r.delete(key)
-        await r.aclose()
+        await close_redis()
 
 
 async def test_endpoints_require_auth(client: AsyncClient, auth_on):

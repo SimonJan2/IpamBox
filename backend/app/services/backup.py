@@ -29,7 +29,7 @@ import ipaddress
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Callable
@@ -39,6 +39,7 @@ from sqlalchemy import DateTime, Enum, Numeric, inspect, select, text, update
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import tag_refs
 from app.core.config import get_settings
 from app.models.app_setting import AppSetting
 from app.models.asset import Asset
@@ -94,7 +95,7 @@ def _fail_inflight_scans(row: dict) -> dict:
     if row.get("status") in ("queued", "running"):
         row["status"] = "failed"
         row["error"] = "interrupted by restore"
-        row["finished_at"] = row.get("finished_at") or datetime.utcnow().isoformat()
+        row["finished_at"] = row.get("finished_at") or datetime.now(timezone.utc).isoformat()
     return row
 
 
@@ -155,7 +156,9 @@ def _from_json(col, v: Any) -> Any:
         return ipaddress.ip_interface(str(v))
     try:
         if isinstance(t, DateTime):
-            return datetime.fromisoformat(str(v))
+            dt = datetime.fromisoformat(str(v))
+            # pre-timestamptz backups carry offset-less UTC stamps
+            return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
         if isinstance(t, Numeric):
             return Decimal(str(v))
         if isinstance(t, Enum) and t.enum_class is not None:
@@ -171,7 +174,7 @@ def _from_json(col, v: Any) -> Any:
 
 
 def backup_filename(now: datetime | None = None) -> str:
-    ts = (now or datetime.now()).strftime("%Y%m%d-%H%M%S")
+    ts = (now or datetime.now(timezone.utc)).strftime("%Y%m%d-%H%M%S")
     return f"ipambox-backup-{ts}.json.gz"
 
 
@@ -226,7 +229,7 @@ async def build_backup(session: AsyncSession, include_users: bool = False) -> by
         "format_version": FORMAT_VERSION,
         "app_version": APP_VERSION,
         "alembic_revision": revisions[0] if revisions else None,
-        "created_at": datetime.utcnow().isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
         "tables": tables,
     }
     if include_users:
@@ -464,6 +467,15 @@ async def restore_backup(
                 session, tables.get("users") or [], warnings
             )
 
+        # tag_assignments arrive as raw rows — drop any whose target the
+        # backup doesn't contain (a file taken while orphans existed would
+        # otherwise re-attach them onto unrelated rows when ids recycle)
+        orphans = await tag_refs.sweep_orphans(session)
+        if orphans:
+            warnings.append(
+                f"{orphans} orphaned tag assignment(s) dropped on restore"
+            )
+
         for spec in BACKUP_TABLES:
             if _has_serial_id(spec):
                 await session.execute(
@@ -530,7 +542,9 @@ def list_backup_files() -> list[dict]:
             {
                 "name": p.name,
                 "size": st.st_size,
-                "created_at": datetime.fromtimestamp(st.st_mtime).isoformat(),
+                "created_at": datetime.fromtimestamp(
+                    st.st_mtime, tz=timezone.utc
+                ).isoformat(),
             }
         )
     return files
