@@ -206,6 +206,78 @@ async def test_scan_vrf_resolution_order(client, session):
     assert await _scan_vrf(session, ScanJob(cidr=str(net)), net) == hl
 
 
+async def test_scan_cidr_emits_found_deltas(monkeypatch):
+    """on_hosts fires once per detection step with that chunk's new IPs —
+    ARP batch first, then per-chunk ICMP — so the worker publishes bounded
+    `found` deltas on the SSE channel, never one event per IP."""
+    from app.worker import scanner
+
+    monkeypatch.setattr(scanner, "detect_interface", lambda explicit="": None)
+    monkeypatch.setattr(
+        scanner,
+        "_arp_scan",
+        lambda cidr, dev, timeout: {"10.99.0.2": "AA:BB:CC:DD:EE:02"},
+    )
+
+    async def fake_icmp(ips, timeout):
+        return {ip for ip in ips if ip.endswith(".5")}
+
+    async def fake_probe(ip, ports, timeout, sem):
+        return [80]
+
+    async def fake_ptr(ip, sem):
+        return None
+
+    monkeypatch.setattr(scanner, "_icmp_sweep", fake_icmp)
+    monkeypatch.setattr(scanner, "_tcp_probe", fake_probe)
+    monkeypatch.setattr(scanner, "_ptr_lookup", fake_ptr)
+
+    deltas: list[tuple[list[str], str]] = []
+
+    async def on_hosts(ips, phase):
+        deltas.append((ips, phase))
+
+    # /29 -> 6 usable hosts, a single ICMP chunk; TCP fallback skipped
+    # because hosts were found.
+    hosts = await scanner.scan_cidr("10.99.0.0/29", on_hosts=on_hosts)
+
+    assert [h.ip for h in hosts] == ["10.99.0.2", "10.99.0.5"]
+    assert deltas == [(["10.99.0.2"], "arp"), (["10.99.0.5"], "icmp")]
+
+
+async def test_scan_cidr_tcp_fallback_reports_found(monkeypatch):
+    """When L2+L3 find nothing, the TCP fallback publishes its batch too."""
+    from app.worker import scanner
+
+    monkeypatch.setattr(scanner, "detect_interface", lambda explicit="": None)
+    monkeypatch.setattr(scanner, "_arp_scan", lambda cidr, dev, timeout: {})
+
+    async def fake_icmp(ips, timeout):
+        return set()
+
+    async def fake_probe(ip, ports, timeout, sem):
+        return [443] if ip.endswith(".5") else []
+
+    async def fake_ptr(ip, sem):
+        return None
+
+    monkeypatch.setattr(scanner, "_icmp_sweep", fake_icmp)
+    monkeypatch.setattr(scanner, "_tcp_probe", fake_probe)
+    monkeypatch.setattr(scanner, "_ptr_lookup", fake_ptr)
+
+    deltas: list[tuple[list[str], str]] = []
+
+    async def on_hosts(ips, phase):
+        deltas.append((ips, phase))
+
+    hosts = await scanner.scan_cidr(
+        "10.99.1.0/29", tcp_ports=[443], on_hosts=on_hosts
+    )
+
+    assert [h.ip for h in hosts] == ["10.99.1.5"]
+    assert deltas == [(["10.99.1.5"], "tcp")]
+
+
 async def test_reconcile_persists_ports_and_type(client, session):
     vrf_id = (await client.get("/api/v1/vrfs")).json()[0]["id"]
     p = (

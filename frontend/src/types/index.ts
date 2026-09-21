@@ -272,6 +272,8 @@ export interface ScanEvent {
   hosts_new?: number;
   eta_seconds?: number | null;
   error?: string | null;
+  /** Additive delta — IPs confirmed live since the last event (F15). */
+  found?: string[];
 }
 
 export interface ScanConfig {

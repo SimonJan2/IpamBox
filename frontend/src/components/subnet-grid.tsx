@@ -111,6 +111,7 @@ export function SubnetGrid({
   onSpanSelect,
   onClearSpan,
   spanSelectable = false,
+  liveFound = null,
 }: {
   page: AddressPage;
   ranges?: IpRange[];
@@ -126,6 +127,10 @@ export function SubnetGrid({
   /** Gate drag-select on the caller's write permission; touch devices are
    *  excluded automatically below (drag fights scroll). */
   spanSelectable?: boolean;
+  /** Address ints reported live by a running scan (F15) — cells pulse with
+   *  an emerald ring when nothing is documented there yet, sky when the IP
+   *  already has an address row. */
+  liveFound?: Set<number> | null;
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
   const cellRefs = useRef(new Map<number, HTMLButtonElement>());
@@ -398,6 +403,7 @@ export function SubnetGrid({
                   : null;
                 const glyph =
                   st.kind === "used" ? STATUS_TOKENS[st.addr.status].glyph : "";
+                const liveHit = liveFound?.has(intIp) ?? false;
                 const cell = (
                   <button
                     key={col}
@@ -405,7 +411,10 @@ export function SubnetGrid({
                     role="gridcell"
                     aria-rowindex={vRow.index + 1}
                     aria-colindex={col + 1}
-                    aria-label={cellLabel(ip, st)}
+                    aria-label={
+                      cellLabel(ip, st) +
+                      (liveHit ? ", just found by live scan" : "")
+                    }
                     tabIndex={idx === tabbableIdx ? 0 : -1}
                     aria-selected={inSpan || undefined}
                     ref={(el) => {
@@ -447,7 +456,11 @@ export function SubnetGrid({
                         ? STATUS_TOKENS[st.addr.status].cell
                         : GRID_CELL_TOKENS[st.kind].cell,
                       dimmed && "opacity-25",
-                      inSpan && "ipcell-sel"
+                      inSpan && "ipcell-sel",
+                      liveHit &&
+                        (st.kind === "used"
+                          ? "ipcell-found-known"
+                          : "ipcell-found-new")
                     )}
                     style={{
                       width: cellSize,
@@ -482,6 +495,12 @@ export function SubnetGrid({
                     <TooltipTrigger asChild>{cell}</TooltipTrigger>
                     <TooltipContent side="top" className="w-56 space-y-1">
                       <div className="font-mono text-sm text-foreground">{ip}</div>
+                      {liveHit && (
+                        <div className="text-emerald-600 dark:text-emerald-400">
+                          found by the running scan
+                          {st.kind === "used" ? " — already documented" : " — new"}
+                        </div>
+                      )}
                       {st.kind === "used" ? (
                         <div className="space-y-0.5 text-muted-foreground">
                           {st.addr.hostname && <div>host: {st.addr.hostname}</div>}

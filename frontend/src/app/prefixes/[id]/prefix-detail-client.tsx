@@ -9,6 +9,7 @@ import {
   Loader2,
   Plus,
   Printer,
+  Radar,
   Split,
   Trash2,
   Upload,
@@ -43,6 +44,7 @@ import { PrefixBreadcrumbs } from "@/components/breadcrumbs";
 import { AddressList, AddrMapViewSwitcher } from "@/components/address-list";
 import { HistoryDialog } from "@/components/history-panel";
 import { IpDrawer } from "@/components/ip-drawer";
+import { usePrefixScanOverlay } from "@/components/quick-scan";
 import { SavedViews } from "@/components/saved-views";
 import { PrefixStatusBadge } from "@/components/status-badge";
 import { SubnetGrid } from "@/components/subnet-grid";
@@ -539,6 +541,15 @@ export default function PrefixDetailPage({ id }: { id: string }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const { tags, byObject: addrTags, refresh: refreshTags } = useTags("IPAddress");
 
+  // Live scan overlay (F15): when a queued/running scan covers this prefix,
+  // stream its found-host deltas and light up the matching grid cells.
+  const settleScan = useCallback(() => void pageQ.reload(), [pageQ.reload]);
+  const { found: scanFound, scanning } = usePrefixScanOverlay(
+    prefixId,
+    prefix?.prefix ?? null,
+    settleScan
+  );
+
   const refresh = useCallback(() => {
     void prefixQ.reload();
     void pageQ.reload();
@@ -722,6 +733,17 @@ export default function PrefixDetailPage({ id }: { id: string }) {
   const clearFilters = () =>
     setSearchNow("", { status: null, tags: null, untagged: null });
 
+  // Export mirrors the on-screen filter state — same params the backend
+  // export endpoint accepts; display-only params (view, sort) stay out.
+  const exportHref = useMemo(() => {
+    const p = new URLSearchParams({ prefix_id: String(prefixId) });
+    if (search.trim()) p.set("q", search.trim());
+    if (statusSel.size) p.set("status", [...statusSel].join(","));
+    if (tagSel.size) p.set("tags", [...tagSel].join(","));
+    if (untagged) p.set("untagged", "1");
+    return `/api/v1/addresses/export.csv?${p}`;
+  }, [prefixId, search, statusSel, tagSel, untagged]);
+
   const pickAddress = (a: IpAddress) => {
     setFocusInt(Number(a.address_int));
     setDrawer({ ip: a.address, addr: a });
@@ -776,8 +798,8 @@ export default function PrefixDetailPage({ id }: { id: string }) {
             </>
           )}
           <Button size="sm" variant="outline" asChild>
-            <a href={`/api/v1/addresses/export.csv?prefix_id=${prefixId}`} download>
-              <Download /> Export
+            <a href={exportHref} download title="Downloads the rows the current filters show">
+              <Download /> {filtersActive ? "Export filtered" : "Export"}
             </a>
           </Button>
           <Button size="sm" variant="outline" asChild>
@@ -898,6 +920,16 @@ export default function PrefixDetailPage({ id }: { id: string }) {
           <CardTitle className="flex items-center justify-between text-base">
             <span className="flex items-center gap-3">
               Address map
+              {scanning && (
+                <Badge
+                  variant="outline"
+                  role="status"
+                  className="gap-1.5 border-emerald-500/50 font-normal text-emerald-600 dark:text-emerald-400"
+                >
+                  <Radar className="h-3 w-3 animate-pulse" aria-hidden="true" />
+                  Scanning — {scanFound.size} found
+                </Badge>
+              )}
               {showGrid && (
                 <AddrMapViewSwitcher
                   view={view}
@@ -944,6 +976,7 @@ export default function PrefixDetailPage({ id }: { id: string }) {
                     onSpanSelect={(lo, hi) => setSpanSel({ lo, hi })}
                     onClearSpan={() => setSpanSel(null)}
                     spanSelectable={canWrite}
+                    liveFound={scanFound}
                   />
                 ) : (
                   <AddressList
