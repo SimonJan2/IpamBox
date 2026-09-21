@@ -21,6 +21,8 @@ class CertificateUpdate(BaseModel):
     expires_on: date | None = None
     serial_raw: str | None = Field(default=None, max_length=64)
     notes: str | None = None
+    pinned: bool | None = None
+    sort_order: int | None = None
 
 
 class CertificateOut(BaseModel):
@@ -34,5 +36,7 @@ class CertificateOut(BaseModel):
     expires_on: date | None
     serial_raw: str | None
     notes: str | None
+    pinned: bool
+    sort_order: int | None
     import_batch_id: int | None
     created_at: datetime

@@ -15,9 +15,17 @@ import { api } from "@/lib/api";
 import { useAsyncData } from "@/lib/use-async-data";
 import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
-import { foldHebrew } from "@/lib/utils";
+import { cn, foldHebrew } from "@/lib/utils";
 import { useUrlSorting, useUrlText } from "@/lib/url-state";
 import { useRowNav } from "@/lib/row-nav";
+import { useRowOrder } from "@/lib/row-order";
+import {
+  DragHandle,
+  PinToggle,
+  PinnedDivider,
+  RowOrderDnd,
+  SortableRow,
+} from "@/components/row-order";
 import { expiryBadge } from "@/components/expiry-badge";
 import { AsyncPanel } from "@/components/async-panel";
 import { HistoryDialog } from "@/components/history-panel";
@@ -62,9 +70,9 @@ export default function CertificatesPage() {
     api.get<Certificate[]>("/api/v1/certificates")
   );
   const [q, setQ] = useUrlText("q");
-  const [sorting, setSorting] = useUrlSorting([
-    { id: "expires_on", desc: false },
-  ]);
+  // Default view is the manual order (migration backfilled it by expiry);
+  // the Expires header still sorts on demand.
+  const [sorting, setSorting] = useUrlSorting();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Certificate | null>(null);
   const [deleting, setDeleting] = useState<Certificate | null>(null);
@@ -168,8 +176,36 @@ export default function CertificatesPage() {
     );
   }, [items, q]);
 
+  const orderBlock = sorting.length
+    ? "Row order is fixed while a column sort is on — clear the sort to drag."
+    : q
+      ? "Row order is fixed while searching — clear the search to drag."
+      : null;
+  const order = useRowOrder<Certificate>({
+    path: "/api/v1/certificates",
+    items,
+    setData: itemsQ.setData,
+    getVisibleIds: (): number[] => tableRows.map((r) => r.original.id),
+    enabled: canWrite && !orderBlock,
+  });
+
   const columns = useMemo<ColumnDef<Certificate>[]>(
     () => [
+      ...(canWrite
+        ? [
+            {
+              id: "order",
+              enableSorting: false,
+              header: () => <span className="sr-only">Reorder</span>,
+              cell: (c) => (
+                <DragHandle
+                  reason={orderBlock}
+                  label={`Reorder certificate ${c.row.original.cert_name ?? c.row.original.server_name ?? c.row.original.id}`}
+                />
+              ),
+            } satisfies ColumnDef<Certificate>,
+          ]
+        : []),
       {
         accessorKey: "cert_name",
         header: ({ column }) => (
@@ -243,6 +279,15 @@ export default function CertificatesPage() {
         enableSorting: false,
         cell: (c) => (
           <div className="flex justify-end gap-1">
+            {canWrite && (
+              <PinToggle
+                pinned={c.row.original.pinned}
+                name={`certificate ${c.row.original.cert_name ?? c.row.original.server_name ?? c.row.original.id}`}
+                onToggle={() =>
+                  order.setPinned(c.row.original.id, !c.row.original.pinned)
+                }
+              />
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -278,7 +323,7 @@ export default function CertificatesPage() {
         ),
       },
     ],
-    [canWrite, canDelete, saveField]
+    [canWrite, canDelete, saveField, order.setPinned, orderBlock]
   );
 
   const table = useReactTable({
@@ -291,7 +336,8 @@ export default function CertificatesPage() {
   });
 
   const tableRows = table.getRowModel().rows;
-  const { rowProps } = useRowNav({
+  const visibleIds = tableRows.map((r) => r.original.id);
+  const { rowProps, focusRow } = useRowNav({
     count: tableRows.length,
     onOpen: (i) => {
       const cert = tableRows[i]?.original;
@@ -347,6 +393,7 @@ export default function CertificatesPage() {
           empty={items.length === 0}
           emptyMessage="No certificates yet — add the first one."
         >
+        <RowOrderDnd ids={visibleIds} onDragEnd={order.onDragEnd}>
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((hg) => (
@@ -360,23 +407,42 @@ export default function CertificatesPage() {
             ))}
           </TableHeader>
           <TableBody>
-            {tableRows.map((row, i) => (
-              <TableRow
-                key={row.id}
-                {...rowProps(i)}
-                className="focus-visible:bg-muted/50 focus-visible:outline-none"
-              >
-                {row.getVisibleCells().map((cell) => (
-                  <TableCell key={cell.id}>
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </TableCell>
-                ))}
-              </TableRow>
-            ))}
+            {sorting.length === 0 && tableRows[0]?.original.pinned && (
+              <PinnedDivider colSpan={columns.length} />
+            )}
+            {tableRows.map((row, i) => {
+              const rp = rowProps(i);
+              return (
+                <SortableRow
+                  key={row.id}
+                  rowId={row.original.id}
+                  dragDisabled={!order.enabled}
+                  {...rp}
+                  onKeyDown={(e) => {
+                    const ni = order.keyDown(i, e);
+                    if (ni === null) rp.onKeyDown(e);
+                    else focusRow(ni);
+                  }}
+                  className={cn(
+                    row.original.pinned && "bg-muted/30",
+                    "focus-visible:bg-muted/50 focus-visible:outline-none"
+                  )}
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell key={cell.id}>
+                      {flexRender(
+                        cell.column.columnDef.cell,
+                        cell.getContext()
+                      )}
+                    </TableCell>
+                  ))}
+                </SortableRow>
+              );
+            })}
             {tableRows.length === 0 && items.length > 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={7}
+                  colSpan={columns.length}
                   className="py-10 text-center text-muted-foreground"
                 >
                   No certificates match this filter.
@@ -385,6 +451,7 @@ export default function CertificatesPage() {
             )}
           </TableBody>
         </Table>
+        </RowOrderDnd>
         </AsyncPanel>
       </div>
 

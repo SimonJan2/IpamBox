@@ -15,9 +15,17 @@ import { api } from "@/lib/api";
 import { useAsyncData } from "@/lib/use-async-data";
 import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
-import { foldHebrew } from "@/lib/utils";
+import { cn, foldHebrew } from "@/lib/utils";
 import { useUrlParam, useUrlSorting, useUrlText } from "@/lib/url-state";
 import { useRowNav } from "@/lib/row-nav";
+import { useRowOrder } from "@/lib/row-order";
+import {
+  DragHandle,
+  PinToggle,
+  PinnedDivider,
+  RowOrderDnd,
+  SortableRow,
+} from "@/components/row-order";
 import { SortHeader, columnAriaSort } from "@/components/sort-header";
 import { AsyncPanel } from "@/components/async-panel";
 import { HistoryDialog } from "@/components/history-panel";
@@ -428,8 +436,38 @@ export default function VlansPage() {
     );
   }, [rows, q]);
 
+  // The group selector scopes the view but keeps the stored order intact, so
+  // dragging stays live there; a column sort or search does not.
+  const orderBlock = sorting.length
+    ? "Row order is fixed while a column sort is on — clear the sort to drag."
+    : q
+      ? "Row order is fixed while searching — clear the search to drag."
+      : null;
+  const order = useRowOrder<Vlan>({
+    path: "/api/v1/vlans",
+    items: vlans,
+    setData: vlansQ.setData,
+    getVisibleIds: (): number[] => tableRows.map((r) => r.original.id),
+    enabled: canWrite && !orderBlock,
+  });
+
   const columns = useMemo<ColumnDef<VlanRow>[]>(
     () => [
+      ...(canWrite
+        ? [
+            {
+              id: "order",
+              enableSorting: false,
+              header: () => <span className="sr-only">Reorder</span>,
+              cell: (c) => (
+                <DragHandle
+                  reason={orderBlock}
+                  label={`Reorder VLAN ${c.row.original.vid}`}
+                />
+              ),
+            } satisfies ColumnDef<VlanRow>,
+          ]
+        : []),
       {
         accessorKey: "vid",
         header: ({ column }) => (
@@ -498,6 +536,15 @@ export default function VlansPage() {
         enableSorting: false,
         cell: (c) => (
           <div className="flex justify-end gap-1">
+            {canWrite && (
+              <PinToggle
+                pinned={c.row.original.pinned}
+                name={`VLAN ${c.row.original.vid}`}
+                onToggle={() =>
+                  order.setPinned(c.row.original.id, !c.row.original.pinned)
+                }
+              />
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -539,7 +586,7 @@ export default function VlansPage() {
         ),
       },
     ],
-    [canWrite, canDelete, remove, saveField]
+    [canWrite, canDelete, remove, saveField, order.setPinned, orderBlock]
   );
 
   const table = useReactTable({
@@ -552,7 +599,8 @@ export default function VlansPage() {
   });
 
   const tableRows = table.getRowModel().rows;
-  const { rowProps } = useRowNav({
+  const visibleIds = tableRows.map((r) => r.original.id);
+  const { rowProps, focusRow } = useRowNav({
     count: tableRows.length,
     onOpen: (i) => {
       const v = tableRows[i]?.original;
@@ -721,6 +769,7 @@ export default function VlansPage() {
           empty={vlans.length === 0}
           emptyMessage="No VLANs yet — create the first one."
         >
+        <RowOrderDnd ids={visibleIds} onDragEnd={order.onDragEnd}>
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((hg) => (
@@ -734,23 +783,42 @@ export default function VlansPage() {
             ))}
           </TableHeader>
           <TableBody>
-            {tableRows.map((row, i) => (
-              <TableRow
-                key={row.id}
-                {...rowProps(i)}
-                className="focus-visible:bg-muted/50 focus-visible:outline-none"
-              >
-                {row.getVisibleCells().map((cell) => (
-                  <TableCell key={cell.id}>
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </TableCell>
-                ))}
-              </TableRow>
-            ))}
+            {sorting.length === 0 && tableRows[0]?.original.pinned && (
+              <PinnedDivider colSpan={columns.length} />
+            )}
+            {tableRows.map((row, i) => {
+              const rp = rowProps(i);
+              return (
+                <SortableRow
+                  key={row.id}
+                  rowId={row.original.id}
+                  dragDisabled={!order.enabled}
+                  {...rp}
+                  onKeyDown={(e) => {
+                    const ni = order.keyDown(i, e);
+                    if (ni === null) rp.onKeyDown(e);
+                    else focusRow(ni);
+                  }}
+                  className={cn(
+                    row.original.pinned && "bg-muted/30",
+                    "focus-visible:bg-muted/50 focus-visible:outline-none"
+                  )}
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell key={cell.id}>
+                      {flexRender(
+                        cell.column.columnDef.cell,
+                        cell.getContext()
+                      )}
+                    </TableCell>
+                  ))}
+                </SortableRow>
+              );
+            })}
             {tableRows.length === 0 && vlans.length > 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={7}
+                  colSpan={columns.length}
                   className="py-10 text-center text-muted-foreground"
                 >
                   No VLANs match this filter.
@@ -759,6 +827,7 @@ export default function VlansPage() {
             )}
           </TableBody>
         </Table>
+        </RowOrderDnd>
         </AsyncPanel>
       </div>
 

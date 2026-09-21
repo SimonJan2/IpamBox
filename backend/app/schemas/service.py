@@ -21,6 +21,8 @@ class ServiceUpdate(BaseModel):
     doc_path: str | None = None
     test_info: str | None = None
     notes: str | None = None
+    pinned: bool | None = None
+    sort_order: int | None = None
 
 
 class ServiceOut(BaseModel):
@@ -34,5 +36,7 @@ class ServiceOut(BaseModel):
     doc_path: str | None
     test_info: str | None
     notes: str | None
+    pinned: bool
+    sort_order: int | None
     import_batch_id: int | None
     created_at: datetime

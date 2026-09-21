@@ -25,6 +25,8 @@ class VRFUpdate(BaseModel):
     rd: str | None = Field(default=None, max_length=64)
     description: str | None = None
     site_id: int | None = None
+    pinned: bool | None = None
+    sort_order: int | None = None
 
     @field_validator("rd")
     @classmethod
@@ -45,4 +47,6 @@ class VRFOut(BaseModel):
     rd: str | None
     description: str | None
     site_id: int | None
+    pinned: bool
+    sort_order: int | None
     created_at: datetime

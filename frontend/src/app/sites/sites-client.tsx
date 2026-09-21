@@ -16,9 +16,17 @@ import { useAsyncData } from "@/lib/use-async-data";
 import { useAuth } from "@/lib/auth";
 import { usePrefs } from "@/lib/prefs";
 import { PERM } from "@/lib/permissions";
-import { foldHebrew } from "@/lib/utils";
+import { cn, foldHebrew } from "@/lib/utils";
 import { useUrlSorting, useUrlText } from "@/lib/url-state";
 import { useRowNav } from "@/lib/row-nav";
+import { useRowOrder } from "@/lib/row-order";
+import {
+  DragHandle,
+  PinToggle,
+  PinnedDivider,
+  RowOrderDnd,
+  SortableRow,
+} from "@/components/row-order";
 import { SortHeader, columnAriaSort } from "@/components/sort-header";
 import { AsyncPanel } from "@/components/async-panel";
 import { HistoryDialog } from "@/components/history-panel";
@@ -323,8 +331,38 @@ export default function SitesPage() {
     );
   }, [sites, q]);
 
+  // Manual order is only meaningful while the table shows the stored order —
+  // a column sort or an active search reshuffles/subsets the view.
+  const orderBlock = sorting.length
+    ? "Row order is fixed while a column sort is on — clear the sort to drag."
+    : q
+      ? "Row order is fixed while searching — clear the search to drag."
+      : null;
+  const order = useRowOrder<Site>({
+    path: "/api/v1/sites",
+    items: sites,
+    setData: sitesQ.setData,
+    getVisibleIds: (): number[] => tableRows.map((r) => r.original.id),
+    enabled: canWrite && !orderBlock,
+  });
+
   const columns = useMemo<ColumnDef<Site>[]>(
     () => [
+      ...(canWrite
+        ? [
+            {
+              id: "order",
+              enableSorting: false,
+              header: () => <span className="sr-only">Reorder</span>,
+              cell: (c) => (
+                <DragHandle
+                  reason={orderBlock}
+                  label={`Reorder site ${c.row.original.name}`}
+                />
+              ),
+            } satisfies ColumnDef<Site>,
+          ]
+        : []),
       {
         accessorKey: "name",
         header: ({ column }) => <SortHeader column={column}>Name</SortHeader>,
@@ -405,6 +443,15 @@ export default function SitesPage() {
         enableSorting: false,
         cell: (c) => (
           <div className="flex justify-end gap-1">
+            {canWrite && (
+              <PinToggle
+                pinned={c.row.original.pinned}
+                name={c.row.original.name}
+                onToggle={() =>
+                  order.setPinned(c.row.original.id, !c.row.original.pinned)
+                }
+              />
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -440,7 +487,7 @@ export default function SitesPage() {
         ),
       },
     ],
-    [canWrite, canDelete, prefs.showSlugs, saveField]
+    [canWrite, canDelete, prefs.showSlugs, saveField, order.setPinned, orderBlock]
   );
 
   const table = useReactTable({
@@ -453,7 +500,8 @@ export default function SitesPage() {
   });
 
   const tableRows = table.getRowModel().rows;
-  const { rowProps } = useRowNav({
+  const visibleIds = tableRows.map((r) => r.original.id);
+  const { rowProps, focusRow } = useRowNav({
     count: tableRows.length,
     onOpen: (i) => {
       const s = tableRows[i]?.original;
@@ -505,6 +553,7 @@ export default function SitesPage() {
           empty={sites.length === 0}
           emptyMessage="No sites yet — create the first one."
         >
+        <RowOrderDnd ids={visibleIds} onDragEnd={order.onDragEnd}>
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((hg) => (
@@ -518,23 +567,42 @@ export default function SitesPage() {
             ))}
           </TableHeader>
           <TableBody>
-            {tableRows.map((row, i) => (
-              <TableRow
-                key={row.id}
-                {...rowProps(i)}
-                className="focus-visible:bg-muted/50 focus-visible:outline-none"
-              >
-                {row.getVisibleCells().map((cell) => (
-                  <TableCell key={cell.id}>
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </TableCell>
-                ))}
-              </TableRow>
-            ))}
+            {sorting.length === 0 && tableRows[0]?.original.pinned && (
+              <PinnedDivider colSpan={columns.length} />
+            )}
+            {tableRows.map((row, i) => {
+              const rp = rowProps(i);
+              return (
+                <SortableRow
+                  key={row.id}
+                  rowId={row.original.id}
+                  dragDisabled={!order.enabled}
+                  {...rp}
+                  onKeyDown={(e) => {
+                    const ni = order.keyDown(i, e);
+                    if (ni === null) rp.onKeyDown(e);
+                    else focusRow(ni);
+                  }}
+                  className={cn(
+                    row.original.pinned && "bg-muted/30",
+                    "focus-visible:bg-muted/50 focus-visible:outline-none"
+                  )}
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell key={cell.id}>
+                      {flexRender(
+                        cell.column.columnDef.cell,
+                        cell.getContext()
+                      )}
+                    </TableCell>
+                  ))}
+                </SortableRow>
+              );
+            })}
             {tableRows.length === 0 && sites.length > 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={7}
+                  colSpan={columns.length}
                   className="py-10 text-center text-muted-foreground"
                 >
                   No sites match this filter.
@@ -543,6 +611,7 @@ export default function SitesPage() {
             )}
           </TableBody>
         </Table>
+        </RowOrderDnd>
         </AsyncPanel>
       </div>
 

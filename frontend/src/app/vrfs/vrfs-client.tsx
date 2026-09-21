@@ -13,6 +13,15 @@ import { fmtTs } from "@/lib/prefs";
 import { slugify } from "@/lib/utils";
 import { useUrlText } from "@/lib/url-state";
 import { useRowNav } from "@/lib/row-nav";
+import { useRowOrder } from "@/lib/row-order";
+import { cn } from "@/lib/utils";
+import {
+  DragHandle,
+  PinToggle,
+  PinnedDivider,
+  RowOrderDnd,
+  SortableRow,
+} from "@/components/row-order";
 import type { Site, Vrf } from "@/types";
 import { AsyncPanel } from "@/components/async-panel";
 import { HistoryDialog } from "@/components/history-panel";
@@ -322,7 +331,19 @@ export default function VrfsPage() {
       (v.rd ?? "").toLowerCase().includes(q.toLowerCase())
   );
 
-  const { rowProps } = useRowNav({
+  // No column sort on this page — only the search box blocks reordering.
+  const orderBlock = q
+    ? "Row order is fixed while searching — clear the search to drag."
+    : null;
+  const order = useRowOrder<Vrf>({
+    path: "/api/v1/vrfs",
+    items: vrfs,
+    setData: vrfsQ.setData,
+    getVisibleIds: (): number[] => filtered.map((v) => v.id),
+    enabled: canWrite && !orderBlock,
+  });
+
+  const { rowProps, focusRow } = useRowNav({
     count: filtered.length,
     onOpen: (i) => {
       const v = filtered[i];
@@ -371,9 +392,15 @@ export default function VrfsPage() {
           empty={vrfs.length === 0}
           emptyMessage="No VRFs yet — create the first one."
         >
+        <RowOrderDnd ids={filtered.map((v) => v.id)} onDragEnd={order.onDragEnd}>
         <Table>
           <TableHeader>
             <TableRow>
+              {canWrite && (
+                <TableHead className="w-8">
+                  <span className="sr-only">Reorder</span>
+                </TableHead>
+              )}
               <TableHead>Name</TableHead>
               <TableHead>RD</TableHead>
               <TableHead>Site</TableHead>
@@ -383,12 +410,35 @@ export default function VrfsPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.map((v, i) => (
-              <TableRow
+            {filtered[0]?.pinned && (
+              <PinnedDivider colSpan={canWrite ? 7 : 6} />
+            )}
+            {filtered.map((v, i) => {
+              const rp = rowProps(i);
+              return (
+              <SortableRow
                 key={v.id}
-                {...rowProps(i)}
-                className="focus-visible:bg-muted/50 focus-visible:outline-none"
+                rowId={v.id}
+                dragDisabled={!order.enabled}
+                {...rp}
+                onKeyDown={(e) => {
+                  const ni = order.keyDown(i, e);
+                  if (ni === null) rp.onKeyDown(e);
+                  else focusRow(ni);
+                }}
+                className={cn(
+                  v.pinned && "bg-muted/30",
+                  "focus-visible:bg-muted/50 focus-visible:outline-none"
+                )}
               >
+                {canWrite && (
+                  <TableCell>
+                    <DragHandle
+                      reason={orderBlock}
+                      label={`Reorder VRF ${v.name}`}
+                    />
+                  </TableCell>
+                )}
                 <TableCell className="font-medium">{v.name}</TableCell>
                 <TableCell className="font-mono text-muted-foreground">
                   {v.rd ?? "—"}
@@ -410,6 +460,13 @@ export default function VrfsPage() {
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1">
+                    {canWrite && (
+                      <PinToggle
+                        pinned={v.pinned}
+                        name={v.name}
+                        onToggle={() => order.setPinned(v.id, !v.pinned)}
+                      />
+                    )}
                     <Button
                       variant="ghost"
                       size="icon"
@@ -443,12 +500,13 @@ export default function VrfsPage() {
                     )}
                   </div>
                 </TableCell>
-              </TableRow>
-            ))}
+              </SortableRow>
+              );
+            })}
             {filtered.length === 0 && vrfs.length > 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={6}
+                  colSpan={canWrite ? 7 : 6}
                   className="py-10 text-center text-muted-foreground"
                 >
                   No VRFs match this filter.
@@ -457,6 +515,7 @@ export default function VrfsPage() {
             )}
           </TableBody>
         </Table>
+        </RowOrderDnd>
         </AsyncPanel>
       </div>
 

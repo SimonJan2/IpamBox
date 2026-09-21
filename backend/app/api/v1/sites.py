@@ -9,16 +9,19 @@ from app.models.circuit import Circuit
 from app.models.service import Service
 from app.models.site import Site
 from app.models.vrf import VRF
+from app.schemas.common import ReorderBody
 from app.schemas.site import SiteCreate, SiteOut, SiteUpdate
 from app.services import runtime_settings
 from app.services.ipam import IPAMError, get_or_404, slugify, vrf_name_for
+from app.services.ordering import ordered, reorder
 
 router = APIRouter(prefix="/sites", tags=["sites"])
 
 
 @router.get("", response_model=list[SiteOut])
 async def list_sites(session: AsyncSession = Depends(get_session)):
-    return (await session.execute(select(Site).order_by(Site.name))).scalars().all()
+    stmt = ordered(select(Site), Site, Site.name)
+    return (await session.execute(stmt)).scalars().all()
 
 
 @router.post(
@@ -40,6 +43,21 @@ async def create_site(body: SiteCreate, session: AsyncSession = Depends(get_sess
         raise HTTPException(409, "site name or slug already exists")
     await session.refresh(site)
     return site
+
+
+# Declared before /{site_id} so the literal path can't be shadowed.
+@router.post(
+    "/reorder",
+    status_code=204,
+    dependencies=[Depends(require_perm(DATA_WRITE))],
+)
+async def reorder_sites(
+    body: ReorderBody, session: AsyncSession = Depends(get_session)
+):
+    try:
+        await reorder(session, Site, body.ids)
+    except IPAMError as e:
+        raise HTTPException(e.status_code, str(e))
 
 
 @router.get("/{site_id}", response_model=SiteOut)

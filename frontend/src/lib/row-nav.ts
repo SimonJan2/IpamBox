@@ -141,7 +141,7 @@ export function useRowNav({
     [count, effective, focusRow, onOpen]
   );
 
-  return { rowProps, cursor: effective };
+  return { rowProps, cursor: effective, focusRow };
 }
 
 /** Register a custom j/k move handler instead of the default row cursor —

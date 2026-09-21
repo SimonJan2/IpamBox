@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, String, Text, func
+from sqlalchemy import Boolean, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -21,6 +21,10 @@ class Service(Base):
     doc_path: Mapped[str | None] = mapped_column(Text)  # UNC documentation path
     test_info: Mapped[str | None] = mapped_column(Text)
     notes: Mapped[str | None] = mapped_column(Text)
+    sort_order: Mapped[int | None] = mapped_column(index=True)
+    pinned: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     import_batch_id: Mapped[int | None] = mapped_column(
         ForeignKey("import_batches.id", ondelete="SET NULL"), index=True
     )

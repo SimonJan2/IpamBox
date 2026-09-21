@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, Enum, ForeignKey, String, Text, func
+from sqlalchemy import Boolean, CheckConstraint, Enum, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -47,6 +47,10 @@ class VLAN(Base):
         server_default=VLANStatus.ACTIVE.value,
     )
     description: Mapped[str | None] = mapped_column(Text)
+    sort_order: Mapped[int | None] = mapped_column(index=True)
+    pinned: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     group: Mapped["VLANGroup | None"] = relationship(back_populates="vlans")

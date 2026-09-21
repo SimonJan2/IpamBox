@@ -7,6 +7,7 @@ from app.core.db import get_session
 from app.core.deps import DATA_DELETE, DATA_WRITE, require_perm
 from app.models.site import Site
 from app.models.vlan import VLAN, VLANGroup
+from app.schemas.common import ReorderBody
 from app.schemas.vlan import (
     VLANCreate,
     VLANGroupCreate,
@@ -16,6 +17,7 @@ from app.schemas.vlan import (
     VLANUpdate,
 )
 from app.services.ipam import IPAMError, get_or_404
+from app.services.ordering import ordered, reorder
 
 router = APIRouter(tags=["vlans"])
 
@@ -117,7 +119,7 @@ async def list_vlans(
     q: str | None = None,
     session: AsyncSession = Depends(get_session),
 ):
-    stmt = select(VLAN).order_by(VLAN.vid)
+    stmt = ordered(select(VLAN), VLAN, VLAN.vid)
     if group_id is not None:
         stmt = stmt.where(VLAN.group_id == group_id)
     if site_id is not None:
@@ -159,6 +161,21 @@ async def create_vlan(body: VLANCreate, session: AsyncSession = Depends(get_sess
         raise HTTPException(400, "invalid vlan data")
     await session.refresh(vlan)
     return vlan
+
+
+# Declared before /vlans/{vlan_id} so the literal path can't be shadowed.
+@router.post(
+    "/vlans/reorder",
+    status_code=204,
+    dependencies=[Depends(require_perm(DATA_WRITE))],
+)
+async def reorder_vlans(
+    body: ReorderBody, session: AsyncSession = Depends(get_session)
+):
+    try:
+        await reorder(session, VLAN, body.ids)
+    except IPAMError as e:
+        raise HTTPException(e.status_code, str(e))
 
 
 @router.patch(

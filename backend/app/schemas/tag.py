@@ -25,6 +25,8 @@ class TagUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=64)
     color: str | None = None
     description: str | None = None
+    pinned: bool | None = None
+    sort_order: int | None = None
 
     @field_validator("color")
     @classmethod
@@ -42,6 +44,8 @@ class TagOut(BaseModel):
     slug: str
     color: str
     description: str | None
+    pinned: bool
+    sort_order: int | None
     created_at: datetime
 
 

@@ -40,6 +40,10 @@ class Circuit(Base):
     is_retired: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false", index=True
     )
+    sort_order: Mapped[int | None] = mapped_column(index=True)
+    pinned: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     import_batch_id: Mapped[int | None] = mapped_column(
         ForeignKey("import_batches.id", ondelete="SET NULL"), index=True
     )

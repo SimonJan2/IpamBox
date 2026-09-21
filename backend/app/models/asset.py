@@ -1,7 +1,7 @@
 import enum
 from datetime import date, datetime
 
-from sqlalchemy import Date, Enum, ForeignKey, String, Text, func
+from sqlalchemy import Boolean, Date, Enum, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -43,6 +43,10 @@ class Asset(Base):
         ForeignKey("sites.id", ondelete="SET NULL"), index=True
     )
     notes: Mapped[str | None] = mapped_column(Text)
+    sort_order: Mapped[int | None] = mapped_column(index=True)
+    pinned: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     import_batch_id: Mapped[int | None] = mapped_column(
         ForeignKey("import_batches.id", ondelete="SET NULL"), index=True
     )

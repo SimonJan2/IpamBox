@@ -57,6 +57,8 @@ class CircuitUpdate(BaseModel):
     status: str | None = Field(default=None, max_length=64)
     notes: str | None = None
     is_retired: bool = False
+    pinned: bool | None = None
+    sort_order: int | None = None
 
     @field_validator("wan_ip")
     @classmethod
@@ -86,6 +88,8 @@ class CircuitOut(BaseModel):
     status: str | None
     notes: str | None
     is_retired: bool
+    pinned: bool
+    sort_order: int | None
     import_batch_id: int | None
     created_at: datetime
 

@@ -11,6 +11,8 @@ export interface Tag {
   slug: string;
   color: string;
   description: string | null;
+  sort_order: number | null;
+  pinned: boolean;
   created_at: string;
 }
 
@@ -37,6 +39,8 @@ export interface Vlan {
   site_id: number | null;
   status: VlanStatus;
   description: string | null;
+  sort_order: number | null;
+  pinned: boolean;
   created_at: string;
 }
 
@@ -64,6 +68,8 @@ export interface Site {
   is_active: boolean;
   contact: string | null;
   address: string | null;
+  sort_order: number | null;
+  pinned: boolean;
   created_at: string;
 }
 
@@ -73,6 +79,8 @@ export interface Vrf {
   rd: string | null;
   description: string | null;
   site_id: number | null;
+  sort_order: number | null;
+  pinned: boolean;
   created_at: string;
 }
 
@@ -420,6 +428,8 @@ export interface Circuit {
   notes: string | null;
   is_retired: boolean;
   import_batch_id: number | null;
+  sort_order: number | null;
+  pinned: boolean;
   created_at: string;
 }
 
@@ -433,6 +443,8 @@ export interface Certificate {
   serial_raw: string | null;
   notes: string | null;
   import_batch_id: number | null;
+  sort_order: number | null;
+  pinned: boolean;
   created_at: string;
 }
 
@@ -450,6 +462,8 @@ export interface Asset {
   site_id: number | null;
   notes: string | null;
   import_batch_id: number | null;
+  sort_order: number | null;
+  pinned: boolean;
   created_at: string;
 }
 
@@ -463,5 +477,7 @@ export interface Service {
   test_info: string | null;
   notes: string | null;
   import_batch_id: number | null;
+  sort_order: number | null;
+  pinned: boolean;
   created_at: string;
 }
