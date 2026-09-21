@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 
 // Sets data-theme/data-density before first paint to avoid a flash of the
 // wrong theme. Mirrors resolveTheme() in lib/prefs.ts.
-const PREFS_SNIPPET = `try{var p=JSON.parse(localStorage.getItem("ipambox:prefs")||"{}");var t=p.theme||"dark";if(t==="system")t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";document.documentElement.dataset.theme=t;document.documentElement.dataset.density=p.density||"comfortable"}catch(e){}`;
+const PREFS_SNIPPET = `try{var p=JSON.parse(localStorage.getItem("ipambox:prefs")||"{}");var t=p.theme||"tokyonight";if(t==="system")t=matchMedia("(prefers-color-scheme: light)").matches?"light":"tokyonight";document.documentElement.dataset.theme=t;document.documentElement.dataset.density=p.density||"comfortable"}catch(e){}`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

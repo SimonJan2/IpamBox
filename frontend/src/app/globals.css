@@ -3,7 +3,31 @@
 @tailwind utilities;
 
 @layer base {
+  /* :root = IpamBox Tokyo Night — the app's main/default theme.
+     enkia's palette: #1a1b26 bg, #7aa2f7 blue, #c0caf5 fg, #565f89 muted. */
   :root {
+    --background: 235 19% 13%;
+    --foreground: 229 73% 86%;
+    --card: 230 24% 19%;
+    --card-foreground: 229 73% 86%;
+    --primary: 221 89% 72%;
+    --primary-foreground: 235 19% 13%;
+    --secondary: 228 23% 21%;
+    --secondary-foreground: 229 73% 86%;
+    --muted: 228 23% 21%;
+    --muted-foreground: 229 23% 44%;
+    --accent: 228 23% 21%;
+    --accent-foreground: 229 73% 86%;
+    --destructive: 349 89% 72%;
+    --destructive-foreground: 235 19% 13%;
+    --border: 228 23% 21%;
+    --input: 229 24% 31%;
+    --ring: 221 89% 72%;
+    --radius: 0.375rem;
+    color-scheme: dark;
+  }
+
+  :root[data-theme="dark"] {
     --background: 240 10% 3.9%;
     --foreground: 0 0% 98%;
     --card: 240 10% 5.5%;
@@ -22,6 +46,7 @@
     --input: 240 3.7% 18%;
     --ring: 160 84% 39%;
     --radius: 0.5rem;
+    color-scheme: dark;
   }
 
   :root[data-theme="light"] {
@@ -42,7 +67,101 @@
     --border: 240 5.9% 88%;
     --input: 240 5.9% 85%;
     --ring: 160 84% 30%;
+    --radius: 0.5rem;
+    color-scheme: light;
   }
+
+  /* LocalSend Mint/Dark — palette inspired by localsend.org */
+  :root[data-theme="localsend"] {
+    --background: 154 47% 97%;
+    --foreground: 171 73% 7%;
+    --card: 150 23% 95%;
+    --card-foreground: 171 73% 7%;
+    --primary: 174 100% 21%;
+    --primary-foreground: 154 47% 97%;
+    --secondary: 167 38% 85%;
+    --secondary-foreground: 171 73% 7%;
+    --muted: 165 33% 93%;
+    --muted-foreground: 168 7% 27%;
+    --accent: 167 38% 85%;
+    --accent-foreground: 171 73% 7%;
+    --destructive: 0 72% 45%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 158 11% 86%;
+    --input: 165 10% 82%;
+    --ring: 174 100% 21%;
+    --radius: 0.5rem;
+    color-scheme: light;
+  }
+
+  :root[data-theme="localsend-dark"] {
+    --background: 163 20% 7%;
+    --foreground: 0 0% 100%;
+    --card: 169 22% 10%;
+    --card-foreground: 0 0% 100%;
+    --primary: 171 50% 67%;
+    --primary-foreground: 163 20% 7%;
+    --secondary: 169 15% 18%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 169 15% 15%;
+    --muted-foreground: 169 9% 66%;
+    --accent: 169 15% 18%;
+    --accent-foreground: 171 50% 67%;
+    --destructive: 0 62.8% 50.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 167 20% 15%;
+    --input: 169 15% 20%;
+    --ring: 171 50% 67%;
+    --radius: 0.5rem;
+    color-scheme: dark;
+  }
+
+  /* NetBox Light/Dark — palette from the NetBox UI (Tabler: #00857D teal
+     primary on their gray-50..900 blue-gray scale, danger #d63939) */
+  :root[data-theme="netbox"] {
+    --background: 210 20% 98%;
+    --foreground: 215 28% 17%;
+    --card: 0 0% 100%;
+    --card-foreground: 215 28% 17%;
+    --primary: 176 100% 26%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 14% 96%;
+    --secondary-foreground: 215 28% 17%;
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 9% 46%;
+    --accent: 220 14% 96%;
+    --accent-foreground: 215 28% 17%;
+    --destructive: 0 64% 53%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 220 13% 91%;
+    --input: 220 13% 85%;
+    --ring: 176 100% 26%;
+    --radius: 0.5rem;
+    color-scheme: light;
+  }
+
+  :root[data-theme="netbox-dark"] {
+    --background: 200 24% 10%;
+    --foreground: 190 12% 92%;
+    --card: 198 20% 14%;
+    --card-foreground: 190 12% 92%;
+    --primary: 176 100% 26%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 200 20% 13%;
+    --secondary-foreground: 190 12% 92%;
+    --muted: 200 20% 13%;
+    --muted-foreground: 195 10% 65%;
+    --accent: 196 16% 19%;
+    --accent-foreground: 190 12% 92%;
+    --destructive: 0 64% 53%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 198 18% 24%;
+    --input: 198 16% 27%;
+    --ring: 176 100% 26%;
+    --radius: 0.5rem;
+    color-scheme: dark;
+  }
+
 }
 
 @layer base {
@@ -62,8 +181,92 @@
 ::-webkit-scrollbar-thumb {
   @apply bg-zinc-700 rounded-full;
 }
-:root[data-theme="light"] ::-webkit-scrollbar-thumb {
+:root[data-theme="light"] ::-webkit-scrollbar-thumb,
+:root[data-theme="netbox"] ::-webkit-scrollbar-thumb {
   @apply bg-zinc-300;
+}
+:root[data-theme="localsend"] ::-webkit-scrollbar-thumb {
+  @apply bg-[#b3ccc7];
+}
+:root[data-theme="localsend-dark"] ::-webkit-scrollbar-thumb {
+  @apply bg-[#384a47];
+}
+:root[data-theme="netbox-dark"] ::-webkit-scrollbar-thumb {
+  @apply bg-[#374151];
+}
+:root[data-theme="tokyonight"] ::-webkit-scrollbar-thumb {
+  @apply bg-[#3b4261];
+}
+
+/* ── Tokyo Night signature chrome ─────────────────────────────
+   Deliberately bolder than the other themes: darker editor-style
+   sidebar + sticky header (#16161e bg_dark), neon-blue primary
+   glow, tighter corners, TN-blue selection, faint night-sky
+   vignette pinned to the viewport top. */
+:root[data-theme="tokyonight"] body {
+  background-image: radial-gradient(
+    ellipse 90% 55% at 50% -15%,
+    rgb(122 162 247 / 0.07),
+    transparent
+  );
+  background-attachment: fixed;
+}
+:root[data-theme="tokyonight"] aside {
+  background-color: hsl(240 15% 10%);
+}
+:root[data-theme="tokyonight"] header {
+  background-color: rgb(22 22 30 / 0.85);
+}
+:root[data-theme="tokyonight"] ::selection {
+  background-color: rgb(122 162 247 / 0.35);
+  color: #eef2ff;
+}
+:root[data-theme="tokyonight"] button.bg-primary,
+:root[data-theme="tokyonight"] a.bg-primary {
+  box-shadow: 0 0 18px rgb(122 162 247 / 0.3);
+}
+:root[data-theme="tokyonight"] button.bg-primary:hover,
+:root[data-theme="tokyonight"] a.bg-primary:hover {
+  box-shadow: 0 0 26px rgb(122 162 247 / 0.45);
+}
+/* Neon focus halo — replaces the plain ring on every focusable element. */
+:root[data-theme="tokyonight"] :focus-visible {
+  box-shadow:
+    0 0 0 2px rgb(122 162 247 / 0.45),
+    0 0 18px rgb(122 162 247 / 0.3);
+}
+/* Terminal-grade mono stack for IPs/CIDRs (JetBrains Mono where installed). */
+:root[data-theme="tokyonight"] .font-mono {
+  font-family: "JetBrains Mono", "Cascadia Code", ui-monospace, SFMono-Regular,
+    Menlo, Consolas, monospace;
+}
+
+/* Active nav item follows each theme's accent instead of the
+   hardcoded emerald. */
+:root[data-theme="localsend"] nav a[aria-current="page"] {
+  border-color: #006a60;
+  background-color: rgb(0 106 96 / 0.1);
+  color: #006a60;
+}
+:root[data-theme="localsend-dark"] nav a[aria-current="page"] {
+  border-color: #82d5c8;
+  background-color: rgb(130 213 200 / 0.12);
+  color: #82d5c8;
+}
+:root[data-theme="netbox"] nav a[aria-current="page"] {
+  border-color: #00857d;
+  background-color: rgb(0 133 125 / 0.1);
+  color: #00857d;
+}
+:root[data-theme="netbox-dark"] nav a[aria-current="page"] {
+  border-color: #66b5b1;
+  background-color: rgb(102 181 177 / 0.12);
+  color: #66b5b1;
+}
+:root[data-theme="tokyonight"] nav a[aria-current="page"] {
+  border-color: #7aa2f7;
+  background-color: rgb(122 162 247 / 0.12);
+  color: #7aa2f7;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
@@ -168,48 +371,132 @@
   }
 }
 
-:root[data-theme="light"] .ipcell-free {
+/* Light-mode overrides are shared by all light themes (IpamBox Light, NetBox
+   Light). LocalSend Mint gets its own free/boundary cells — zinc-200 is
+   near-invisible on the mint bg, so those re-tint toward teal-gray. */
+:root[data-theme="light"] .ipcell-free,
+:root[data-theme="netbox"] .ipcell-free {
   @apply bg-zinc-200/60 text-zinc-400 hover:bg-zinc-300/70;
 }
-:root[data-theme="light"] .ipcell-boundary {
+:root[data-theme="localsend"] .ipcell-free {
+  @apply bg-teal-950/[0.06] text-teal-800/50 hover:bg-teal-950/10;
+}
+:root[data-theme="light"] .ipcell-boundary,
+:root[data-theme="netbox"] .ipcell-boundary {
   @apply bg-zinc-200 text-zinc-400;
   background-image: repeating-linear-gradient(
     45deg, transparent, transparent 4px,
     rgb(0 0 0 / 0.05) 4px, rgb(0 0 0 / 0.05) 8px
   );
 }
-:root[data-theme="light"] .ipcell-range {
+:root[data-theme="localsend"] .ipcell-boundary {
+  @apply bg-teal-950/10 text-teal-800/50;
+  background-image: repeating-linear-gradient(
+    45deg, transparent, transparent 4px,
+    rgb(0 60 50 / 0.06) 4px, rgb(0 60 50 / 0.06) 8px
+  );
+}
+:root[data-theme="light"] .ipcell-range,
+:root[data-theme="localsend"] .ipcell-range,
+:root[data-theme="netbox"] .ipcell-range {
   @apply border-sky-600/40 bg-sky-500/10 text-sky-700/80 hover:bg-sky-500/20;
 }
-:root[data-theme="light"] .ipcell-active {
+:root[data-theme="light"] .ipcell-active,
+:root[data-theme="localsend"] .ipcell-active,
+:root[data-theme="netbox"] .ipcell-active {
   @apply border-emerald-600/40 bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25;
 }
-:root[data-theme="light"] .ipcell-reserved {
+:root[data-theme="light"] .ipcell-reserved,
+:root[data-theme="localsend"] .ipcell-reserved,
+:root[data-theme="netbox"] .ipcell-reserved {
   @apply border-amber-600/40 bg-amber-500/15 text-amber-700 hover:bg-amber-500/25;
 }
-:root[data-theme="light"] .ipcell-dhcp {
+:root[data-theme="light"] .ipcell-dhcp,
+:root[data-theme="localsend"] .ipcell-dhcp,
+:root[data-theme="netbox"] .ipcell-dhcp {
   @apply border-cyan-600/40 bg-cyan-500/15 text-cyan-700 hover:bg-cyan-500/25;
 }
-:root[data-theme="light"] .ipcell-discovered {
+:root[data-theme="light"] .ipcell-discovered,
+:root[data-theme="localsend"] .ipcell-discovered,
+:root[data-theme="netbox"] .ipcell-discovered {
   @apply border-violet-600/40 bg-violet-500/15 text-violet-700 hover:bg-violet-500/25;
 }
-:root[data-theme="light"] .ipcell-offline {
+:root[data-theme="light"] .ipcell-offline,
+:root[data-theme="localsend"] .ipcell-offline,
+:root[data-theme="netbox"] .ipcell-offline {
   @apply border-zinc-400/50 bg-zinc-400/20 text-zinc-500 hover:bg-zinc-400/40;
 }
-:root[data-theme="light"] .text-range {
+:root[data-theme="light"] .text-range,
+:root[data-theme="localsend"] .text-range,
+:root[data-theme="netbox"] .text-range {
   @apply text-sky-700;
 }
-:root[data-theme="light"] .ipcell-found-new {
+:root[data-theme="light"] .ipcell-found-new,
+:root[data-theme="localsend"] .ipcell-found-new,
+:root[data-theme="netbox"] .ipcell-found-new {
   @apply outline-emerald-600;
 }
-:root[data-theme="light"] .ipcell-found-known {
+:root[data-theme="light"] .ipcell-found-known,
+:root[data-theme="localsend"] .ipcell-found-known,
+:root[data-theme="netbox"] .ipcell-found-known {
   @apply outline-sky-600;
 }
-:root[data-theme="light"] .chg-old {
+:root[data-theme="light"] .chg-old,
+:root[data-theme="localsend"] .chg-old,
+:root[data-theme="netbox"] .chg-old {
   @apply text-rose-700 decoration-rose-700/60;
 }
-:root[data-theme="light"] .chg-new {
+:root[data-theme="light"] .chg-new,
+:root[data-theme="localsend"] .chg-new,
+:root[data-theme="netbox"] .chg-new {
   @apply text-emerald-700;
+}
+
+/* Tokyo Night grid/diff accents — status cells re-tinted to the real palette
+   (green #9ece6a, yellow #e0af68, cyan #7dcfff, purple #bb9af7, blue #7aa2f7,
+   comment-gray #565f89, red #f7768e). */
+:root[data-theme="tokyonight"] .ipcell-free {
+  @apply bg-[#292e42]/40 text-[#565f89] hover:bg-[#292e42]/60;
+}
+:root[data-theme="tokyonight"] .ipcell-boundary {
+  @apply bg-[#292e42] text-[#565f89];
+  background-image: repeating-linear-gradient(
+    45deg, transparent, transparent 4px,
+    rgb(255 255 255 / 0.04) 4px, rgb(255 255 255 / 0.04) 8px
+  );
+}
+:root[data-theme="tokyonight"] .ipcell-range {
+  @apply border-[#7aa2f7]/40 bg-[#7aa2f7]/15 text-[#7aa2f7]/80 hover:bg-[#7aa2f7]/25;
+}
+:root[data-theme="tokyonight"] .ipcell-active {
+  @apply border-[#9ece6a]/30 bg-[#9ece6a]/20 text-[#9ece6a] hover:bg-[#9ece6a]/35;
+}
+:root[data-theme="tokyonight"] .ipcell-reserved {
+  @apply border-[#e0af68]/30 bg-[#e0af68]/15 text-[#e0af68] hover:bg-[#e0af68]/30;
+}
+:root[data-theme="tokyonight"] .ipcell-dhcp {
+  @apply border-[#7dcfff]/30 bg-[#7dcfff]/15 text-[#7dcfff] hover:bg-[#7dcfff]/30;
+}
+:root[data-theme="tokyonight"] .ipcell-discovered {
+  @apply border-[#bb9af7]/40 bg-[#bb9af7]/20 text-[#bb9af7] hover:bg-[#bb9af7]/35;
+}
+:root[data-theme="tokyonight"] .ipcell-offline {
+  @apply border-[#565f89]/50 bg-[#565f89]/30 text-[#565f89] hover:bg-[#565f89]/45;
+}
+:root[data-theme="tokyonight"] .text-range {
+  @apply text-[#7aa2f7];
+}
+:root[data-theme="tokyonight"] .ipcell-found-new {
+  @apply outline-[#9ece6a];
+}
+:root[data-theme="tokyonight"] .ipcell-found-known {
+  @apply outline-[#7aa2f7];
+}
+:root[data-theme="tokyonight"] .chg-old {
+  @apply text-[#f7768e] decoration-[#f7768e]/60;
+}
+:root[data-theme="tokyonight"] .chg-new {
+  @apply text-[#9ece6a];
 }
 
 /* Print: white paper, no app chrome (sidebar/header/drawers carry

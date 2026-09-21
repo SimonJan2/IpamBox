@@ -15,14 +15,14 @@ export interface ChartTheme {
   tooltipText: string;
 }
 
-// Pre-mount placeholder — replaced on first effect. Dark values so SSR/first
-// paint can't flash light-theme chrome on the (default) dark theme.
+// Pre-mount placeholder — replaced on first effect. Tokyo Night values so
+// SSR/first paint can't flash mismatched chrome on the (default) TN theme.
 const FALLBACK: ChartTheme = {
-  axis: "hsl(240 5% 64.9%)",
-  cursor: "hsl(0 0% 98% / 0.05)",
-  tooltipBg: "hsl(240 10% 5.5%)",
-  tooltipBorder: "hsl(240 3.7% 15.9%)",
-  tooltipText: "hsl(0 0% 98%)",
+  axis: "hsl(229 23% 44%)",
+  cursor: "hsl(229 73% 86% / 0.05)",
+  tooltipBg: "hsl(230 24% 19%)",
+  tooltipBorder: "hsl(228 23% 21%)",
+  tooltipText: "hsl(229 73% 86%)",
 };
 
 function readTheme(): ChartTheme {

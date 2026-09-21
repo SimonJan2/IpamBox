@@ -2,7 +2,7 @@
 
 import { Palette } from "lucide-react";
 
-import { usePrefs } from "@/lib/prefs";
+import { THEMES, usePrefs } from "@/lib/prefs";
 import {
   Card,
   CardContent,
@@ -50,8 +50,11 @@ export default function AppearancePage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="dark">Dark</SelectItem>
-                <SelectItem value="light">Light</SelectItem>
+                {THEMES.map((t) => (
+                  <SelectItem key={t.value} value={t.value}>
+                    {t.label}
+                  </SelectItem>
+                ))}
                 <SelectItem value="system">System</SelectItem>
               </SelectContent>
             </Select>
