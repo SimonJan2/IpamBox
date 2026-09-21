@@ -15,6 +15,7 @@ from app.schemas.tag import (
     TagOut,
     TagUpdate,
 )
+from app.services.colors import stamp_colors
 from app.services.ipam import IPAMError, get_or_404, slugify
 from app.services.ordering import ordered, reorder
 
@@ -35,7 +36,8 @@ async def list_assignments(
 @router.get("", response_model=list[TagOut])
 async def list_tags(session: AsyncSession = Depends(get_session)):
     stmt = ordered(select(Tag), Tag, Tag.name)
-    return (await session.execute(stmt)).scalars().all()
+    rows = (await session.execute(stmt)).scalars().all()
+    return await stamp_colors(session, "tags", rows)
 
 
 @router.post(
@@ -58,6 +60,7 @@ async def create_tag(body: TagCreate, session: AsyncSession = Depends(get_sessio
         await session.rollback()
         raise HTTPException(409, "tag name or slug already exists")
     await session.refresh(tag)
+    await stamp_colors(session, "tags", [tag])
     return tag
 
 
@@ -79,9 +82,11 @@ async def reorder_tags(
 @router.get("/{tag_id}", response_model=TagOut)
 async def get_tag(tag_id: int, session: AsyncSession = Depends(get_session)):
     try:
-        return await get_or_404(session, Tag, tag_id)
+        tag = await get_or_404(session, Tag, tag_id)
     except IPAMError as e:
         raise HTTPException(e.status_code, str(e))
+    await stamp_colors(session, "tags", [tag])
+    return tag
 
 
 @router.patch(
@@ -107,6 +112,7 @@ async def update_tag(
         await session.rollback()
         raise HTTPException(409, "tag name or slug already exists")
     await session.refresh(tag)
+    await stamp_colors(session, "tags", [tag])
     return tag
 
 

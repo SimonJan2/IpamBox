@@ -18,6 +18,7 @@ from app.models.asset import Asset
 from app.models.certificate import Certificate
 from app.models.change_log import ChangeLog
 from app.models.circuit import Circuit
+from app.models.color_rule import ColorRule
 from app.models.import_batch import ImportBatch
 from app.models.ip_address import IPAddress
 from app.models.ip_range import IPRange
@@ -46,6 +47,7 @@ AUDITED_MODELS: tuple = (
     Certificate,
     Asset,
     Service,
+    ColorRule,
 )
 # churn-only columns that produce noise, never signal — sort_order/pinned
 # change on every drag/drop and would spam the audit log per gesture

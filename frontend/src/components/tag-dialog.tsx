@@ -15,11 +15,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ROW_COLOR_PALETTE } from "@/lib/row-color";
 
-export const TAG_COLORS = [
-  "#10b981", "#3b82f6", "#f59e0b", "#f43f5e", "#8b5cf6",
-  "#06b6d4", "#f97316", "#84cc16", "#ec4899", "#64748b",
-];
+// One palette for tag chips and row tints — canonical list lives in
+// lib/row-color (ROW_COLOR_PALETTE); this stays exported for old imports.
+export const TAG_COLORS: readonly string[] = ROW_COLOR_PALETTE;
 
 export function TagDialog({
   open,

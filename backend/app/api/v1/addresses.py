@@ -19,6 +19,7 @@ from app.schemas.ip_address import (
     _norm_mac,
 )
 from app.services import prefix_math
+from app.services.colors import stamp_colors
 from app.services.csv_export import csv_response, parse_csv
 from app.services.ipam import IPAMError, get_or_404
 
@@ -33,13 +34,15 @@ async def export_addresses(
     stmt = select(IPAddress).order_by(IPAddress.address_int)
     if prefix_id is not None:
         stmt = stmt.where(IPAddress.prefix_id == prefix_id)
-    rows = (await session.execute(stmt)).scalars().all()
+    rows = await stamp_colors(
+        session, "addresses", (await session.execute(stmt)).scalars().all()
+    )
     return csv_response(
         "addresses.csv",
         [
             "address", "prefix_id", "vrf_id", "hostname", "mac_address",
             "vendor", "status", "role", "nat_inside_id", "device_type",
-            "open_ports", "last_seen", "notes",
+            "open_ports", "last_seen", "notes", "display_color",
         ],
         [
             [
@@ -49,6 +52,7 @@ async def export_addresses(
                 a.device_type or "",
                 " ".join(str(p) for p in (a.open_ports or [])),
                 a.last_seen.isoformat() if a.last_seen else "", a.notes or "",
+                a.display_color or "",
             ]
             for a in rows
         ],
@@ -267,10 +271,13 @@ async def list_addresses(
             or (r.vendor and ql in fold_hebrew(r.vendor.lower()))
             or (r.notes and ql in fold_hebrew(r.notes.lower()))
         ]
-        return rows[offset : offset + limit]
-    return (
+        return await stamp_colors(
+            session, "addresses", rows[offset : offset + limit]
+        )
+    rows = (
         (await session.execute(stmt.limit(limit).offset(offset))).scalars().all()
     )
+    return await stamp_colors(session, "addresses", rows)
 
 
 @router.post(
@@ -316,15 +323,18 @@ async def create_address(body: IPAddressCreate, session: AsyncSession = Depends(
         await session.rollback()
         raise HTTPException(409, f"{ip} already exists in this VRF")
     await session.refresh(row)
+    await stamp_colors(session, "addresses", [row])
     return row
 
 
 @router.get("/{address_id}", response_model=IPAddressOut)
 async def get_address(address_id: int, session: AsyncSession = Depends(get_session)):
     try:
-        return await get_or_404(session, IPAddress, address_id)
+        row = await get_or_404(session, IPAddress, address_id)
     except IPAMError as e:
         raise HTTPException(e.status_code, str(e))
+    await stamp_colors(session, "addresses", [row])
+    return row
 
 
 @router.patch(
@@ -359,6 +369,7 @@ async def update_address(
         await session.rollback()
         raise HTTPException(409, "address already exists in this VRF")
     await session.refresh(row)
+    await stamp_colors(session, "addresses", [row])
     return row
 
 

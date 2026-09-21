@@ -19,6 +19,7 @@ import { PERM } from "@/lib/permissions";
 import { cn, foldHebrew } from "@/lib/utils";
 import { useUrlSorting, useUrlText } from "@/lib/url-state";
 import { useRowNav } from "@/lib/row-nav";
+import { useRowColor, rowTintStyle } from "@/lib/row-color";
 import { useRowOrder } from "@/lib/row-order";
 import {
   DragHandle,
@@ -31,6 +32,7 @@ import { SortHeader, columnAriaSort } from "@/components/sort-header";
 import { AsyncPanel } from "@/components/async-panel";
 import { HistoryDialog } from "@/components/history-panel";
 import { InlineText } from "@/components/inline-edit";
+import { RowColorLegend, RowColorPicker } from "@/components/row-color";
 import { SavedViews } from "@/components/saved-views";
 import type { Service, Site } from "@/types";
 import { Button } from "@/components/ui/button";
@@ -254,6 +256,10 @@ export default function ServicesPage() {
     getVisibleIds: (): number[] => tableRows.map((r) => r.original.id),
     enabled: canWrite && !orderBlock,
   });
+  const setRowColor = useRowColor<Service>({
+    path: "/api/v1/services",
+    setData: itemsQ.setData,
+  });
 
   const columns = useMemo<ColumnDef<ServiceRow>[]>(
     () => [
@@ -367,6 +373,14 @@ export default function ServicesPage() {
                 }
               />
             )}
+            {canWrite && (
+              <RowColorPicker
+                value={c.row.original.row_color}
+                displayColor={c.row.original.display_color}
+                name={`service ${c.row.original.name ?? c.row.original.id}`}
+                onPick={(color) => setRowColor(c.row.original.id, color)}
+              />
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -402,7 +416,7 @@ export default function ServicesPage() {
         ),
       },
     ],
-    [canWrite, canDelete, saveField, order.setPinned, orderBlock]
+    [canWrite, canDelete, saveField, order.setPinned, orderBlock, setRowColor]
   );
 
   const table = useReactTable({
@@ -461,6 +475,7 @@ export default function ServicesPage() {
         <span className="ml-auto text-sm text-muted-foreground">
           {tableRows.length} of {items.length}
         </span>
+        <RowColorLegend />
         <SavedViews pageKey="services" />
       </div>
 
@@ -502,6 +517,7 @@ export default function ServicesPage() {
                     if (ni === null) rp.onKeyDown(e);
                     else focusRow(ni);
                   }}
+                  style={rowTintStyle(row.original.display_color)}
                   className={cn(
                     row.original.pinned && "bg-muted/30",
                     "focus-visible:bg-muted/50 focus-visible:outline-none"

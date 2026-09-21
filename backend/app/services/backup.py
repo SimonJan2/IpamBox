@@ -46,6 +46,7 @@ from app.models.base import Base
 from app.models.certificate import Certificate
 from app.models.change_log import ChangeLog
 from app.models.circuit import Circuit
+from app.models.color_rule import ColorRule
 from app.models.import_batch import ImportBatch
 from app.models.ip_address import IPAddress
 from app.models.ip_range import IPRange
@@ -115,6 +116,7 @@ BACKUP_TABLES: tuple[BackupTable, ...] = (
     BackupTable("scan_jobs", ScanJob, sanitize=_fail_inflight_scans),
     BackupTable("change_log", ChangeLog),
     BackupTable("app_settings", AppSetting),
+    BackupTable("color_rules", ColorRule),
 )
 
 

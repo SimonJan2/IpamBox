@@ -27,6 +27,7 @@ from app.schemas.prefix import (
     PrefixUpdate,
 )
 from app.services import prefix_math
+from app.services.colors import stamp_colors
 from app.services.csv_export import csv_response
 from app.services.ipam import (
     IPAMError,
@@ -307,6 +308,7 @@ async def prefix_addresses(
             .offset(offset)
         )
     ).scalars().all()
+    await stamp_colors(session, "addresses", rows)
     net = prefix_math.to_network(prefix.prefix)
     first, last = (None, None)
     if prefix_math.reserves_boundaries(net):

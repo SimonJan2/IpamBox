@@ -44,6 +44,8 @@ class Circuit(Base):
     pinned: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
+    # Manual row accent (#rrggbb, Tag.color format); NULL = none.
+    row_color: Mapped[str | None] = mapped_column(String(7))
     import_batch_id: Mapped[int | None] = mapped_column(
         ForeignKey("import_batches.id", ondelete="SET NULL"), index=True
     )

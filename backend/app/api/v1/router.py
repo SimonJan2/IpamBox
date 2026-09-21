@@ -4,6 +4,7 @@ from app.api.v1 import (
     addresses,
     backup,
     changelog,
+    color_rules,
     dashboard,
     discovery,
     entities,
@@ -39,6 +40,7 @@ api_router.include_router(vlans.router)
 api_router.include_router(ranges.router)
 api_router.include_router(imports.router)
 api_router.include_router(search.router)
+api_router.include_router(color_rules.router)
 api_router.include_router(entities.circuits_router)
 api_router.include_router(entities.certificates_router)
 api_router.include_router(entities.assets_router)
