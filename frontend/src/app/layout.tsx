@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 
 import { AppShell } from "@/components/app-shell";
 import { PrefsInit } from "@/components/prefs-init";
@@ -11,6 +11,11 @@ export const metadata: Metadata = {
     template: "%s · IpamBox",
   },
   description: "IP address management & network scanner",
+};
+
+// Browser chrome tint — matches the default theme (IpamBox Tokyo Night).
+export const viewport: Viewport = {
+  themeColor: "#1a1b26",
 };
 
 // Sets data-theme/data-density before first paint to avoid a flash of the
