@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.deps import DATA_DELETE, DATA_WRITE, require_perm
 from app.models.tag import Tag, TagAssignment
+from app.schemas.common import ReorderBody
 from app.schemas.tag import (
     TAGGABLE,
     AssignBody,
@@ -15,6 +16,7 @@ from app.schemas.tag import (
     TagUpdate,
 )
 from app.services.ipam import IPAMError, get_or_404, slugify
+from app.services.ordering import ordered, reorder
 
 router = APIRouter(prefix="/tags", tags=["tags"])
 
@@ -32,9 +34,8 @@ async def list_assignments(
 
 @router.get("", response_model=list[TagOut])
 async def list_tags(session: AsyncSession = Depends(get_session)):
-    return (
-        (await session.execute(select(Tag).order_by(Tag.name))).scalars().all()
-    )
+    stmt = ordered(select(Tag), Tag, Tag.name)
+    return (await session.execute(stmt)).scalars().all()
 
 
 @router.post(
@@ -58,6 +59,21 @@ async def create_tag(body: TagCreate, session: AsyncSession = Depends(get_sessio
         raise HTTPException(409, "tag name or slug already exists")
     await session.refresh(tag)
     return tag
+
+
+# Declared before /{tag_id} so the literal path can't be shadowed.
+@router.post(
+    "/reorder",
+    status_code=204,
+    dependencies=[Depends(require_perm(DATA_WRITE))],
+)
+async def reorder_tags(
+    body: ReorderBody, session: AsyncSession = Depends(get_session)
+):
+    try:
+        await reorder(session, Tag, body.ids)
+    except IPAMError as e:
+        raise HTTPException(e.status_code, str(e))
 
 
 @router.get("/{tag_id}", response_model=TagOut)

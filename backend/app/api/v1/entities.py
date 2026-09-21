@@ -23,8 +23,10 @@ from app.schemas.certificate import (
     CertificateUpdate,
 )
 from app.schemas.circuit import CircuitCreate, CircuitOut, CircuitUpdate
+from app.schemas.common import ReorderBody
 from app.schemas.service import ServiceCreate, ServiceOut, ServiceUpdate
 from app.services.ipam import IPAMError, get_or_404
+from app.services.ordering import ordered, reorder
 
 
 def _crud_router(prefix, tag, model, out_schema, create_schema, update_schema,
@@ -52,7 +54,7 @@ def _crud_router(prefix, tag, model, out_schema, create_schema, update_schema,
                     )
                 )
             )
-        stmt = stmt.order_by(model.id)
+        stmt = ordered(stmt, model, model.id)
         return (await session.execute(stmt)).scalars().all()
 
     @router.post(
@@ -72,6 +74,20 @@ def _crud_router(prefix, tag, model, out_schema, create_schema, update_schema,
             raise HTTPException(409, "duplicate or invalid value") from e
         await session.refresh(obj)
         return obj
+
+    # Declared before /{item_id} so the literal path can't be shadowed.
+    @router.post(
+        "/reorder",
+        status_code=204,
+        dependencies=[Depends(require_perm(DATA_WRITE))],
+    )
+    async def reorder_items(
+        body: ReorderBody, session: AsyncSession = Depends(get_session)
+    ):
+        try:
+            await reorder(session, model, body.ids)
+        except IPAMError as e:
+            raise HTTPException(e.status_code, str(e))
 
     @router.get("/{item_id}", response_model=out_schema)
     async def get_item(item_id: int, session: AsyncSession = Depends(get_session)):

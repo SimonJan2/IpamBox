@@ -31,6 +31,8 @@ class AssetUpdate(BaseModel):
     serial_number: str | None = Field(default=None, max_length=128)
     site_id: int | None = None
     notes: str | None = None
+    pinned: bool | None = None
+    sort_order: int | None = None
 
 
 class AssetOut(BaseModel):
@@ -48,5 +50,7 @@ class AssetOut(BaseModel):
     serial_number: str | None
     site_id: int | None
     notes: str | None
+    pinned: bool
+    sort_order: int | None
     import_batch_id: int | None
     created_at: datetime

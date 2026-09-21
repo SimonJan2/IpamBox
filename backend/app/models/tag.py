@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -14,6 +14,10 @@ class Tag(Base):
     slug: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     color: Mapped[str] = mapped_column(String(7), default="#10b981", server_default="#10b981")
     description: Mapped[str | None] = mapped_column(Text)
+    sort_order: Mapped[int | None] = mapped_column(index=True)
+    pinned: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     assignments: Mapped[list["TagAssignment"]] = relationship(

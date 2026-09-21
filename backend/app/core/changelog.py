@@ -47,8 +47,9 @@ AUDITED_MODELS: tuple = (
     Asset,
     Service,
 )
-# churn-only columns that produce noise, never signal
-SKIP_FIELDS = {"updated_at", "last_seen", "password_hash"}
+# churn-only columns that produce noise, never signal — sort_order/pinned
+# change on every drag/drop and would spam the audit log per gesture
+SKIP_FIELDS = {"updated_at", "last_seen", "password_hash", "sort_order", "pinned"}
 _SPECS_KEY = "_changelog_specs"
 _REPR_ATTRS = ("name", "prefix", "address", "cidr", "username")
 

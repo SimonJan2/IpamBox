@@ -1,6 +1,14 @@
 import ipaddress
 from typing import Any
 
+from pydantic import BaseModel, Field
+
+
+class ReorderBody(BaseModel):
+    """POST /{entity}/reorder payload: row ids in their new display order."""
+
+    ids: list[int] = Field(min_length=1)
+
 
 def ip_display(v: Any) -> str | None:
     """Normalize asyncpg-returned ipaddress objects / strings to display form.

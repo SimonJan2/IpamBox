@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import String, Text, func
+from sqlalchemy import Boolean, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -22,6 +22,12 @@ class Site(Base):
     is_active: Mapped[bool] = mapped_column(default=True, server_default="true")
     contact: Mapped[str | None] = mapped_column(Text)
     address: Mapped[str | None] = mapped_column(Text)
+    # Manual list order, global for all users. NULL = never positioned:
+    # unpositioned rows sort to the end of their pin group (NULLS LAST).
+    sort_order: Mapped[int | None] = mapped_column(index=True)
+    pinned: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     vrfs: Mapped[list["VRF"]] = relationship(back_populates="site")  # noqa: F821

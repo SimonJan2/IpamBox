@@ -41,6 +41,8 @@ class VLANUpdate(BaseModel):
     site_id: int | None = None
     status: VLANStatus | None = None
     description: str | None = None
+    pinned: bool | None = None
+    sort_order: int | None = None
 
 
 class VLANOut(BaseModel):
@@ -53,4 +55,6 @@ class VLANOut(BaseModel):
     site_id: int | None
     status: VLANStatus
     description: str | None
+    pinned: bool
+    sort_order: int | None
     created_at: datetime

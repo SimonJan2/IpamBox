@@ -25,6 +25,8 @@ class SiteUpdate(BaseModel):
     is_active: bool | None = None
     contact: str | None = None
     address: str | None = None
+    pinned: bool | None = None
+    sort_order: int | None = None
 
 
 class SiteOut(BaseModel):
@@ -40,4 +42,6 @@ class SiteOut(BaseModel):
     is_active: bool
     contact: str | None
     address: str | None
+    pinned: bool
+    sort_order: int | None
     created_at: datetime

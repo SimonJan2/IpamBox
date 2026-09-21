@@ -6,15 +6,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.deps import DATA_DELETE, DATA_WRITE, require_perm
 from app.models.vrf import VRF
+from app.schemas.common import ReorderBody
 from app.schemas.vrf import VRFCreate, VRFOut, VRFUpdate
 from app.services.ipam import IPAMError, get_or_404
+from app.services.ordering import ordered, reorder
 
 router = APIRouter(prefix="/vrfs", tags=["vrfs"])
 
 
 @router.get("", response_model=list[VRFOut])
 async def list_vrfs(session: AsyncSession = Depends(get_session)):
-    return (await session.execute(select(VRF).order_by(VRF.name))).scalars().all()
+    stmt = ordered(select(VRF), VRF, VRF.name)
+    return (await session.execute(stmt)).scalars().all()
 
 
 @router.post(
@@ -33,6 +36,21 @@ async def create_vrf(body: VRFCreate, session: AsyncSession = Depends(get_sessio
         raise HTTPException(409, "VRF name or RD already exists")
     await session.refresh(vrf)
     return vrf
+
+
+# Declared before /{vrf_id} so the literal path can't be shadowed.
+@router.post(
+    "/reorder",
+    status_code=204,
+    dependencies=[Depends(require_perm(DATA_WRITE))],
+)
+async def reorder_vrfs(
+    body: ReorderBody, session: AsyncSession = Depends(get_session)
+):
+    try:
+        await reorder(session, VRF, body.ids)
+    except IPAMError as e:
+        raise HTTPException(e.status_code, str(e))
 
 
 @router.get("/{vrf_id}", response_model=VRFOut)

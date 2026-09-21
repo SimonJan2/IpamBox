@@ -10,8 +10,17 @@ import { useAuth } from "@/lib/auth";
 import { usePrefs } from "@/lib/prefs";
 import { PERM } from "@/lib/permissions";
 import { useRowNav } from "@/lib/row-nav";
+import { useRowOrder } from "@/lib/row-order";
+import { cn } from "@/lib/utils";
 import type { Tag } from "@/types";
 import { AsyncPanel } from "@/components/async-panel";
+import {
+  DragHandle,
+  PinToggle,
+  PinnedDivider,
+  RowOrderDnd,
+  SortableRow,
+} from "@/components/row-order";
 import { HistoryDialog } from "@/components/history-panel";
 import { InlineText } from "@/components/inline-edit";
 import { TagDialog } from "@/components/tag-dialog";
@@ -62,7 +71,16 @@ export default function TagsPage() {
     [tagsQ.setData]
   );
 
-  const { rowProps } = useRowNav({
+  // No sort or filter controls on this page — ordering is always live.
+  const order = useRowOrder<Tag>({
+    path: "/api/v1/tags",
+    items: tags,
+    setData: tagsQ.setData,
+    getVisibleIds: (): number[] => tags.map((t) => t.id),
+    enabled: canWrite,
+  });
+
+  const { rowProps, focusRow } = useRowNav({
     count: tags.length,
     onOpen: (i) => {
       const t = tags[i];
@@ -114,9 +132,15 @@ export default function TagsPage() {
           empty={tags.length === 0}
           emptyMessage="No tags yet — create the first one."
         >
+        <RowOrderDnd ids={tags.map((t) => t.id)} onDragEnd={order.onDragEnd}>
         <Table>
           <TableHeader>
             <TableRow>
+              {canWrite && (
+                <TableHead className="w-8">
+                  <span className="sr-only">Reorder</span>
+                </TableHead>
+              )}
               <TableHead>Tag</TableHead>
               {prefs.showSlugs && <TableHead>Slug</TableHead>}
               <TableHead>Description</TableHead>
@@ -124,12 +148,32 @@ export default function TagsPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {tags.map((t, i) => (
-              <TableRow
+            {tags[0]?.pinned && (
+              <PinnedDivider colSpan={3 + (prefs.showSlugs ? 1 : 0) + (canWrite ? 1 : 0)} />
+            )}
+            {tags.map((t, i) => {
+              const rp = rowProps(i);
+              return (
+              <SortableRow
                 key={t.id}
-                {...rowProps(i)}
-                className="focus-visible:bg-muted/50 focus-visible:outline-none"
+                rowId={t.id}
+                dragDisabled={!order.enabled}
+                {...rp}
+                onKeyDown={(e) => {
+                  const ni = order.keyDown(i, e);
+                  if (ni === null) rp.onKeyDown(e);
+                  else focusRow(ni);
+                }}
+                className={cn(
+                  t.pinned && "bg-muted/30",
+                  "focus-visible:bg-muted/50 focus-visible:outline-none"
+                )}
               >
+                {canWrite && (
+                  <TableCell>
+                    <DragHandle label={`Reorder tag ${t.name}`} />
+                  </TableCell>
+                )}
                 <TableCell>
                   <TagChip tag={t} />
                 </TableCell>
@@ -149,6 +193,13 @@ export default function TagsPage() {
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1">
+                    {canWrite && (
+                      <PinToggle
+                        pinned={t.pinned}
+                        name={t.name}
+                        onToggle={() => order.setPinned(t.id, !t.pinned)}
+                      />
+                    )}
                     <Button
                       variant="ghost"
                       size="icon"
@@ -182,10 +233,12 @@ export default function TagsPage() {
                     )}
                   </div>
                 </TableCell>
-              </TableRow>
-            ))}
+              </SortableRow>
+              );
+            })}
           </TableBody>
         </Table>
+        </RowOrderDnd>
         </AsyncPanel>
       </div>
 

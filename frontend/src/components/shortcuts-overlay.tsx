@@ -42,6 +42,7 @@ const GROUPS: Group[] = [
       ["k / ↑", "Previous row"],
       ["Enter", "Open focused row"],
       ["Home / End", "First / last row"],
+      ["Alt+↑ / Alt+↓", "Move focused row (orderable lists)"],
     ],
   },
   {
