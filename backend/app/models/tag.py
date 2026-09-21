@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import DateTime, Boolean, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -21,7 +21,7 @@ class Tag(Base):
     # Manual row accent (#rrggbb) for the tags list itself — distinct from
     # `color`, which is the tag's chip color. NULL = none.
     row_color: Mapped[str | None] = mapped_column(String(7))
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     assignments: Mapped[list["TagAssignment"]] = relationship(
         back_populates="tag", cascade="all, delete-orphan"

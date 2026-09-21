@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, select
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -7,7 +7,7 @@ from app.core.db import get_session
 from app.core.deps import DATA_DELETE, DATA_WRITE, require_perm
 from app.models.site import Site
 from app.models.vlan import VLAN, VLANGroup
-from app.schemas.common import ReorderBody
+from app.schemas.common import Page, ReorderBody
 from app.schemas.vlan import (
     VLANCreate,
     VLANGroupCreate,
@@ -113,11 +113,13 @@ async def _check_duplicate_vid(
         raise HTTPException(409, f"VLAN {vid} already exists in {scope}")
 
 
-@router.get("/vlans", response_model=list[VLANOut])
+@router.get("/vlans", response_model=Page[VLANOut])
 async def list_vlans(
     group_id: int | None = None,
     site_id: int | None = None,
     q: str | None = None,
+    limit: int | None = Query(default=None, ge=1, le=20000),
+    offset: int = 0,
     session: AsyncSession = Depends(get_session),
 ):
     stmt = ordered(select(VLAN), VLAN, VLAN.vid)
@@ -125,17 +127,30 @@ async def list_vlans(
         stmt = stmt.where(VLAN.group_id == group_id)
     if site_id is not None:
         stmt = stmt.where(VLAN.site_id == site_id)
-    rows = (await session.execute(stmt)).scalars().all()
     if q:
+        # same Hebrew-folding SQL idiom as the entities factory — a Python
+        # filter here would silently run after limit/offset paging
         from app.services.workbook.normalize import fold_hebrew
 
-        ql = fold_hebrew(q.lower())
-        rows = [
-            v
-            for v in rows
-            if ql in fold_hebrew(v.name.lower()) or ql in str(v.vid)
-        ]
-    return await stamp_colors(session, "vlans", rows)
+        like = f"%{fold_hebrew(q)}%"
+        stmt = stmt.where(
+            or_(
+                func.translate(VLAN.name, "םןץףך", "מנצפכ").ilike(like),
+                func.translate(cast(VLAN.vid, String), "םןץףך", "מנצפכ").ilike(like),
+            )
+        )
+    total = await session.scalar(
+        select(func.count()).select_from(stmt.order_by(None).subquery())
+    )
+    rows = (
+        await session.execute(stmt.limit(limit).offset(offset))
+    ).scalars().all()
+    return Page(
+        items=await stamp_colors(session, "vlans", rows),
+        total=total or 0,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.post(

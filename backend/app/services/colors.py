@@ -14,7 +14,7 @@ no rule logic leaks into per-row serialization or the changelog (the
 attribute isn't a mapped column, so it's never persisted or audited).
 """
 import enum
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Iterable
 
 from sqlalchemy import Boolean, Date, DateTime, Integer, Numeric, select
@@ -140,7 +140,7 @@ def rule_matches(rule: ColorRule, obj: Any) -> bool:
             n = int(rule.value)
         except ValueError:
             return False
-        return d <= date.today() + timedelta(days=n)
+        return d <= datetime.now(timezone.utc).date() + timedelta(days=n)
     if op in ("lt", "gt"):
         c = _ordered_cmp(raw, rule.value)
         if c is None:

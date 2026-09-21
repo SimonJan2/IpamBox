@@ -10,7 +10,7 @@ import { useAsyncData } from "@/lib/use-async-data";
 import { PERM } from "@/lib/permissions";
 import { STATUS_TOKENS } from "@/lib/status-tokens";
 import { cn, timeAgo } from "@/lib/utils";
-import type { IpAddress, Prefix } from "@/types";
+import type { IpAddress, Page, Prefix } from "@/types";
 import { AsyncPanel } from "@/components/async-panel";
 import { ConfirmDialog } from "@/components/confirm-action";
 import { Badge } from "@/components/ui/badge";
@@ -32,7 +32,7 @@ export default function DiscoveryPage() {
   const { can } = useAuth();
   const canWrite = can(PERM.DATA_WRITE);
   const canDelete = can(PERM.DATA_DELETE);
-  const itemsQ = useAsyncData(() => api.get<IpAddress[]>("/api/v1/discovery"));
+  const itemsQ = useAsyncData(() => api.get<Page<IpAddress>>("/api/v1/discovery").then((p) => p.items));
   const prefixesQ = useAsyncData(async () => {
     const ps = await api.get<Prefix[]>("/api/v1/prefixes");
     return Object.fromEntries(ps.map((p) => [p.id, p.prefix]));

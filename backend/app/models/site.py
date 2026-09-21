@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, String, Text, func
+from sqlalchemy import DateTime, Boolean, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -31,7 +31,7 @@ class Site(Base):
     # Manual row accent (#rrggbb, Tag.color format), global for all users.
     # NULL = no manual color — a matching color_rule may still tint the row.
     row_color: Mapped[str | None] = mapped_column(String(7))
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     vrfs: Mapped[list["VRF"]] = relationship(back_populates="site")  # noqa: F821
     prefixes: Mapped[list["Prefix"]] = relationship(back_populates="site")  # noqa: F821

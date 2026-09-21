@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import Enum, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import DateTime, Enum, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import ARRAY, INET, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -49,7 +49,7 @@ class IPAddress(Base):
         server_default=IPStatus.DISCOVERED.value,
         index=True,
     )
-    last_seen: Mapped[datetime | None] = mapped_column()
+    last_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), )
     role: Mapped[IPRole | None] = mapped_column(
         Enum(
             IPRole,
@@ -80,8 +80,8 @@ class IPAddress(Base):
     notes: Mapped[str | None] = mapped_column(Text)
     # Manual row accent (#rrggbb, Tag.color format); NULL = none.
     row_color: Mapped[str | None] = mapped_column(String(7))
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     prefix: Mapped["Prefix"] = relationship(back_populates="addresses")  # noqa: F821
     vrf: Mapped["VRF"] = relationship()  # noqa: F821

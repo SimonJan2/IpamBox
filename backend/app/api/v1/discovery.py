@@ -1,27 +1,38 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
 from app.core.deps import DATA_WRITE, require_perm
 from app.models.ip_address import IPAddress, IPStatus
+from app.schemas.common import Page
 from app.schemas.ip_address import IPAddressOut
 from app.services.ipam import IPAMError, get_or_404
 
 router = APIRouter(prefix="/discovery", tags=["discovery"])
 
 
-@router.get("", response_model=list[IPAddressOut])
-async def list_discovered(session: AsyncSession = Depends(get_session)):
-    """Unconfirmed hosts found by scanners, pending admin review."""
-    return (
-        await session.execute(
-            select(IPAddress)
-            .where(IPAddress.status == IPStatus.DISCOVERED)
-            .order_by(IPAddress.address_int)
-        )
+@router.get("", response_model=Page[IPAddressOut])
+async def list_discovered(
+    limit: int | None = Query(default=None, ge=1, le=20000),
+    offset: int = 0,
+    session: AsyncSession = Depends(get_session),
+):
+    """Unconfirmed hosts found by scanners, pending admin review.
+    No limit -> the full set inside a {items, total} envelope."""
+    stmt = (
+        select(IPAddress)
+        .where(IPAddress.status == IPStatus.DISCOVERED)
+        .order_by(IPAddress.address_int)
+    )
+    total = await session.scalar(
+        select(func.count()).select_from(stmt.order_by(None).subquery())
+    )
+    items = (
+        await session.execute(stmt.limit(limit).offset(offset))
     ).scalars().all()
+    return Page(items=items, total=total or 0, limit=limit, offset=offset)
 
 
 class ConfirmBody(BaseModel):

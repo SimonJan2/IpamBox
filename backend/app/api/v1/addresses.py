@@ -2,7 +2,7 @@ import ipaddress
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
-from sqlalchemy import delete, select
+from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,6 +38,7 @@ def _addresses_stmt(
     statuses: set[IPStatus] | None,
     tag_ids: set[int] | None,
     untagged: bool,
+    q: str | None,
 ):
     """Shared list/export filter construction — one predicate, two callers."""
     stmt = select(IPAddress).order_by(IPAddress.address_int)
@@ -65,24 +66,22 @@ def _addresses_stmt(
                 )
             )
         )
+    if q:
+        # Fold Hebrew final letters on both sides (same idiom as entities.py)
+        # and match in SQL — a post-limit Python filter would page wrong.
+        from app.services.workbook.normalize import fold_hebrew
+
+        like = f"%{fold_hebrew(q)}%"
+        stmt = stmt.where(
+            or_(
+                func.translate(cast(IPAddress.address, String), "םןץףך", "מנצפכ").ilike(like),
+                func.translate(IPAddress.hostname, "םןץףך", "מנצפכ").ilike(like),
+                func.translate(IPAddress.mac_address, "םןץףך", "מנצפכ").ilike(like),
+                func.translate(IPAddress.vendor, "םןץףך", "מנצפכ").ilike(like),
+                func.translate(IPAddress.notes, "םןץףך", "מנצפכ").ilike(like),
+            )
+        )
     return stmt
-
-
-def _q_filter(rows, q: str):
-    """q folds Hebrew and matches notes — evaluated in Python, so callers
-    apply limit/offset after filtering, not before."""
-    from app.services.workbook.normalize import fold_hebrew
-
-    ql = fold_hebrew(q.lower())
-    return [
-        r
-        for r in rows
-        if ql in str(r.address).lower()
-        or (r.hostname and ql in fold_hebrew(r.hostname.lower()))
-        or (r.mac_address and ql in r.mac_address.lower())
-        or (r.vendor and ql in fold_hebrew(r.vendor.lower()))
-        or (r.notes and ql in fold_hebrew(r.notes.lower()))
-    ]
 
 
 def _parse_statuses(raw: str | None) -> set[IPStatus] | None:
@@ -143,10 +142,8 @@ async def export_addresses(
     `untagged` selects addresses with no tag assignments."""
     statuses = _parse_statuses(status)
     tag_ids = _parse_tag_ids(tags, tag_id)
-    stmt = _addresses_stmt(vrf_id, prefix_id, statuses, tag_ids, untagged)
+    stmt = _addresses_stmt(vrf_id, prefix_id, statuses, tag_ids, untagged, q)
     rows = (await session.execute(stmt)).scalars().all()
-    if q:
-        rows = _q_filter(rows, q)
     rows = await stamp_colors(session, "addresses", rows)
     filtered = any(
         x is not None for x in (vrf_id, prefix_id, statuses, tag_ids)
@@ -182,10 +179,32 @@ async def import_addresses(
 
     prefixes = (await session.execute(select(Prefix))).scalars().all()
     by_cidr = {str(prefix_math.to_network(p.prefix)): p for p in prefixes}
-    existing = {
-        (int(r.address_int), r.prefix_id)
-        for r in (await session.execute(select(IPAddress))).scalars()
-    }
+
+    # Existing-address lookup scoped to the prefixes this file references —
+    # a full-table load was an accidental O(addresses) on every import.
+    ref_prefix_ids: set[int] = set()
+    for r in rows:
+        try:
+            ref_net = ipaddress.ip_network(r.get("prefix") or "", strict=False)
+        except ValueError:
+            continue
+        ref_prefix = by_cidr.get(str(ref_net))
+        if ref_prefix is not None:
+            ref_prefix_ids.add(ref_prefix.id)
+    existing = (
+        {
+            (int(r.address_int), r.prefix_id)
+            for r in (
+                await session.execute(
+                    select(IPAddress.address_int, IPAddress.prefix_id).where(
+                        IPAddress.prefix_id.in_(ref_prefix_ids)
+                    )
+                )
+            )
+        }
+        if ref_prefix_ids
+        else set()
+    )
 
     results: list[ImportRow] = []
     to_add: list[IPAddress] = []
@@ -277,10 +296,14 @@ async def bulk_addresses(
     missing = sorted(set(body.ids) - found)
 
     if body.action == "delete":
-        result = await session.execute(
-            delete(IPAddress).where(IPAddress.id.in_(found))
-        )
-        affected = result.rowcount or 0
+        # ORM deletes so the changelog hook records one entry per row — a
+        # Core-level DELETE would bypass the audit trail entirely.
+        rows = (
+            await session.execute(select(IPAddress).where(IPAddress.id.in_(found)))
+        ).scalars().all()
+        for r in rows:
+            await session.delete(r)
+        affected = len(rows)
     elif body.action == "set_status":
         rows = (
             await session.execute(select(IPAddress).where(IPAddress.id.in_(found)))
@@ -315,15 +338,19 @@ async def bulk_addresses(
             for oid in todo
         )
         affected = len(todo)
-    else:  # remove_tag
-        result = await session.execute(
-            delete(TagAssignment).where(
-                TagAssignment.tag_id == body.tag_id,
-                TagAssignment.object_type == "IPAddress",
-                TagAssignment.object_id.in_(found),
+    else:  # remove_tag — ORM deletes so each unassign lands in the changelog
+        rows = (
+            await session.execute(
+                select(TagAssignment).where(
+                    TagAssignment.tag_id == body.tag_id,
+                    TagAssignment.object_type == "IPAddress",
+                    TagAssignment.object_id.in_(found),
+                )
             )
-        )
-        affected = result.rowcount or 0
+        ).scalars().all()
+        for r in rows:
+            await session.delete(r)
+        affected = len(rows)
     await session.commit()
     return {"affected": affected, "not_found": missing}
 
@@ -345,12 +372,8 @@ async def list_addresses(
         {status} if status is not None else None,
         {tag_id} if tag_id is not None else None,
         untagged=False,
+        q=q,
     )
-    if q:
-        rows = _q_filter((await session.execute(stmt)).scalars().all(), q)
-        return await stamp_colors(
-            session, "addresses", rows[offset : offset + limit]
-        )
     rows = (
         (await session.execute(stmt.limit(limit).offset(offset))).scalars().all()
     )

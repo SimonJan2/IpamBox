@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -169,11 +169,16 @@ async def unassign_tag(
 ):
     if object_type not in TAGGABLE:
         raise HTTPException(422, f"object_type must be one of {sorted(TAGGABLE)}")
-    await session.execute(
-        delete(TagAssignment).where(
-            TagAssignment.tag_id == tag_id,
-            TagAssignment.object_type == object_type,
-            TagAssignment.object_id == object_id,
+    # ORM delete — a Core-level DELETE would skip the changelog entry
+    rows = (
+        await session.execute(
+            select(TagAssignment).where(
+                TagAssignment.tag_id == tag_id,
+                TagAssignment.object_type == object_type,
+                TagAssignment.object_id == object_id,
+            )
         )
-    )
+    ).scalars().all()
+    for r in rows:
+        await session.delete(r)
     await session.commit()

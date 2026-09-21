@@ -23,7 +23,7 @@ import {
   RowOrderDnd,
   SortableRow,
 } from "@/components/row-order";
-import type { Site, Vrf } from "@/types";
+import type { Page, Site, Vrf } from "@/types";
 import { AsyncPanel } from "@/components/async-panel";
 import { HistoryDialog } from "@/components/history-panel";
 import { InlineText } from "@/components/inline-edit";
@@ -283,7 +283,7 @@ export default function VrfsPage() {
   const vrfsQ = useAsyncData(() => api.get<Vrf[]>("/api/v1/vrfs"));
   const sitesQ = useAsyncData(async () => {
     try {
-      return await api.get<Site[]>("/api/v1/sites");
+      return await api.get<Page<Site>>("/api/v1/sites").then((p) => p.items);
     } catch (e) {
       toast.error("Could not load sites", { description: String(e) });
       return [];

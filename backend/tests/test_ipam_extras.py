@@ -368,6 +368,47 @@ async def test_prefixes_export_respects_filters(client):
     assert r.status_code == 422
 
 
+async def test_ipv6_prefix_does_not_poison_totals(client):
+    """A documented v6 /64's 2^64 host count must not reach dashboard sums
+    (~1.8e19 > Number.MAX_SAFE_INTEGER). Capacity fields report null while
+    the documented-address count stays real."""
+    vrf_id = await _vrf(client)
+    await _prefix(client, "10.80.0.0/24")  # one v4 /24: 254 usable
+    r = await client.post(
+        "/api/v1/prefixes", json={"prefix": "fd00::/64", "vrf_id": vrf_id}
+    )
+    assert r.status_code == 201, r.text
+    v6_id = r.json()["id"]
+
+    stats = (await client.get("/api/v1/dashboard/stats")).json()
+    assert stats["ips_total"] == 254  # just the /24 — not 2^64
+    assert stats["prefixes_total"] == 2
+
+    # v6 stays listed with null capacity
+    rows = (await client.get("/api/v1/prefixes")).json()
+    v6 = next(p for p in rows if p["id"] == v6_id)
+    assert v6["usable_ips"] is None
+    assert v6["total_ips"] is None
+    assert v6["utilization_pct"] is None
+
+    # a documented v6 address is counted per-prefix but consumes no v4
+    # capacity — ips_used/ips_total share the same IPv4 lens
+    await client.post(
+        "/api/v1/addresses", json={"address": "fd00::5", "prefix_id": v6_id}
+    )
+    rows = (await client.get("/api/v1/prefixes")).json()
+    v6 = next(p for p in rows if p["id"] == v6_id)
+    assert v6["used_ips"] == 1
+    stats = (await client.get("/api/v1/dashboard/stats")).json()
+    assert stats["ips_total"] == 254 and stats["ips_used"] == 0
+
+    # utilization sort tolerates the null (v6 sinks last)
+    rows = (
+        await client.get("/api/v1/prefixes", params={"order_by": "utilization"})
+    ).json()
+    assert rows[-1]["prefix"] == "fd00::/64"
+
+
 async def test_dashboard_attention_fields(client, session):
     today = date.today()
     for name, days in [("expired-cert", -10), ("soon-cert", 10), ("far-cert", 300)]:

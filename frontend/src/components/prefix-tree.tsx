@@ -58,7 +58,7 @@ function vrfAgg(v: VrfNode) {
   let count = 0;
   for (const p of v.prefixes) {
     used += p.agg_used_ips;
-    usable += p.usable_ips;
+    usable += p.usable_ips ?? 0; // IPv6 reports no usable capacity
     count += 1 + p.descendant_count;
   }
   return { used, usable, count };
@@ -437,18 +437,28 @@ export function PrefixTree({
             <Tooltip>
               <TooltipTrigger asChild>
                 <div className="flex w-40 items-center gap-2">
-                  <Progress
-                    value={n.utilization_pct}
-                    className="h-1.5"
-                    indicatorClassName={utilColor(n.utilization_pct)}
-                  />
-                  <span className="whitespace-nowrap text-xs text-muted-foreground">
-                    {n.used_ips}/{n.usable_ips} · {n.utilization_pct}%
-                  </span>
+                  {n.usable_ips === null ? (
+                    <span className="whitespace-nowrap text-xs text-muted-foreground">
+                      {n.used_ips} tracked · —
+                    </span>
+                  ) : (
+                    <>
+                      <Progress
+                        value={n.utilization_pct ?? 0}
+                        className="h-1.5"
+                        indicatorClassName={utilColor(n.utilization_pct ?? 0)}
+                      />
+                      <span className="whitespace-nowrap text-xs text-muted-foreground">
+                        {n.used_ips}/{n.usable_ips} · {n.utilization_pct}%
+                      </span>
+                    </>
+                  )}
                 </div>
               </TooltipTrigger>
               <TooltipContent>
-                {Math.max(0, n.usable_ips - n.used_ips).toLocaleString()} free
+                {n.usable_ips === null
+                  ? "IPv6 — capacity not summarized"
+                  : `${Math.max(0, n.usable_ips - n.used_ips).toLocaleString()} free`}
               </TooltipContent>
             </Tooltip>
           )}

@@ -34,7 +34,7 @@ import { AsyncPanel } from "@/components/async-panel";
 import { HistoryDialog } from "@/components/history-panel";
 import { InlineText } from "@/components/inline-edit";
 import { SavedViews } from "@/components/saved-views";
-import type { Site } from "@/types";
+import type { Page, Site } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -285,7 +285,7 @@ export default function SitesPage() {
   const [prefs] = usePrefs();
   const canWrite = can(PERM.DATA_WRITE);
   const canDelete = can(PERM.DATA_DELETE);
-  const sitesQ = useAsyncData(() => api.get<Site[]>("/api/v1/sites"));
+  const sitesQ = useAsyncData(() => api.get<Page<Site>>("/api/v1/sites").then((p) => p.items));
   const [q, setQ] = useUrlText("q");
   const [sorting, setSorting] = useUrlSorting();
   const [dialogOpen, setDialogOpen] = useState(false);

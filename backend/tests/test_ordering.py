@@ -57,7 +57,7 @@ async def _mk_circuits(client: AsyncClient, names: list[str]) -> list[int]:
 
 
 async def _circuit_order(client: AsyncClient) -> list[int]:
-    return [c["id"] for c in (await client.get("/api/v1/circuits")).json()]
+    return [c["id"] for c in (await client.get("/api/v1/circuits")).json()["items"]]
 
 
 async def test_reorder_persists(client: AsyncClient):
@@ -146,13 +146,13 @@ async def test_reorder_handwritten_routers(client: AsyncClient):
     for name in ("x", "y", "z"):
         r = await client.post("/api/v1/sites", json={"name": name})
         assert r.status_code == 201, r.text
-    site_ids = [s["id"] for s in (await client.get("/api/v1/sites")).json()]
+    site_ids = [s["id"] for s in (await client.get("/api/v1/sites")).json()["items"]]
 
     r = await client.post(
         "/api/v1/sites/reorder", json={"ids": list(reversed(site_ids))}
     )
     assert r.status_code == 204, r.text
-    got = [s["id"] for s in (await client.get("/api/v1/sites")).json()]
+    got = [s["id"] for s in (await client.get("/api/v1/sites")).json()["items"]]
     assert got == list(reversed(site_ids))
 
     # tags exercise the same path on a second hand-written router

@@ -3,7 +3,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, select
+from sqlalchemy import String, cast, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -77,10 +77,11 @@ async def _prefix_rows(
                 )
             )
         )
-    rows = (await session.execute(stmt)).scalars().all()
     if q:
-        rows = [p for p in rows if q.lower() in str(p.prefix)]
-    return rows
+        # CIDR text match pushed into SQL — a post-fetch filter would make
+        # callers paginate before filtering.
+        stmt = stmt.where(cast(Prefix.prefix, String).ilike(f"%{q}%"))
+    return (await session.execute(stmt)).scalars().all()
 
 
 @router.get("/export.csv")
@@ -148,7 +149,14 @@ async def list_prefixes(
         return int(prefix_math.to_network(p.prefix).network_address)
 
     if order_by == "utilization":
-        pairs.sort(key=lambda t: (-t[1]["utilization_pct"], _net_key(t[0])))
+        # IPv6 prefixes report utilization_pct=None — sort them last.
+        pairs.sort(
+            key=lambda t: (
+                t[1]["utilization_pct"] is None,
+                -(t[1]["utilization_pct"] or 0),
+                _net_key(t[0]),
+            )
+        )
     else:
         # order by network address integer for a natural hierarchy view
         pairs.sort(key=lambda t: _net_key(t[0]))

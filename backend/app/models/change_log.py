@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Integer, String, func
+from sqlalchemy import DateTime, Integer, String, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -13,7 +13,7 @@ class ChangeLog(Base):
     __tablename__ = "change_log"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    ts: Mapped[datetime] = mapped_column(server_default=func.now(), index=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
     actor: Mapped[str] = mapped_column(String(64), default="system", server_default="system")
     action: Mapped[str] = mapped_column(String(16), index=True)  # create | update | delete
     object_type: Mapped[str] = mapped_column(String(64), index=True)

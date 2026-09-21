@@ -24,7 +24,7 @@ import { SortHeader, columnAriaSort } from "@/components/sort-header";
 import { AsyncPanel } from "@/components/async-panel";
 import { HistoryDialog } from "@/components/history-panel";
 import { SavedViews } from "@/components/saved-views";
-import type { Prefix, Site, Vlan, Vrf } from "@/types";
+import type { Page, Prefix, Site, Vlan, Vrf } from "@/types";
 import { PrefixStatusBadge } from "@/components/status-badge";
 import { TagChip, TagPicker, useTags } from "@/components/tag-picker";
 import { Button } from "@/components/ui/button";
@@ -460,7 +460,7 @@ export default function PrefixesPage() {
   });
   const sitesQ = useAsyncData(async () => {
     try {
-      return await api.get<Site[]>("/api/v1/sites");
+      return await api.get<Page<Site>>("/api/v1/sites").then((p) => p.items);
     } catch (e) {
       toast.error("Could not load sites", { description: String(e) });
       return [];
@@ -468,7 +468,7 @@ export default function PrefixesPage() {
   });
   const vlansQ = useAsyncData(async () => {
     try {
-      return await api.get<Vlan[]>("/api/v1/vlans");
+      return await api.get<Page<Vlan>>("/api/v1/vlans").then((p) => p.items);
     } catch (e) {
       toast.error("Could not load VLANs", { description: String(e) });
       return [];
@@ -580,12 +580,20 @@ export default function PrefixesPage() {
         ),
         cell: (c) => {
           const p = c.row.original;
+          if (p.usable_ips === null) {
+            // IPv6 — no summarized capacity (2^n overflows the display anyway)
+            return (
+              <span className="whitespace-nowrap text-xs text-muted-foreground">
+                {p.used_ips} tracked · —
+              </span>
+            );
+          }
           return (
             <div className="flex w-40 items-center gap-2">
               <Progress
-                value={p.utilization_pct}
+                value={p.utilization_pct ?? 0}
                 className="h-1.5"
-                indicatorClassName={utilColor(p.utilization_pct)}
+                indicatorClassName={utilColor(p.utilization_pct ?? 0)}
               />
               <span className="whitespace-nowrap text-xs text-muted-foreground">
                 {p.used_ips}/{p.usable_ips} · {p.utilization_pct}%

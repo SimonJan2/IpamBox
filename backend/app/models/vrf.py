@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, String, Text, func
+from sqlalchemy import DateTime, Boolean, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -21,7 +21,13 @@ class VRF(Base):
     )
     # Manual row accent (#rrggbb, Tag.color format); NULL = none.
     row_color: Mapped[str | None] = mapped_column(String(7))
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     site: Mapped["Site | None"] = relationship(back_populates="vrfs")  # noqa: F821
-    prefixes: Mapped[list["Prefix"]] = relationship(back_populates="vrf")  # noqa: F821
+    # ORM cascade (mirrors Prefix.addresses): deleting a VRF must run its
+    # prefixes — and their addresses — through session.deleted so the
+    # changelog records each row and tag_refs sweeps their assignments. The
+    # DB-level ondelete="CASCADE" alone would do all of that invisibly.
+    prefixes: Mapped[list["Prefix"]] = relationship(  # noqa: F821
+        back_populates="vrf", cascade="all, delete-orphan"
+    )

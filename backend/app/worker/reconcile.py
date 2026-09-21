@@ -1,5 +1,5 @@
 import ipaddress
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,7 +24,7 @@ async def reconcile(
     prefix, so sweeping the whole prefix would mark untouched subnets offline.
     Returns (hosts_seen, hosts_new).
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     first = int(net.network_address)
     last = first + net.num_addresses - 1
     rows = (

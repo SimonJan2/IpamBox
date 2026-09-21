@@ -6,11 +6,11 @@ plan on the batch row so commit runs exactly what was reviewed.
 """
 import hashlib
 import zipfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -19,6 +19,7 @@ from app.core.deps import DATA_WRITE, require_perm
 from app.core.security import get_actor
 from app.models.import_batch import ImportBatch, ImportBatchStatus
 from app.models.user import User
+from app.schemas.common import Page
 from app.schemas.import_batch import (
     CommitOptions,
     ImportBatchOut,
@@ -109,15 +110,23 @@ async def upload_workbook(
     }
 
 
-@router.get("", response_model=list[ImportBatchOut])
-async def list_imports(session: AsyncSession = Depends(get_session)):
+@router.get("", response_model=Page[ImportBatchOut])
+async def list_imports(
+    limit: int | None = Query(default=None, ge=1, le=20000),
+    offset: int = 0,
+    session: AsyncSession = Depends(get_session),
+):
+    stmt = select(ImportBatch).order_by(ImportBatch.id.desc())
+    total = await session.scalar(
+        select(func.count()).select_from(stmt.order_by(None).subquery())
+    )
     rows = (
-        await session.execute(select(ImportBatch).order_by(ImportBatch.id.desc()))
+        await session.execute(stmt.limit(limit).offset(offset))
     ).scalars().all()
     for b in rows:  # don't ship the full plan in list responses
         if b.stats and "plan" in b.stats:
             b.stats = {k: v for k, v in b.stats.items() if k != "plan"}
-    return rows
+    return Page(items=rows, total=total or 0, limit=limit, offset=offset)
 
 
 @router.get("/{batch_id}")
@@ -189,12 +198,16 @@ async def commit_import(
         )
     except PlanError as e:
         await session.rollback()
-        batch.status = ImportBatchStatus.FAILED
-        batch.stats = {**(batch.stats or {}), "commit_error": str(e)}
-        await session.commit()
+        # rollback() expired every ORM object — touching batch.stats here would
+        # lazy-load on the async session and raise MissingGreenlet. Re-fetch.
+        batch = await session.get(ImportBatch, batch_id)
+        if batch is not None:
+            batch.status = ImportBatchStatus.FAILED
+            batch.stats = {**(batch.stats or {}), "commit_error": str(e)}
+            await session.commit()
         raise HTTPException(422, str(e))
     batch.status = ImportBatchStatus.COMMITTED
-    batch.committed_at = datetime.utcnow()
+    batch.committed_at = datetime.now(timezone.utc)
     batch.stats = {
         **(batch.stats or {}),
         "commit_counts": result["counts"],

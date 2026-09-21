@@ -621,7 +621,7 @@ async def test_import_e2e(client):
     counts = r.json()["counts"]
     assert counts.get("error", 0) == 0
 
-    sites = (await client.get("/api/v1/sites")).json()
+    sites = (await client.get("/api/v1/sites")).json()["items"]
     alb = next(s for s in sites if s["name"] == "Alenbi")
     assert alb["code"] == "ALNB" and alb["site_number"] == 2
 
@@ -632,7 +632,7 @@ async def test_import_e2e(client):
     assert bad_mac["mac_address"] is None
     assert bad_mac["custom_fields"]["mac_raw"] == "bad-mac"
 
-    circuits = (await client.get("/api/v1/imports")).json()
+    circuits = (await client.get("/api/v1/imports")).json()["items"]
     assert circuits[0]["status"] == "committed"
 
 
@@ -648,3 +648,44 @@ async def test_commit_twice_rejected(client):
     await client.post(f"/api/v1/imports/{batch_id}/commit", json={"partial": True})
     r = await client.post(f"/api/v1/imports/{batch_id}/commit", json={})
     assert r.status_code == 409
+
+
+async def test_commit_plan_error_marks_batch_failed(client, session):
+    """Commit-time PlanError must 422 AND record the failure. The route
+    rolls back first — reading batch.stats on the expired ORM object used
+    to raise MissingGreenlet, turning the intended 422 into a 500."""
+    from app.models.import_batch import ImportBatch, ImportBatchStatus
+
+    batch = ImportBatch(
+        filename="bad.xlsx",
+        stored_path="/tmp/never-read.xlsx",
+        sha256="0" * 64,
+        status=ImportBatchStatus.DRAFT,
+        stats={
+            "plan": {
+                "prefixes": [
+                    {
+                        "key": "p1",
+                        "action": "create",
+                        "vrf_key": "ghost-vrf",  # scaffold never fills this
+                        "cidr": "10.5.0.0/24",
+                        "status": "active",
+                        "site_key": None,
+                    }
+                ]
+            }
+        },
+        actor="tester",
+    )
+    session.add(batch)
+    await session.commit()
+
+    r = await client.post(
+        f"/api/v1/imports/{batch.id}/commit", json={"partial": False}
+    )
+    assert r.status_code == 422, r.text
+    assert "scaffold failed" in r.json()["detail"]
+
+    fresh = await session.get(ImportBatch, batch.id)
+    assert fresh.status == ImportBatchStatus.FAILED
+    assert "scaffold failed" in fresh.stats["commit_error"]

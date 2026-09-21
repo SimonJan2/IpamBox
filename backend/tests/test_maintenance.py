@@ -80,7 +80,7 @@ async def test_clear_discovery(client: AsyncClient, session):
     r = await client.post("/api/v1/maintenance/clear-discovery")
     assert r.status_code == 200
     assert r.json()["deleted"] == 1
-    assert (await client.get("/api/v1/discovery")).json() == []
+    assert (await client.get("/api/v1/discovery")).json()["items"] == []
     rows = (await client.get("/api/v1/addresses")).json()
     assert len(rows) == 1
 
@@ -96,7 +96,7 @@ async def test_factory_reset(client: AsyncClient, session):
     r = await client.post("/api/v1/maintenance/reset", json={"confirm": "RESET"})
     assert r.status_code == 200
 
-    assert (await client.get("/api/v1/sites")).json() == []
+    assert (await client.get("/api/v1/sites")).json()["items"] == []
     # settings reverted to env/default
     body = (await client.get("/api/v1/settings")).json()
     assert body["values"]["backup_keep"] == 14

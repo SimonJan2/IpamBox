@@ -22,7 +22,7 @@ import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
 import { fmtTs } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
-import type { ImportBatch, RowResult, SheetPreview, Site } from "@/types";
+import type { ImportBatch, Page, RowResult, SheetPreview, Site } from "@/types";
 import { AsyncPanel } from "@/components/async-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -353,11 +353,11 @@ export default function ImportPage() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const batchesQ = useAsyncData(() =>
-    api.get<ImportBatch[]>("/api/v1/imports")
+    api.get<Page<ImportBatch>>("/api/v1/imports").then((p) => p.items)
   );
   const sitesQ = useAsyncData(async () => {
     try {
-      return await api.get<Site[]>("/api/v1/sites");
+      return await api.get<Page<Site>>("/api/v1/sites").then((p) => p.items);
     } catch (e) {
       toast.error("Could not load sites", { description: String(e) });
       return [];

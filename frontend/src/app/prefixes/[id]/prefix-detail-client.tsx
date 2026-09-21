@@ -35,6 +35,7 @@ import type {
   IpRange,
   IpRole,
   IpStatus,
+  Page,
   Prefix,
   Tag,
 } from "@/types";
@@ -504,7 +505,7 @@ export default function PrefixDetailPage({ id }: { id: string }) {
   );
   const rangesQ = useAsyncData(async () => {
     try {
-      return await api.get<IpRange[]>(`/api/v1/ranges?prefix_id=${prefixId}`);
+      return await api.get<Page<IpRange>>(`/api/v1/ranges?prefix_id=${prefixId}`).then((p) => p.items);
     } catch (e) {
       toast.error("Could not load IP ranges", { description: String(e) });
       return [];
@@ -843,15 +844,21 @@ export default function PrefixDetailPage({ id }: { id: string }) {
             <div className="w-56">
               <div className="mb-1 flex justify-between text-xs text-muted-foreground">
                 <span>utilization</span>
-                <span>{prefix.utilization_pct}%</span>
+                <span>
+                  {prefix.utilization_pct === null
+                    ? "—"
+                    : `${prefix.utilization_pct}%`}
+                </span>
               </div>
-              <Progress value={prefix.utilization_pct} />
+              <Progress value={prefix.utilization_pct ?? 0} />
             </div>
             <span>{prefix.used_ips.toLocaleString()} used</span>
-            <span className="text-muted-foreground">
-              {prefix.free_ips.toLocaleString()} free of{" "}
-              {prefix.usable_ips.toLocaleString()} usable
-            </span>
+            {prefix.free_ips !== null && prefix.usable_ips !== null && (
+              <span className="text-muted-foreground">
+                {prefix.free_ips.toLocaleString()} free of{" "}
+                {prefix.usable_ips.toLocaleString()} usable
+              </span>
+            )}
             {ranges.length > 0 && (
               <span className="text-sky-400">
                 {ranges.length} range{ranges.length > 1 ? "s" : ""}
