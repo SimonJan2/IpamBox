@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  BookOpen,
   Building2,
   Cable,
   Crosshair,
@@ -19,6 +20,7 @@ import {
 
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { docCategoryLabel, docHref, searchDocs } from "@/lib/docs";
 import { getPrefs, savePrefs } from "@/lib/prefs";
 import {
   Dialog,
@@ -240,18 +242,27 @@ export function CommandPalette({
     listRef.current?.scrollTo({ top: 0 });
   }, [items]);
 
-  const shown = useMemo<Item[]>(
-    () =>
-      q.trim()
-        ? items
-        : recent.map((r) => ({
-            group: "Recent",
-            icon: History,
-            label: r.label,
-            href: r.href,
-          })),
-    [q, items, recent]
-  );
+  const shown = useMemo<Item[]>(() => {
+    if (!q.trim()) {
+      return recent.map((r) => ({
+        group: "Recent",
+        icon: History,
+        label: r.label,
+        href: r.href,
+      }));
+    }
+    // Doc guides are static — matched client-side, appended after data hits.
+    const docItems = searchDocs(q)
+      .slice(0, 6)
+      .map<Item>((d) => ({
+        group: "Docs",
+        icon: BookOpen,
+        label: d.title,
+        sub: docCategoryLabel(d.category),
+        href: docHref(d.slug),
+      }));
+    return [...items, ...docItems];
+  }, [q, items, recent]);
 
   const pick = (item: Item) => {
     remember(item);

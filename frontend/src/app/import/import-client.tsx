@@ -24,6 +24,7 @@ import { fmtTs } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import type { ImportBatch, Page, RowResult, SheetPreview, Site } from "@/types";
 import { AsyncPanel } from "@/components/async-panel";
+import { DocsLink } from "@/components/docs/docs-link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -499,7 +500,7 @@ export default function ImportPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Import workbook</h1>
+        <h1 className="flex items-center gap-1.5 text-xl font-semibold">Import workbook <DocsLink slug="import" /></h1>
         {canWrite && <Stepper step={step} />}
       </div>
 

@@ -12,6 +12,7 @@ import { STATUS_TOKENS } from "@/lib/status-tokens";
 import { cn, timeAgo } from "@/lib/utils";
 import type { IpAddress, Page, Prefix } from "@/types";
 import { AsyncPanel } from "@/components/async-panel";
+import { DocsLink } from "@/components/docs/docs-link";
 import { ConfirmDialog } from "@/components/confirm-action";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -153,7 +154,7 @@ export default function DiscoveryPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold">Discovery inbox</h1>
+      <h1 className="flex items-center gap-1.5 text-xl font-semibold">Discovery inbox <DocsLink slug="discovery" /></h1>
       <p className="text-sm text-muted-foreground">
         Hosts found by scanners that haven&apos;t been confirmed yet.
       </p>

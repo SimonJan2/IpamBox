@@ -18,6 +18,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ConfirmAction } from "@/components/confirm-action";
+import { DocsLink } from "@/components/docs/docs-link";
 
 async function download(path: string, name: string) {
   const res = await fetch(path, { credentials: "include" });
@@ -41,7 +42,7 @@ export default function DataPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold">Data &amp; Maintenance</h1>
+        <h1 className="flex items-center gap-1.5 text-xl font-semibold">Data &amp; Maintenance <DocsLink slug="settings" /></h1>
         <p className="text-sm text-muted-foreground">
           Import/export helpers and destructive cleanup operations. Every action
           below is recorded in the changelog.

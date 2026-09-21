@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import {
+  BookOpen,
   Building2,
   Cable,
   ChevronDown,
@@ -11,6 +12,7 @@ import {
   HardDrive,
   History,
   Inbox,
+  Keyboard,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -99,6 +101,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "System",
     items: [
       { href: "/tags", label: "Tags", icon: Tags },
+      { href: "/docs", label: "Docs", icon: BookOpen },
       { href: "/settings", label: "Settings", icon: Settings },
     ],
   },
@@ -469,6 +472,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <kbd className="hidden rounded border px-1 text-[10px] sm:inline">
                 {KBD_HINT}
               </kbd>
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Keyboard shortcuts"
+              title="Keyboard shortcuts (?)"
+              onClick={() => setHelpOpen(true)}
+            >
+              <Keyboard className="h-4 w-4" />
             </Button>
             {ctx.can(PERM.DATA_WRITE) && (
               <Button size="sm" onClick={() => setScanOpen(true)}>

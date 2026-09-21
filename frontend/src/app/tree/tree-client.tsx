@@ -20,6 +20,7 @@ import {
   siteKey,
   vrfKey,
 } from "@/components/prefix-tree";
+import { DocsLink } from "@/components/docs/docs-link";
 import { SavedViews } from "@/components/saved-views";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -271,6 +272,7 @@ export default function TreePage() {
               prefixes
             </span>
           )}
+          <DocsLink slug="hierarchy" />
         </h1>
         <div className="flex items-center gap-2">
           <Select onValueChange={collapseToDepth}>

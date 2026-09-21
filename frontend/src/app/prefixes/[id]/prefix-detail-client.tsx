@@ -41,6 +41,7 @@ import type {
 } from "@/types";
 import { AddressFilterPanel } from "@/components/address-filter-panel";
 import { AsyncPanel } from "@/components/async-panel";
+import { DocsLink } from "@/components/docs/docs-link";
 import { PrefixBreadcrumbs } from "@/components/breadcrumbs";
 import { AddressList, AddrMapViewSwitcher } from "@/components/address-list";
 import { HistoryDialog } from "@/components/history-panel";
@@ -764,7 +765,7 @@ export default function PrefixDetailPage({ id }: { id: string }) {
         </Button>
         {prefix ? (
           <>
-            <h1 className="font-mono text-xl font-semibold">{prefix.prefix}</h1>
+            <h1 className="flex items-center gap-1.5 font-mono text-xl font-semibold">{prefix.prefix} <DocsLink slug="subnets" /></h1>
             <PrefixStatusBadge s={prefix.status} />
             {prefix.vlan && (
               <span className="text-sm text-muted-foreground">

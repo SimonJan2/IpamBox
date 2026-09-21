@@ -30,6 +30,7 @@ import {
 } from "@/components/row-order";
 import { SortHeader, columnAriaSort } from "@/components/sort-header";
 import { AsyncPanel } from "@/components/async-panel";
+import { DocsLink } from "@/components/docs/docs-link";
 import { HistoryDialog } from "@/components/history-panel";
 import { InlineText } from "@/components/inline-edit";
 import { RowColorLegend, RowColorPicker } from "@/components/row-color";
@@ -451,7 +452,7 @@ export default function ServicesPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Services</h1>
+        <h1 className="flex items-center gap-1.5 text-xl font-semibold">Services <DocsLink slug="services" /></h1>
         {canWrite && (
           <Button
             size="sm"

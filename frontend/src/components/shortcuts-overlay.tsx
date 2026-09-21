@@ -33,6 +33,7 @@ const GROUPS: Group[] = [
       ["g s", "Scans"],
       ["g i", "Discovery inbox"],
       ["g c", "Changelog"],
+      ["g h", "Docs"],
     ],
   },
   {

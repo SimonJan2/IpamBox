@@ -12,6 +12,7 @@ import { PERM } from "@/lib/permissions";
 import { timeAgo } from "@/lib/utils";
 import type { ScanConfig, ScanJob, Vrf } from "@/types";
 import { AsyncPanel } from "@/components/async-panel";
+import { DocsLink } from "@/components/docs/docs-link";
 import { ScanStatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -136,7 +137,7 @@ export default function ScansPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Scans</h1>
+        <h1 className="flex items-center gap-1.5 text-xl font-semibold">Scans <DocsLink slug="scans" /></h1>
         {canWrite && (
           <Button size="sm" onClick={() => startScan()}>
             <Play /> Scan LAN (auto-detect)
