@@ -4,7 +4,34 @@ import { useEffect, useState } from "react";
 
 // Client-side preferences — stored in localStorage, never sent to the API.
 
-export type ThemeChoice = "dark" | "light" | "system";
+export type ThemeChoice =
+  | "dark"
+  | "light"
+  | "localsend"
+  | "localsend-dark"
+  | "netbox"
+  | "netbox-dark"
+  | "tokyonight"
+  | "system";
+/** A concrete theme after "system" resolves. */
+export type ResolvedTheme = Exclude<ThemeChoice, "system">;
+
+/** Display metadata for each concrete theme — the appearance dropdown renders
+ *  from this (plus a separate "System" entry), and prefs-init maps the active
+ *  theme to a sonner light/dark mode via `mode`. */
+export const THEMES: readonly {
+  value: ResolvedTheme;
+  label: string;
+  mode: "dark" | "light";
+}[] = [
+  { value: "tokyonight", label: "IpamBox Tokyo Night", mode: "dark" },
+  { value: "dark", label: "IpamBox Dark", mode: "dark" },
+  { value: "light", label: "IpamBox Light", mode: "light" },
+  { value: "localsend", label: "LocalSend Mint", mode: "light" },
+  { value: "localsend-dark", label: "LocalSend Dark", mode: "dark" },
+  { value: "netbox", label: "NetBox Light", mode: "light" },
+  { value: "netbox-dark", label: "NetBox Dark", mode: "dark" },
+];
 export type DensityChoice = "comfortable" | "compact";
 export type TsFormat = "local" | "iso";
 export type AddrMapView = "grid" | "list";
@@ -34,7 +61,7 @@ export interface Prefs {
 }
 
 export const DEFAULT_PREFS: Prefs = {
-  theme: "dark",
+  theme: "tokyonight",
   density: "comfortable",
   pageSize: 50,
   landing: "/",
@@ -67,12 +94,12 @@ export function savePrefs(patch: Partial<Prefs>): Prefs {
   return next;
 }
 
-function resolveTheme(theme: ThemeChoice): "dark" | "light" {
+function resolveTheme(theme: ThemeChoice): ResolvedTheme {
   if (theme !== "system") return theme;
   if (typeof window === "undefined") return "dark";
   return window.matchMedia("(prefers-color-scheme: light)").matches
     ? "light"
-    : "dark";
+    : "tokyonight";
 }
 
 export function applyPrefs(p: Prefs) {

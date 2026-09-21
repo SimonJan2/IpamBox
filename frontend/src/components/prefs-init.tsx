@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Toaster } from "sonner";
 
-import { useApplyPrefs } from "@/lib/prefs";
+import { THEMES, useApplyPrefs } from "@/lib/prefs";
 
 /** Applies localStorage prefs to <html> live, and themes the toaster. */
 export function PrefsInit() {
@@ -13,7 +13,9 @@ export function PrefsInit() {
   useEffect(() => {
     const sync = () =>
       setTheme(
-        document.documentElement.dataset.theme === "light" ? "light" : "dark"
+        THEMES.find(
+          (t) => t.value === document.documentElement.dataset.theme
+        )?.mode ?? "dark"
       );
     sync();
     // Watch data-theme rather than the prefs event — it flips for both pref
