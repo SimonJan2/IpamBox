@@ -240,10 +240,15 @@ async def scan_cidr(
     tcp_timeout: float = 0.6,
     concurrency: int = 256,
     on_progress=None,
+    on_hosts=None,
     should_stop=None,
 ) -> list[HostResult]:
     """Full pipeline: ARP (L2) -> ICMP -> TCP port probe -> PTR -> OUI.
 
+    `on_hosts` is an optional async callable `(ips: list[str], phase: str)`
+    fired once per detection step with the newly confirmed host IPs — after
+    the ARP sweep, after each ICMP chunk, and after each fallback TCP batch —
+    so deltas stay bounded to a chunk, never per-IP.
     `should_stop` is an optional async callable returning True when the scan
     has been cancelled; checked between phases/chunks -> raises ScanCancelled.
     """
@@ -265,12 +270,17 @@ async def scan_cidr(
             if v is not None:
                 setattr(h, k, v)
 
+    def _ip_key(ip: str) -> int:
+        return int(ipaddress.ip_address(ip))
+
     # 1. ARP scan (local subnet -> fast, authoritative for MACs)
     if net.version == 4:
         arp_timeout = max(2.0, min(10.0, net.num_addresses / 1500.0))
         arp_res = await asyncio.to_thread(_arp_scan, str(net), dev, arp_timeout)
         for ip, mac in arp_res.items():
             _mark(ip, mac=mac, vendor=vendor_for(mac))
+        if on_hosts and arp_res:
+            await on_hosts(sorted(arp_res, key=_ip_key), "arp")
     if on_progress:
         await on_progress("arp", 0.4)
     if await _stopped():
@@ -284,6 +294,8 @@ async def scan_cidr(
         alive = await _icmp_sweep([ip for ip in batch if ip not in hosts], icmp_timeout)
         for ip in alive:
             _mark(ip)
+        if on_hosts and alive:
+            await on_hosts(sorted(alive, key=_ip_key), "icmp")
         scanned += len(batch)
         if on_progress:
             await on_progress("icmp", 0.4 + 0.3 * min(1.0, scanned / total))
@@ -292,13 +304,17 @@ async def scan_cidr(
 
     # Fallback: if L2+L3 found nothing (e.g. no CAP_NET_RAW), sweep TCP ports
     if not hosts and tcp_ports:
-        async def probe_all(ip: str):
+        async def probe_all(ip: str, found: list[str]):
             ports = await _tcp_probe(ip, tcp_ports, tcp_timeout, sem)
             if ports:
                 _mark(ip, open_ports=ports)
+                found.append(ip)
 
         for batch in _host_chunks(net, 256):
-            await asyncio.gather(*(probe_all(ip) for ip in batch))
+            found: list[str] = []
+            await asyncio.gather(*(probe_all(ip, found) for ip in batch))
+            if on_hosts and found:
+                await on_hosts(sorted(found, key=_ip_key), "tcp")
             if await _stopped():
                 raise ScanCancelled()
 

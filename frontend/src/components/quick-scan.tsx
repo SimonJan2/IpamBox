@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Radar } from "lucide-react";
 import { toast } from "sonner";
 
 import { api, scanStreamUrl } from "@/lib/api";
+import { useAsyncData } from "@/lib/use-async-data";
+import { usePolling } from "@/lib/use-polling";
+import { ipToInt } from "@/lib/utils";
 import type { ScanEvent, ScanJob, Vrf } from "@/types";
 import { Button } from "@/components/ui/button";
 import {
@@ -51,6 +54,125 @@ export function useScanStream(scanId: number | null, onDone?: (e: ScanEvent) => 
   }, [scanId]);
 
   return event;
+}
+
+/** [lo, hi] address-int bounds of an IPv4 CIDR, or null for anything else. */
+function v4NetBounds(cidr: string): [number, number] | null {
+  const m = /^(\d{1,3}(?:\.\d{1,3}){3})\/(\d{1,2})$/.exec(cidr);
+  if (!m) return null;
+  const bits = Number(m[2]);
+  if (bits > 32) return null;
+  const size = 2 ** (32 - bits);
+  const lo = Math.floor(ipToInt(m[1]) / size) * size;
+  return [lo, lo + size - 1];
+}
+
+/** Live-scan overlay for the subnet grid (F15). Polls the scan list for a
+ *  queued/running job whose CIDR overlaps `cidr` (or that names `prefixId`),
+ *  streams its `found` deltas over SSE, and accumulates them as a set of
+ *  address_ints. The stream closes and `onSettled` fires when the job
+ *  reaches a terminal state or no longer matches — the caller refetches so
+ *  reconciled statuses replace the overlay. */
+export function usePrefixScanOverlay(
+  prefixId: number | null,
+  cidr: string | null,
+  onSettled?: () => void
+): { found: Set<number>; scanning: boolean } {
+  const scansQ = useAsyncData(() =>
+    api.get<ScanJob[]>("/api/v1/scans?limit=20")
+  );
+  // Scan discovery is a light poll — the SSE stream carries the fast path.
+  usePolling(async () => JSON.stringify(await scansQ.reload()), {
+    interval: 10000,
+  });
+
+  const [found, setFound] = useState<Set<number>>(new Set());
+  const [activeId, setActiveId] = useState<number | null>(null);
+  const esRef = useRef<EventSource | null>(null);
+  const openRef = useRef(false);
+  const jobRef = useRef<number | null>(null);
+  const settledRef = useRef(onSettled);
+  settledRef.current = onSettled;
+
+  const live = useMemo(() => {
+    const bounds = cidr ? v4NetBounds(cidr) : null;
+    return (scansQ.data ?? []).find((s) => {
+      if (s.status !== "running" && s.status !== "queued") return false;
+      if (s.prefix_id != null && s.prefix_id === prefixId) return true;
+      if (!bounds || !s.cidr) return false;
+      const sb = v4NetBounds(s.cidr);
+      return sb != null && sb[0] <= bounds[1] && bounds[0] <= sb[1];
+    });
+  }, [scansQ.data, prefixId, cidr]);
+
+  const finish = useCallback(() => {
+    const wasOpen = openRef.current;
+    openRef.current = false;
+    jobRef.current = null;
+    esRef.current?.close();
+    esRef.current = null;
+    setActiveId(null);
+    setFound(new Set());
+    // Only a stream that actually ran settles — close-before-start or
+    // unmount must not trigger a refetch.
+    if (wasOpen) settledRef.current?.();
+  }, []);
+
+  // Transient drop: close so the next poll reattaches to the same job, but
+  // keep the accumulated `found` set — deltas aren't replayed.
+  const dropStream = useCallback(() => {
+    openRef.current = false;
+    esRef.current?.close();
+    esRef.current = null;
+    setActiveId(null);
+  }, []);
+
+  useEffect(() => {
+    if (!live) {
+      finish();
+      return;
+    }
+    if (activeId === live.id && esRef.current) return; // already streaming it
+    // Close whatever was open without wiping `found` — a reattach after a
+    // transient drop keeps its accumulated hosts; only a different job
+    // starts a fresh set.
+    dropStream();
+    if (jobRef.current !== live.id) setFound(new Set());
+    jobRef.current = live.id;
+    openRef.current = true;
+    setActiveId(live.id);
+    const es = new EventSource(scanStreamUrl(live.id));
+    esRef.current = es;
+    es.onmessage = (m) => {
+      try {
+        const d = JSON.parse(m.data) as ScanEvent;
+        if (Array.isArray(d.found) && d.found.length) {
+          setFound((prev) => {
+            const next = new Set(prev);
+            for (const ip of d.found!) {
+              try {
+                next.add(ipToInt(ip));
+              } catch {
+                /* ignore non-IP entries */
+              }
+            }
+            return next;
+          });
+        }
+        if (["completed", "failed", "cancelled"].includes(d.status)) finish();
+      } catch {
+        /* ignore malformed event */
+      }
+    };
+    es.onerror = dropStream;
+    // No cleanup close here — `live` gets a new identity every poll; closing
+    // in cleanup would thrash the stream. Unmount + unmatch close below.
+  }, [live, activeId, finish, dropStream]);
+
+  // Close on unmount / route change.
+  useEffect(() => () => esRef.current?.close(), []);
+
+  return { found, scanning: activeId != null };
 }
 
 export function QuickScanDialog({

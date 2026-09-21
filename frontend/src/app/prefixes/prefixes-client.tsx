@@ -692,7 +692,19 @@ export default function PrefixesPage() {
         <h1 className="text-xl font-semibold">Subnets</h1>
         <div className="flex gap-2">
           <Button size="sm" variant="outline" asChild>
-            <a href="/api/v1/prefixes/export.csv" download>
+            <a
+              href={
+                "/api/v1/prefixes/export.csv" +
+                (vrfFilter !== "all" || q
+                  ? `?${new URLSearchParams({
+                      ...(vrfFilter !== "all" ? { vrf_id: vrfFilter } : {}),
+                      ...(q ? { q } : {}),
+                    })}`
+                  : "")
+              }
+              download
+              title="Downloads the prefixes the current filters show"
+            >
               <Download /> CSV
             </a>
           </Button>

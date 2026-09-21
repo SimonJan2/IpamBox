@@ -52,15 +52,51 @@ async def prefix_tree(session: AsyncSession = Depends(get_session)):
     return await build_tree(session)
 
 
-@router.get("/export.csv")
-async def export_prefixes(session: AsyncSession = Depends(get_session)):
-    rows = (
-        await session.execute(
-            select(Prefix).options(selectinload(Prefix.vlan), selectinload(Prefix.vrf))
+async def _prefix_rows(
+    session: AsyncSession,
+    vrf_id: int | None,
+    site_id: int | None,
+    status: PrefixStatus | None,
+    tag_id: int | None,
+    q: str | None,
+) -> list[Prefix]:
+    """Shared list/export filter construction — one predicate, two callers."""
+    stmt = select(Prefix).options(selectinload(Prefix.vlan), selectinload(Prefix.vrf))
+    if vrf_id is not None:
+        stmt = stmt.where(Prefix.vrf_id == vrf_id)
+    if site_id is not None:
+        stmt = stmt.where(Prefix.site_id == site_id)
+    if status is not None:
+        stmt = stmt.where(Prefix.status == status)
+    if tag_id is not None:
+        stmt = stmt.where(
+            Prefix.id.in_(
+                select(TagAssignment.object_id).where(
+                    TagAssignment.object_type == "Prefix",
+                    TagAssignment.tag_id == tag_id,
+                )
+            )
         )
-    ).scalars().all()
+    rows = (await session.execute(stmt)).scalars().all()
+    if q:
+        rows = [p for p in rows if q.lower() in str(p.prefix)]
+    return rows
+
+
+@router.get("/export.csv")
+async def export_prefixes(
+    vrf_id: int | None = None,
+    site_id: int | None = None,
+    status: PrefixStatus | None = None,
+    tag_id: int | None = None,
+    q: str | None = Query(default=None, description="substring match on CIDR"),
+    session: AsyncSession = Depends(get_session),
+):
+    """Same filters as the list endpoint — a filtered view exports what it shows."""
+    rows = await _prefix_rows(session, vrf_id, site_id, status, tag_id, q)
+    filtered = any(x is not None for x in (vrf_id, site_id, status, tag_id, q))
     return csv_response(
-        "prefixes.csv",
+        "prefixes-filtered.csv" if filtered else "prefixes.csv",
         ["prefix", "vrf", "site_id", "vlan", "status", "description", "created_at"],
         [
             [
@@ -88,25 +124,7 @@ async def list_prefixes(
     limit: int | None = Query(default=None, ge=1, le=1000),
     session: AsyncSession = Depends(get_session),
 ):
-    q_stmt = select(Prefix).options(selectinload(Prefix.vlan))
-    if vrf_id is not None:
-        q_stmt = q_stmt.where(Prefix.vrf_id == vrf_id)
-    if site_id is not None:
-        q_stmt = q_stmt.where(Prefix.site_id == site_id)
-    if status is not None:
-        q_stmt = q_stmt.where(Prefix.status == status)
-    if tag_id is not None:
-        q_stmt = q_stmt.where(
-            Prefix.id.in_(
-                select(TagAssignment.object_id).where(
-                    TagAssignment.object_type == "Prefix",
-                    TagAssignment.tag_id == tag_id,
-                )
-            )
-        )
-    rows = (await session.execute(q_stmt)).scalars().all()
-    if q:
-        rows = [p for p in rows if q.lower() in str(p.prefix)]
+    rows = await _prefix_rows(session, vrf_id, site_id, status, tag_id, q)
 
     # One grouped COUNT covers every returned prefix — not a per-prefix
     # round-trip (utilization ordering needs the counts up front anyway).

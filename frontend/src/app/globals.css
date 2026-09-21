@@ -133,6 +133,39 @@
     @apply outline outline-2 -outline-offset-2 outline-primary;
     z-index: 1;
   }
+
+  /* Live-scan overlay on subnet-grid cells (F15): a found host pulses with
+     an inset ring — emerald when nothing is documented there yet, sky when
+     the IP already has an address row. The pulse is a brightness filter so
+     the status glyph and surface color stay readable underneath. */
+  .ipcell-found-new {
+    @apply outline outline-2 -outline-offset-2 outline-emerald-400;
+    z-index: 1;
+    animation: ipcell-scanpulse 1.6s ease-in-out infinite;
+  }
+  .ipcell-found-known {
+    @apply outline outline-2 -outline-offset-2 outline-sky-400;
+    z-index: 1;
+    animation: ipcell-scanpulse 1.6s ease-in-out infinite;
+  }
+  @keyframes ipcell-scanpulse {
+    0%,
+    100% {
+      filter: brightness(1);
+    }
+    50% {
+      filter: brightness(1.5);
+    }
+  }
+
+  /* Changelog diff values (F7): the removed value strikes through in rose,
+     the new value lands in emerald. */
+  .chg-old {
+    @apply text-rose-400 line-through decoration-rose-400/60;
+  }
+  .chg-new {
+    @apply text-emerald-400;
+  }
 }
 
 :root[data-theme="light"] .ipcell-free {
@@ -165,6 +198,18 @@
 }
 :root[data-theme="light"] .text-range {
   @apply text-sky-700;
+}
+:root[data-theme="light"] .ipcell-found-new {
+  @apply outline-emerald-600;
+}
+:root[data-theme="light"] .ipcell-found-known {
+  @apply outline-sky-600;
+}
+:root[data-theme="light"] .chg-old {
+  @apply text-rose-700 decoration-rose-700/60;
+}
+:root[data-theme="light"] .chg-new {
+  @apply text-emerald-700;
 }
 
 /* Print: white paper, no app chrome (sidebar/header/drawers carry

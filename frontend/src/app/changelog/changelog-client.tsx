@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 import { api } from "@/lib/api";
 import { useAsyncData } from "@/lib/use-async-data";
 import { usePolling } from "@/lib/use-polling";
@@ -7,6 +9,7 @@ import { timeAgo } from "@/lib/utils";
 import { useUrlParams, useUrlText } from "@/lib/url-state";
 import type { ChangeLogEntry } from "@/types";
 import { AsyncPanel } from "@/components/async-panel";
+import { ChangeDiff } from "@/components/history-panel";
 import { SavedViews } from "@/components/saved-views";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,27 +29,26 @@ const ACTION_STYLES: Record<string, string> = {
   delete: "border-rose-500/30 bg-rose-500/10 text-rose-400",
 };
 
-function fmt(v: unknown): string {
-  if (v === null || v === undefined || v === "") return "—";
-  if (typeof v === "object") return JSON.stringify(v);
-  return String(v);
-}
+const INLINE_MAX = 4;
 
+/** First few field diffs inline; longer change sets expand per entry. */
 function ChangeSummary({ entry }: { entry: ChangeLogEntry }) {
-  const shown = entry.changes.slice(0, 4);
-  const more = entry.changes.length - shown.length;
+  const [open, setOpen] = useState(false);
+  const total = entry.changes.length;
+  const shown = open ? entry.changes : entry.changes.slice(0, INLINE_MAX);
   return (
-    <div className="space-y-0.5 font-mono text-xs text-muted-foreground">
-      {shown.map((c) => (
-        <div key={c.field} className="truncate">
-          <span className="text-foreground/80">{c.field}</span>
-          {entry.action !== "create" && (
-            <>: <span className="line-through opacity-60">{fmt(c.before)}</span></>
-          )}{" "}
-          → <span>{fmt(c.after)}</span>
-        </div>
-      ))}
-      {more > 0 && <div className="opacity-60">+{more} more</div>}
+    <div>
+      <ChangeDiff changes={shown} action={entry.action} />
+      {total > INLINE_MAX && (
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+          className="font-mono text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+        >
+          {open ? "show less" : `+${total - INLINE_MAX} more`}
+        </button>
+      )}
     </div>
   );
 }

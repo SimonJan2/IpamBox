@@ -25,37 +25,136 @@ from app.services.ipam import IPAMError, get_or_404
 
 router = APIRouter(prefix="/addresses", tags=["addresses"])
 
+ADDRESS_CSV_COLUMNS = [
+    "address", "prefix_id", "vrf_id", "hostname", "mac_address",
+    "vendor", "status", "role", "nat_inside_id", "device_type",
+    "open_ports", "last_seen", "notes", "display_color",
+]
+
+
+def _addresses_stmt(
+    vrf_id: int | None,
+    prefix_id: int | None,
+    statuses: set[IPStatus] | None,
+    tag_ids: set[int] | None,
+    untagged: bool,
+):
+    """Shared list/export filter construction — one predicate, two callers."""
+    stmt = select(IPAddress).order_by(IPAddress.address_int)
+    if vrf_id is not None:
+        stmt = stmt.where(IPAddress.vrf_id == vrf_id)
+    if prefix_id is not None:
+        stmt = stmt.where(IPAddress.prefix_id == prefix_id)
+    if statuses:
+        stmt = stmt.where(IPAddress.status.in_(statuses))
+    if tag_ids:
+        # address carries at least one of the selected tags
+        stmt = stmt.where(
+            IPAddress.id.in_(
+                select(TagAssignment.object_id).where(
+                    TagAssignment.object_type == "IPAddress",
+                    TagAssignment.tag_id.in_(tag_ids),
+                )
+            )
+        )
+    if untagged:
+        stmt = stmt.where(
+            ~IPAddress.id.in_(
+                select(TagAssignment.object_id).where(
+                    TagAssignment.object_type == "IPAddress"
+                )
+            )
+        )
+    return stmt
+
+
+def _q_filter(rows, q: str):
+    """q folds Hebrew and matches notes — evaluated in Python, so callers
+    apply limit/offset after filtering, not before."""
+    from app.services.workbook.normalize import fold_hebrew
+
+    ql = fold_hebrew(q.lower())
+    return [
+        r
+        for r in rows
+        if ql in str(r.address).lower()
+        or (r.hostname and ql in fold_hebrew(r.hostname.lower()))
+        or (r.mac_address and ql in r.mac_address.lower())
+        or (r.vendor and ql in fold_hebrew(r.vendor.lower()))
+        or (r.notes and ql in fold_hebrew(r.notes.lower()))
+    ]
+
+
+def _parse_statuses(raw: str | None) -> set[IPStatus] | None:
+    """CSV of status names (e.g. 'active,discovered') -> set; 422 on bad."""
+    if raw is None or not raw.strip():
+        return None
+    try:
+        return {IPStatus(p.strip()) for p in raw.split(",") if p.strip()}
+    except ValueError as e:
+        raise HTTPException(422, f"bad status value: {e}")
+
+
+def _parse_tag_ids(raw: str | None, tag_id: int | None) -> set[int] | None:
+    """CSV of tag ids merged with the singular tag_id param."""
+    ids: set[int] = set()
+    if raw:
+        try:
+            ids.update(int(p.strip()) for p in raw.split(",") if p.strip())
+        except ValueError:
+            raise HTTPException(422, f"bad tags value: {raw!r}")
+    if tag_id is not None:
+        ids.add(tag_id)
+    return ids or None
+
+
+def _address_csv_row(a: IPAddress) -> list:
+    return [
+        str(a.address), a.prefix_id, a.vrf_id, a.hostname or "",
+        a.mac_address or "", a.vendor or "", a.status.value,
+        a.role.value if a.role else "", a.nat_inside_id or "",
+        a.device_type or "",
+        " ".join(str(p) for p in (a.open_ports or [])),
+        a.last_seen.isoformat() if a.last_seen else "", a.notes or "",
+        a.display_color or "",
+    ]
+
 
 @router.get("/export.csv")
 async def export_addresses(
     prefix_id: int | None = None,
+    vrf_id: int | None = None,
+    status: str | None = Query(
+        default=None, description="status or comma-separated status list"
+    ),
+    tag_id: int | None = None,
+    tags: str | None = Query(
+        default=None,
+        description="comma-separated tag ids — address must carry at least one",
+    ),
+    untagged: bool = False,
+    q: str | None = Query(
+        default=None, description="match address/hostname/mac/vendor/notes"
+    ),
     session: AsyncSession = Depends(get_session),
 ):
-    stmt = select(IPAddress).order_by(IPAddress.address_int)
-    if prefix_id is not None:
-        stmt = stmt.where(IPAddress.prefix_id == prefix_id)
-    rows = await stamp_colors(
-        session, "addresses", (await session.execute(stmt)).scalars().all()
-    )
+    """Same filters as the list endpoint — what a filtered view shows is what
+    downloads. Extras over the list: `status`/`tags` accept CSV sets and
+    `untagged` selects addresses with no tag assignments."""
+    statuses = _parse_statuses(status)
+    tag_ids = _parse_tag_ids(tags, tag_id)
+    stmt = _addresses_stmt(vrf_id, prefix_id, statuses, tag_ids, untagged)
+    rows = (await session.execute(stmt)).scalars().all()
+    if q:
+        rows = _q_filter(rows, q)
+    rows = await stamp_colors(session, "addresses", rows)
+    filtered = any(
+        x is not None for x in (vrf_id, prefix_id, statuses, tag_ids)
+    ) or untagged or bool(q)
     return csv_response(
-        "addresses.csv",
-        [
-            "address", "prefix_id", "vrf_id", "hostname", "mac_address",
-            "vendor", "status", "role", "nat_inside_id", "device_type",
-            "open_ports", "last_seen", "notes", "display_color",
-        ],
-        [
-            [
-                str(a.address), a.prefix_id, a.vrf_id, a.hostname or "",
-                a.mac_address or "", a.vendor or "", a.status.value,
-                a.role.value if a.role else "", a.nat_inside_id or "",
-                a.device_type or "",
-                " ".join(str(p) for p in (a.open_ports or [])),
-                a.last_seen.isoformat() if a.last_seen else "", a.notes or "",
-                a.display_color or "",
-            ]
-            for a in rows
-        ],
+        "addresses-filtered.csv" if filtered else "addresses.csv",
+        ADDRESS_CSV_COLUMNS,
+        [_address_csv_row(a) for a in rows],
     )
 
 
@@ -240,37 +339,15 @@ async def list_addresses(
     offset: int = 0,
     session: AsyncSession = Depends(get_session),
 ):
-    stmt = select(IPAddress).order_by(IPAddress.address_int)
-    if vrf_id is not None:
-        stmt = stmt.where(IPAddress.vrf_id == vrf_id)
-    if prefix_id is not None:
-        stmt = stmt.where(IPAddress.prefix_id == prefix_id)
-    if status is not None:
-        stmt = stmt.where(IPAddress.status == status)
-    if tag_id is not None:
-        stmt = stmt.where(
-            IPAddress.id.in_(
-                select(TagAssignment.object_id).where(
-                    TagAssignment.object_type == "IPAddress",
-                    TagAssignment.tag_id == tag_id,
-                )
-            )
-        )
+    stmt = _addresses_stmt(
+        vrf_id,
+        prefix_id,
+        {status} if status is not None else None,
+        {tag_id} if tag_id is not None else None,
+        untagged=False,
+    )
     if q:
-        # q folds Hebrew and matches notes/vendor — evaluated in Python, so
-        # limit/offset apply after filtering, not before.
-        from app.services.workbook.normalize import fold_hebrew
-
-        ql = fold_hebrew(q.lower())
-        rows = [
-            r
-            for r in (await session.execute(stmt)).scalars()
-            if ql in str(r.address).lower()
-            or (r.hostname and ql in fold_hebrew(r.hostname.lower()))
-            or (r.mac_address and ql in r.mac_address.lower())
-            or (r.vendor and ql in fold_hebrew(r.vendor.lower()))
-            or (r.notes and ql in fold_hebrew(r.notes.lower()))
-        ]
+        rows = _q_filter((await session.execute(stmt)).scalars().all(), q)
         return await stamp_colors(
             session, "addresses", rows[offset : offset + limit]
         )

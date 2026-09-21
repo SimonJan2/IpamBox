@@ -165,6 +165,23 @@ async def run_scan(ctx: dict, scan_id: int) -> dict:
                 except Exception:
                     log.warning("progress publish failed", exc_info=True)
 
+        async def hosts_found(ips: list[str], phase: str):
+            # Additive delta on the progress channel — SSE consumers that only
+            # know {phase, progress, eta_seconds} simply ignore `found`.
+            try:
+                await _publish(
+                    scan_id,
+                    {
+                        "scan_id": scan_id,
+                        "phase": phase,
+                        "progress": job.progress,
+                        "status": "running",
+                        "found": ips,
+                    },
+                )
+            except Exception:
+                log.warning("found-hosts publish failed", exc_info=True)
+
         try:
             cidr = job.cidr or detect_local_cidr(eff.values["scan_interface"])
             if not cidr:
@@ -203,6 +220,7 @@ async def run_scan(ctx: dict, scan_id: int) -> dict:
                 tcp_timeout=eff.values["scan_tcp_timeout"],
                 concurrency=eff.values["scan_concurrency"],
                 on_progress=progress,
+                on_hosts=hosts_found,
                 should_stop=_cancelled,
             )
 

@@ -278,6 +278,96 @@ async def test_csv_export_import(client):
     assert {x["address"] for x in got} == {"10.95.0.7"}
 
 
+async def test_addresses_export_respects_filters(client):
+    """export.csv takes the same filters as the list endpoint — a filtered
+    view downloads only the rows it shows (F8)."""
+    p = await _prefix(client, "10.85.0.0/24")
+    other = await _prefix(client, "10.86.0.0/24")
+    tag = (
+        await client.post("/api/v1/tags", json={"name": "core", "color": "#3B82F6"})
+    ).json()
+    made = {}
+    for addr, pid, kw in [
+        ("10.85.0.5", p["id"], {"status": "active", "hostname": "core-sw"}),
+        ("10.85.0.6", p["id"], {"status": "reserved"}),
+        ("10.85.0.7", p["id"], {"status": "discovered"}),
+        ("10.86.0.5", other["id"], {"status": "active"}),
+    ]:
+        r = await client.post(
+            "/api/v1/addresses",
+            json={"address": addr, "prefix_id": pid, **kw},
+        )
+        assert r.status_code == 201, r.text
+        made[addr] = r.json()
+    r = await client.post(
+        f"/api/v1/tags/{tag['id']}/assignments",
+        json={"object_type": "IPAddress", "object_id": made["10.85.0.5"]["id"]},
+    )
+    assert r.status_code == 201, r.text
+
+    # no params -> every address; unchanged default behaviour + filename
+    r = await client.get("/api/v1/addresses/export.csv")
+    assert all(ip in r.text for ip in made)
+    assert 'filename="addresses.csv"' in r.headers["content-disposition"]
+
+    # status accepts the panel's CSV multi-select; prefix_id still scopes
+    r = await client.get(
+        "/api/v1/addresses/export.csv",
+        params={"prefix_id": p["id"], "status": "reserved,discovered"},
+    )
+    assert "10.85.0.6" in r.text and "10.85.0.7" in r.text
+    assert "10.85.0.5" not in r.text and "10.86.0.5" not in r.text
+    assert 'filename="addresses-filtered.csv"' in r.headers["content-disposition"]
+
+    # tags CSV — the address must carry at least one selected tag
+    r = await client.get(
+        "/api/v1/addresses/export.csv", params={"tags": str(tag["id"])}
+    )
+    assert "10.85.0.5" in r.text and "10.85.0.6" not in r.text
+
+    # untagged -> the complement set
+    r = await client.get("/api/v1/addresses/export.csv", params={"untagged": 1})
+    assert "10.85.0.5" not in r.text and "10.86.0.5" in r.text
+
+    # q shares the list predicate (hostname hit, prefix sibling excluded)
+    r = await client.get(
+        "/api/v1/addresses/export.csv",
+        params={"prefix_id": p["id"], "q": "core-sw"},
+    )
+    assert "10.85.0.5" in r.text and "10.85.0.6" not in r.text
+
+    # bad values -> 422, not 500
+    for params in ({"status": "bogus"}, {"tags": "x"}, {"tags": "1,x"}):
+        r = await client.get("/api/v1/addresses/export.csv", params=params)
+        assert r.status_code == 422, (params, r.status_code)
+
+
+async def test_prefixes_export_respects_filters(client):
+    """Same filtered-export treatment on the prefixes CSV (F8)."""
+    v2 = (await client.post("/api/v1/vrfs", json={"name": "Filtered"})).json()["id"]
+    await _prefix(client, "10.87.0.0/24")
+    r = await client.post(
+        "/api/v1/prefixes", json={"prefix": "10.88.0.0/24", "vrf_id": v2}
+    )
+    assert r.status_code == 201, r.text
+
+    csv_all = (await client.get("/api/v1/prefixes/export.csv")).text
+    assert "10.87.0.0/24" in csv_all and "10.88.0.0/24" in csv_all
+
+    csv_v = (
+        await client.get("/api/v1/prefixes/export.csv", params={"vrf_id": v2})
+    ).text
+    assert "10.88.0.0/24" in csv_v and "10.87.0.0/24" not in csv_v
+
+    csv_q = (
+        await client.get("/api/v1/prefixes/export.csv", params={"q": "10.87"})
+    ).text
+    assert "10.87.0.0/24" in csv_q and "10.88.0.0/24" not in csv_q
+
+    r = await client.get("/api/v1/prefixes/export.csv", params={"status": "bogus"})
+    assert r.status_code == 422
+
+
 async def test_dashboard_attention_fields(client, session):
     today = date.today()
     for name, days in [("expired-cert", -10), ("soon-cert", 10), ("far-cert", 300)]:

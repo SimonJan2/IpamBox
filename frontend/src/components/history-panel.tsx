@@ -1,11 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
+import { ChevronRight } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { fmtTs } from "@/lib/prefs";
 import { useAsyncData } from "@/lib/use-async-data";
-import { timeAgo } from "@/lib/utils";
-import type { ChangeLogEntry } from "@/types";
+import { cn, timeAgo } from "@/lib/utils";
+import type { ChangeField, ChangeLogEntry } from "@/types";
 import { AsyncPanel } from "@/components/async-panel";
 import {
   Dialog,
@@ -21,6 +24,66 @@ const ACTION_STYLES: Record<string, string> = {
 };
 
 const DEFAULT_LIMIT = 50;
+const MAX_VAL = 96;
+
+/** One changelog value for display: null → "—", booleans → yes/no,
+ *  ISO datetimes → fmtTs, objects → compact JSON, long text truncated. */
+export function fmtChangeVal(v: unknown): string {
+  if (v === null || v === undefined || v === "") return "—";
+  if (typeof v === "boolean") return v ? "yes" : "no";
+  if (typeof v === "object") return JSON.stringify(v);
+  const s = String(v);
+  // datetime strings (date-only values like expires_on stay untouched)
+  if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(s)) return fmtTs(s);
+  return s;
+}
+
+function ChangeVal({ v, old }: { v: unknown; old?: boolean }) {
+  const full = fmtChangeVal(v);
+  const shown = full.length > MAX_VAL ? `${full.slice(0, MAX_VAL - 1)}…` : full;
+  return (
+    <span
+      dir="auto"
+      title={full}
+      className={cn(
+        "truncate",
+        full === "—" ? "text-muted-foreground" : old ? "chg-old" : "chg-new"
+      )}
+    >
+      {shown}
+    </span>
+  );
+}
+
+/** Per-field `before → after` rows for one changelog entry. On creates the
+ *  before side is always empty so only the new value renders; updates and
+ *  deletes show both ends. */
+export function ChangeDiff({
+  changes,
+  action,
+}: {
+  changes: ChangeField[];
+  action: ChangeLogEntry["action"];
+}) {
+  return (
+    <div className="space-y-0.5 font-mono text-xs text-muted-foreground">
+      {changes.map((c) => (
+        <div key={c.field} className="flex min-w-0 items-baseline gap-1">
+          <span className="shrink-0 text-foreground/80">{c.field}:</span>
+          {action !== "create" && (
+            <>
+              <ChangeVal v={c.before} old />
+              <span aria-hidden="true" className="shrink-0">
+                →
+              </span>
+            </>
+          )}
+          <ChangeVal v={c.after} />
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function summary(e: ChangeLogEntry): string {
   if (e.action === "update") {
@@ -30,6 +93,53 @@ function summary(e: ChangeLogEntry): string {
       : fields.join(", ");
   }
   return e.actor;
+}
+
+/** One entry: collapsed scan line by default; entries carrying field
+ *  changes expand in place to the full before → after diff. */
+function HistoryEntry({ e }: { e: ChangeLogEntry }) {
+  const [open, setOpen] = useState(false);
+  const expandable = e.changes.length > 0;
+  return (
+    <div>
+      <div className="flex items-baseline gap-2">
+        <span className={ACTION_STYLES[e.action]}>{e.action}</span>
+        {expandable ? (
+          <button
+            type="button"
+            aria-expanded={open}
+            onClick={() => setOpen(!open)}
+            title={open ? "Hide values" : "Show changed values"}
+            className="flex min-w-0 flex-1 items-baseline gap-1 text-left hover:text-foreground"
+          >
+            <ChevronRight
+              aria-hidden="true"
+              className={cn(
+                "h-3 w-3 shrink-0 translate-y-px transition-transform",
+                open && "rotate-90"
+              )}
+            />
+            <span dir="auto" className="truncate">
+              {summary(e)}
+            </span>
+          </button>
+        ) : (
+          <span dir="auto" className="min-w-0 flex-1 truncate">
+            {summary(e)}
+          </span>
+        )}
+        {e.action === "update" && (
+          <span className="shrink-0 opacity-70">{e.actor}</span>
+        )}
+        <span className="shrink-0">{timeAgo(e.ts)}</span>
+      </div>
+      {open && expandable && (
+        <div className="ml-2 mt-1 border-l-2 border-border pl-2">
+          <ChangeDiff changes={e.changes} action={e.action} />
+        </div>
+      )}
+    </div>
+  );
 }
 
 /** Read-only, per-object changelog slice. Capped at `limit` rows with a
@@ -68,16 +178,7 @@ export function HistoryPanel({
       >
         <div className="space-y-1.5 text-xs text-muted-foreground">
           {shown.map((h) => (
-            <div key={h.id} className="flex items-baseline gap-2">
-              <span className={ACTION_STYLES[h.action]}>{h.action}</span>
-              <span dir="auto" className="flex-1 truncate">
-                {summary(h)}
-              </span>
-              {h.action === "update" && (
-                <span className="shrink-0 opacity-70">{h.actor}</span>
-              )}
-              <span className="shrink-0">{timeAgo(h.ts)}</span>
-            </div>
+            <HistoryEntry key={h.id} e={h} />
           ))}
         </div>
       </AsyncPanel>
