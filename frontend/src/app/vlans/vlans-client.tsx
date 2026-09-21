@@ -18,6 +18,7 @@ import { PERM } from "@/lib/permissions";
 import { cn, foldHebrew } from "@/lib/utils";
 import { useUrlParam, useUrlSorting, useUrlText } from "@/lib/url-state";
 import { useRowNav } from "@/lib/row-nav";
+import { useRowColor, rowTintStyle } from "@/lib/row-color";
 import { useRowOrder } from "@/lib/row-order";
 import {
   DragHandle,
@@ -30,6 +31,7 @@ import { SortHeader, columnAriaSort } from "@/components/sort-header";
 import { AsyncPanel } from "@/components/async-panel";
 import { HistoryDialog } from "@/components/history-panel";
 import { InlineText } from "@/components/inline-edit";
+import { RowColorLegend, RowColorPicker } from "@/components/row-color";
 import { SavedViews } from "@/components/saved-views";
 import type { Site, Vlan, VlanGroup, VlanStatus } from "@/types";
 import { Badge } from "@/components/ui/badge";
@@ -450,6 +452,10 @@ export default function VlansPage() {
     getVisibleIds: (): number[] => tableRows.map((r) => r.original.id),
     enabled: canWrite && !orderBlock,
   });
+  const setRowColor = useRowColor<Vlan>({
+    path: "/api/v1/vlans",
+    setData: vlansQ.setData,
+  });
 
   const columns = useMemo<ColumnDef<VlanRow>[]>(
     () => [
@@ -543,6 +549,14 @@ export default function VlansPage() {
                 onToggle={() =>
                   order.setPinned(c.row.original.id, !c.row.original.pinned)
                 }
+              />
+            )}
+            {canWrite && (
+              <RowColorPicker
+                value={c.row.original.row_color}
+                displayColor={c.row.original.display_color}
+                name={`VLAN ${c.row.original.vid} ${c.row.original.name}`}
+                onPick={(color) => setRowColor(c.row.original.id, color)}
               />
             )}
             <Button
@@ -758,6 +772,7 @@ export default function VlansPage() {
         <span className="ml-auto text-sm text-muted-foreground">
           {tableRows.length} of {vlans.length}
         </span>
+        <RowColorLegend />
         <SavedViews pageKey="vlans" />
       </div>
 
@@ -799,6 +814,7 @@ export default function VlansPage() {
                     if (ni === null) rp.onKeyDown(e);
                     else focusRow(ni);
                   }}
+                  style={rowTintStyle(row.original.display_color)}
                   className={cn(
                     row.original.pinned && "bg-muted/30",
                     "focus-visible:bg-muted/50 focus-visible:outline-none"

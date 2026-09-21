@@ -25,12 +25,14 @@ from app.schemas.certificate import (
 from app.schemas.circuit import CircuitCreate, CircuitOut, CircuitUpdate
 from app.schemas.common import ReorderBody
 from app.schemas.service import ServiceCreate, ServiceOut, ServiceUpdate
+from app.services.colors import stamp_colors
 from app.services.ipam import IPAMError, get_or_404
 from app.services.ordering import ordered, reorder
 
 
 def _crud_router(prefix, tag, model, out_schema, create_schema, update_schema,
                  search_fields):
+    entity_type = prefix.lstrip("/")
     router = APIRouter(prefix=prefix, tags=[tag])
 
     @router.get("", response_model=list[out_schema])
@@ -55,7 +57,8 @@ def _crud_router(prefix, tag, model, out_schema, create_schema, update_schema,
                 )
             )
         stmt = ordered(stmt, model, model.id)
-        return (await session.execute(stmt)).scalars().all()
+        rows = (await session.execute(stmt)).scalars().all()
+        return await stamp_colors(session, entity_type, rows)
 
     @router.post(
         "",
@@ -73,6 +76,7 @@ def _crud_router(prefix, tag, model, out_schema, create_schema, update_schema,
             await session.rollback()
             raise HTTPException(409, "duplicate or invalid value") from e
         await session.refresh(obj)
+        await stamp_colors(session, entity_type, [obj])
         return obj
 
     # Declared before /{item_id} so the literal path can't be shadowed.
@@ -92,9 +96,11 @@ def _crud_router(prefix, tag, model, out_schema, create_schema, update_schema,
     @router.get("/{item_id}", response_model=out_schema)
     async def get_item(item_id: int, session: AsyncSession = Depends(get_session)):
         try:
-            return await get_or_404(session, model, item_id)
+            obj = await get_or_404(session, model, item_id)
         except IPAMError as e:
             raise HTTPException(e.status_code, str(e))
+        await stamp_colors(session, entity_type, [obj])
+        return obj
 
     @router.patch(
         "/{item_id}",
@@ -115,6 +121,7 @@ def _crud_router(prefix, tag, model, out_schema, create_schema, update_schema,
             await session.rollback()
             raise HTTPException(409, "duplicate or invalid value") from e
         await session.refresh(obj)
+        await stamp_colors(session, entity_type, [obj])
         return obj
 
     @router.delete(

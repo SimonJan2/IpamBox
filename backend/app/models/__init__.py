@@ -4,6 +4,7 @@ from app.models.base import Base
 from app.models.certificate import Certificate
 from app.models.change_log import ChangeLog
 from app.models.circuit import Circuit
+from app.models.color_rule import ColorRule
 from app.models.import_batch import ImportBatch, ImportBatchStatus
 from app.models.ip_address import IPAddress, IPRole, IPStatus
 from app.models.ip_range import IPRange, IPRangeRole
@@ -23,6 +24,7 @@ __all__ = [
     "AssetKind",
     "Certificate",
     "Circuit",
+    "ColorRule",
     "ImportBatch",
     "ImportBatchStatus",
     "Service",

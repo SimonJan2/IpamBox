@@ -16,6 +16,7 @@ from app.schemas.vlan import (
     VLANOut,
     VLANUpdate,
 )
+from app.services.colors import stamp_colors
 from app.services.ipam import IPAMError, get_or_404
 from app.services.ordering import ordered, reorder
 
@@ -134,7 +135,7 @@ async def list_vlans(
             for v in rows
             if ql in fold_hebrew(v.name.lower()) or ql in str(v.vid)
         ]
-    return rows
+    return await stamp_colors(session, "vlans", rows)
 
 
 @router.post(
@@ -160,6 +161,7 @@ async def create_vlan(body: VLANCreate, session: AsyncSession = Depends(get_sess
         await session.rollback()
         raise HTTPException(400, "invalid vlan data")
     await session.refresh(vlan)
+    await stamp_colors(session, "vlans", [vlan])
     return vlan
 
 
@@ -202,6 +204,7 @@ async def update_vlan(
         setattr(vlan, field, value)
     await session.commit()
     await session.refresh(vlan)
+    await stamp_colors(session, "vlans", [vlan])
     return vlan
 
 

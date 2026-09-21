@@ -19,6 +19,7 @@ import { PERM } from "@/lib/permissions";
 import { cn, foldHebrew } from "@/lib/utils";
 import { useUrlSorting, useUrlText } from "@/lib/url-state";
 import { useRowNav } from "@/lib/row-nav";
+import { useRowColor, rowTintStyle } from "@/lib/row-color";
 import { useRowOrder } from "@/lib/row-order";
 import {
   DragHandle,
@@ -27,6 +28,7 @@ import {
   RowOrderDnd,
   SortableRow,
 } from "@/components/row-order";
+import { RowColorLegend, RowColorPicker } from "@/components/row-color";
 import { SortHeader, columnAriaSort } from "@/components/sort-header";
 import { AsyncPanel } from "@/components/async-panel";
 import { HistoryDialog } from "@/components/history-panel";
@@ -345,6 +347,10 @@ export default function SitesPage() {
     getVisibleIds: (): number[] => tableRows.map((r) => r.original.id),
     enabled: canWrite && !orderBlock,
   });
+  const setRowColor = useRowColor<Site>({
+    path: "/api/v1/sites",
+    setData: sitesQ.setData,
+  });
 
   const columns = useMemo<ColumnDef<Site>[]>(
     () => [
@@ -452,6 +458,14 @@ export default function SitesPage() {
                 }
               />
             )}
+            {canWrite && (
+              <RowColorPicker
+                value={c.row.original.row_color}
+                displayColor={c.row.original.display_color}
+                name={c.row.original.name}
+                onPick={(color) => setRowColor(c.row.original.id, color)}
+              />
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -487,7 +501,7 @@ export default function SitesPage() {
         ),
       },
     ],
-    [canWrite, canDelete, prefs.showSlugs, saveField, order.setPinned, orderBlock]
+    [canWrite, canDelete, prefs.showSlugs, saveField, order.setPinned, orderBlock, setRowColor]
   );
 
   const table = useReactTable({
@@ -542,6 +556,7 @@ export default function SitesPage() {
         <span className="ml-auto text-sm text-muted-foreground">
           {tableRows.length} of {sites.length}
         </span>
+        <RowColorLegend />
         <SavedViews pageKey="sites" />
       </div>
 
@@ -583,6 +598,7 @@ export default function SitesPage() {
                     if (ni === null) rp.onKeyDown(e);
                     else focusRow(ni);
                   }}
+                  style={rowTintStyle(row.original.display_color)}
                   className={cn(
                     row.original.pinned && "bg-muted/30",
                     "focus-visible:bg-muted/50 focus-visible:outline-none"

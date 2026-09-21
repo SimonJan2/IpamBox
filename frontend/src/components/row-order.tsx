@@ -90,6 +90,7 @@ export function SortableRow({
   rowId,
   dragDisabled,
   className,
+  style,
   children,
   ...rest
 }: SortableRowProps) {
@@ -119,14 +120,17 @@ export function SortableRow({
       <TableRow
         ref={setRefs}
         data-dragging={isDragging || undefined}
-        style={
-          transform
+        style={{
+          // Caller styles (row-color tint) merge with — never clobber — the
+          // dnd transform.
+          ...(transform
             ? {
                 transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
                 transition,
               }
-            : { transition }
-        }
+            : { transition }),
+          ...style,
+        }}
         className={cn(className, isDragging && "relative z-10 bg-muted")}
         {...trProps}
       >

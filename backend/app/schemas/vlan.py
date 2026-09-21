@@ -1,8 +1,9 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.vlan import VLANStatus
+from app.schemas.common import hex_color_or_none
 
 
 class VLANGroupCreate(BaseModel):
@@ -43,6 +44,12 @@ class VLANUpdate(BaseModel):
     description: str | None = None
     pinned: bool | None = None
     sort_order: int | None = None
+    row_color: str | None = None
+
+    @field_validator("row_color")
+    @classmethod
+    def _row_color(cls, v: str | None) -> str | None:
+        return hex_color_or_none(v)
 
 
 class VLANOut(BaseModel):
@@ -57,4 +64,6 @@ class VLANOut(BaseModel):
     description: str | None
     pinned: bool
     sort_order: int | None
+    row_color: str | None
+    display_color: str | None = None
     created_at: datetime

@@ -5,7 +5,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.ip_address import IPRole, IPStatus
-from app.schemas.common import ip_display
+from app.schemas.common import hex_color_or_none, ip_display
 
 _MAC_RE = re.compile(r"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
 
@@ -63,11 +63,17 @@ class IPAddressUpdate(BaseModel):
     custom_fields: dict | None = None
     notes: str | None = None
     prefix_id: int | None = None
+    row_color: str | None = None
 
     @field_validator("mac_address")
     @classmethod
     def _mac(cls, v: str | None) -> str | None:
         return _norm_mac(v)
+
+    @field_validator("row_color")
+    @classmethod
+    def _row_color(cls, v: str | None) -> str | None:
+        return hex_color_or_none(v)
 
 
 class IPAddressOut(BaseModel):
@@ -94,6 +100,8 @@ class IPAddressOut(BaseModel):
     import_batch_id: int | None
     last_seen: datetime | None
     notes: str | None
+    row_color: str | None
+    display_color: str | None = None
     created_at: datetime
     updated_at: datetime
 

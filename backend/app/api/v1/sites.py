@@ -12,6 +12,7 @@ from app.models.vrf import VRF
 from app.schemas.common import ReorderBody
 from app.schemas.site import SiteCreate, SiteOut, SiteUpdate
 from app.services import runtime_settings
+from app.services.colors import stamp_colors
 from app.services.ipam import IPAMError, get_or_404, slugify, vrf_name_for
 from app.services.ordering import ordered, reorder
 
@@ -21,7 +22,8 @@ router = APIRouter(prefix="/sites", tags=["sites"])
 @router.get("", response_model=list[SiteOut])
 async def list_sites(session: AsyncSession = Depends(get_session)):
     stmt = ordered(select(Site), Site, Site.name)
-    return (await session.execute(stmt)).scalars().all()
+    rows = (await session.execute(stmt)).scalars().all()
+    return await stamp_colors(session, "sites", rows)
 
 
 @router.post(
@@ -42,6 +44,7 @@ async def create_site(body: SiteCreate, session: AsyncSession = Depends(get_sess
         await session.rollback()
         raise HTTPException(409, "site name or slug already exists")
     await session.refresh(site)
+    await stamp_colors(session, "sites", [site])
     return site
 
 
@@ -63,9 +66,11 @@ async def reorder_sites(
 @router.get("/{site_id}", response_model=SiteOut)
 async def get_site(site_id: int, session: AsyncSession = Depends(get_session)):
     try:
-        return await get_or_404(session, Site, site_id)
+        site = await get_or_404(session, Site, site_id)
     except IPAMError as e:
         raise HTTPException(e.status_code, str(e))
+    await stamp_colors(session, "sites", [site])
+    return site
 
 
 async def _cascade_site_fields(
@@ -133,6 +138,7 @@ async def update_site(site_id: int, body: SiteUpdate, session: AsyncSession = De
         await session.rollback()
         raise HTTPException(409, "site name or slug already exists")
     await session.refresh(site)
+    await stamp_colors(session, "sites", [site])
     return site
 
 

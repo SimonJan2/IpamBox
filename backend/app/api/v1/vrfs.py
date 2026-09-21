@@ -8,6 +8,7 @@ from app.core.deps import DATA_DELETE, DATA_WRITE, require_perm
 from app.models.vrf import VRF
 from app.schemas.common import ReorderBody
 from app.schemas.vrf import VRFCreate, VRFOut, VRFUpdate
+from app.services.colors import stamp_colors
 from app.services.ipam import IPAMError, get_or_404
 from app.services.ordering import ordered, reorder
 
@@ -17,7 +18,8 @@ router = APIRouter(prefix="/vrfs", tags=["vrfs"])
 @router.get("", response_model=list[VRFOut])
 async def list_vrfs(session: AsyncSession = Depends(get_session)):
     stmt = ordered(select(VRF), VRF, VRF.name)
-    return (await session.execute(stmt)).scalars().all()
+    rows = (await session.execute(stmt)).scalars().all()
+    return await stamp_colors(session, "vrfs", rows)
 
 
 @router.post(
@@ -35,6 +37,7 @@ async def create_vrf(body: VRFCreate, session: AsyncSession = Depends(get_sessio
         await session.rollback()
         raise HTTPException(409, "VRF name or RD already exists")
     await session.refresh(vrf)
+    await stamp_colors(session, "vrfs", [vrf])
     return vrf
 
 
@@ -56,9 +59,11 @@ async def reorder_vrfs(
 @router.get("/{vrf_id}", response_model=VRFOut)
 async def get_vrf(vrf_id: int, session: AsyncSession = Depends(get_session)):
     try:
-        return await get_or_404(session, VRF, vrf_id)
+        vrf = await get_or_404(session, VRF, vrf_id)
     except IPAMError as e:
         raise HTTPException(e.status_code, str(e))
+    await stamp_colors(session, "vrfs", [vrf])
+    return vrf
 
 
 @router.patch(
@@ -79,6 +84,7 @@ async def update_vrf(vrf_id: int, body: VRFUpdate, session: AsyncSession = Depen
         await session.rollback()
         raise HTTPException(409, "VRF name or RD already exists")
     await session.refresh(vrf)
+    await stamp_colors(session, "vrfs", [vrf])
     return vrf
 
 

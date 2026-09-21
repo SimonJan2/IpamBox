@@ -11,6 +11,7 @@ import {
   MoreHorizontal,
   Pencil,
   Radar,
+  SwatchBook,
   Trash2,
   Zap,
 } from "lucide-react";
@@ -19,6 +20,7 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import type { AddrMapView } from "@/lib/prefs";
 import { useRowNav } from "@/lib/row-nav";
+import { RowColorLegend, RowColorMenuItems } from "@/components/row-color";
 import { cn, intToIp, ipToInt, timeAgo } from "@/lib/utils";
 import type { AddressPage, IpAddress, IpRange, IpStatus, Tag } from "@/types";
 import { InlineSelect, InlineText } from "@/components/inline-edit";
@@ -32,6 +34,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
@@ -372,6 +377,18 @@ export function AddressList({
     }
   };
 
+  // Manual row color rides the same optimistic patch channel as the other
+  // inline edits; the parent's patchAddr re-applies the server-computed
+  // display_color from the PATCH response.
+  const setColor = async (a: IpAddress, color: string | null) => {
+    if (!onPatchAddr) return;
+    try {
+      await onPatchAddr(a.id, { row_color: color, display_color: color });
+    } catch {
+      /* onPatchAddr already toasted + rolled back */
+    }
+  };
+
   const vItems = virtualizer.getVirtualItems();
   const padTop = vItems.length ? vItems[0].start : 0;
   const padBottom = vItems.length
@@ -489,12 +506,30 @@ export function AddressList({
     const a = row.addr;
     const assigned = tags.get(a.id) ?? [];
     const hl = highlight?.get(a.id);
+    const tint = a.display_color;
+    // Scan-highlight keeps the innermost accent bar; the row color stacks
+    // next to it and adds a faint alpha wash over the themed background.
+    const bars = [
+      hl ? `inset 3px 0 0 ${hl}` : "",
+      tint ? `inset ${hl ? 6 : 3}px 0 0 ${tint}` : "",
+    ]
+      .filter(Boolean)
+      .join(", ");
     return (
       <tr
         key={row.key}
         {...rowP}
         className="cursor-pointer border-b transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none"
-        style={hl ? { boxShadow: `inset 3px 0 0 ${hl}` } : undefined}
+        style={
+          bars || tint
+            ? {
+                ...(bars ? { boxShadow: bars } : {}),
+                ...(tint
+                  ? { backgroundImage: `linear-gradient(${tint}1a, ${tint}1a)` }
+                  : {}),
+              }
+            : undefined
+        }
         onClick={() => onSelect(a)}
       >
         {selectable && (
@@ -615,6 +650,20 @@ export function AddressList({
               <DropdownMenuItem onClick={() => onSelect(a)}>
                 <Pencil className="h-3.5 w-3.5" /> Edit / details
               </DropdownMenuItem>
+              {editable && onPatchAddr && (
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    <SwatchBook className="mr-2 h-3.5 w-3.5" /> Set color
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="w-44">
+                    <RowColorMenuItems
+                      value={a.row_color}
+                      ruled={!a.row_color && !!a.display_color}
+                      onPick={(color) => void setColor(a, color)}
+                    />
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              )}
               <DropdownMenuItem onClick={() => copy(a.address)}>
                 Copy IP
               </DropdownMenuItem>
@@ -651,16 +700,19 @@ export function AddressList({
           {filtersActive &&
             ` · ${filtered.length.toLocaleString()} matching`}
         </span>
-        {canUngroup && !filtersActive && (
-          <label className="flex items-center gap-2">
-            Group free
-            <Switch
-              checked={groupFree}
-              onCheckedChange={setGroupFree}
-              aria-label="Group free addresses"
-            />
-          </label>
-        )}
+        <span className="flex items-center gap-2">
+          <RowColorLegend />
+          {canUngroup && !filtersActive && (
+            <label className="flex items-center gap-2">
+              Group free
+              <Switch
+                checked={groupFree}
+                onCheckedChange={setGroupFree}
+                aria-label="Group free addresses"
+              />
+            </label>
+          )}
+        </span>
       </div>
 
       <div

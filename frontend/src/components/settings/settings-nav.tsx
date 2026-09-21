@@ -10,6 +10,7 @@ import {
   Radar,
   ShieldCheck,
   SlidersHorizontal,
+  SwatchBook,
   Users,
 } from "lucide-react";
 
@@ -25,6 +26,7 @@ export const SETTINGS_SECTIONS = [
   { href: "/settings/security", label: "Account & Security", icon: ShieldCheck, perm: PERM.DATA_READ },
   { href: "/settings/users", label: "Users & Roles", icon: Users, perm: PERM.USERS_MANAGE },
   { href: "/settings/appearance", label: "Appearance", icon: Palette, perm: PERM.DATA_READ },
+  { href: "/settings/color-rules", label: "Color Rules", icon: SwatchBook, perm: PERM.SYSTEM_ADMIN },
   { href: "/settings/data", label: "Data & Maintenance", icon: DatabaseZap, perm: PERM.DATA_READ },
 ];
 

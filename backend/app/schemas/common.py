@@ -1,7 +1,17 @@
 import ipaddress
+import re
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+_HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def hex_color_or_none(v: str | None) -> str | None:
+    """Shared row/tag color validator: #rrggbb, normalized to lowercase."""
+    if v is not None and not _HEX_RE.match(v):
+        raise ValueError("color must be a hex value like #10b981")
+    return v.lower() if v else v
 
 
 class ReorderBody(BaseModel):

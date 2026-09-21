@@ -629,7 +629,25 @@ export default function PrefixDetailPage({ id }: { id: string }) {
       };
     });
     try {
-      await api.patch(`/api/v1/addresses/${id}`, patch);
+      const saved = await api.patch<IpAddress>(`/api/v1/addresses/${id}`, patch);
+      // display_color is server-computed (manual > rule) — take it back so
+      // clearing a manual color restores the rule tint without a refetch.
+      pageQ.setData((cur) =>
+        cur
+          ? {
+              ...cur,
+              items: cur.items.map((a) =>
+                a.id === id
+                  ? {
+                      ...a,
+                      row_color: saved.row_color,
+                      display_color: saved.display_color,
+                    }
+                  : a
+              ),
+            }
+          : cur
+      );
     } catch (e) {
       pageQ.setData((cur) =>
         cur

@@ -1,9 +1,9 @@
-import re
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-_HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+from app.schemas.common import hex_color_or_none
+
 TAGGABLE = {"Site", "VRF", "Prefix", "IPAddress"}
 
 
@@ -16,9 +16,7 @@ class TagCreate(BaseModel):
     @field_validator("color")
     @classmethod
     def _color(cls, v: str) -> str:
-        if not _HEX_RE.match(v):
-            raise ValueError("color must be a hex value like #10b981")
-        return v.lower()
+        return hex_color_or_none(v) or v
 
 
 class TagUpdate(BaseModel):
@@ -27,13 +25,17 @@ class TagUpdate(BaseModel):
     description: str | None = None
     pinned: bool | None = None
     sort_order: int | None = None
+    row_color: str | None = None
 
     @field_validator("color")
     @classmethod
     def _color(cls, v: str | None) -> str | None:
-        if v is not None and not _HEX_RE.match(v):
-            raise ValueError("color must be a hex value like #10b981")
-        return v.lower() if v else v
+        return hex_color_or_none(v)
+
+    @field_validator("row_color")
+    @classmethod
+    def _row_color(cls, v: str | None) -> str | None:
+        return hex_color_or_none(v)
 
 
 class TagOut(BaseModel):
@@ -46,6 +48,8 @@ class TagOut(BaseModel):
     description: str | None
     pinned: bool
     sort_order: int | None
+    row_color: str | None
+    display_color: str | None = None
     created_at: datetime
 
 

@@ -59,6 +59,12 @@ Scapy raw-socket scanning · Next.js 15 dark-mode UI
 - **Change log**: every create/update/delete is recorded with actor,
   timestamp and field-level before/after diffs — global `/changelog`
   page plus per-object history in the IP drawer.
+- **Global row colors**: tint any list row — sites, VRFs, VLANs,
+  circuits, certificates, assets, services, tags and the address list —
+  with a manual color (per-row "Set color" action), or define
+  admin-managed rules under **Settings → Color Rules** that color rows
+  by field (`cert expiring within 7 days → red`). Stored in Postgres,
+  computed server-side, and covered by backup + changelog.
 
 ### Scanner
 

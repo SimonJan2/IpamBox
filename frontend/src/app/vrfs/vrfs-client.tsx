@@ -13,6 +13,7 @@ import { fmtTs } from "@/lib/prefs";
 import { slugify } from "@/lib/utils";
 import { useUrlText } from "@/lib/url-state";
 import { useRowNav } from "@/lib/row-nav";
+import { useRowColor, rowTintStyle } from "@/lib/row-color";
 import { useRowOrder } from "@/lib/row-order";
 import { cn } from "@/lib/utils";
 import {
@@ -26,6 +27,7 @@ import type { Site, Vrf } from "@/types";
 import { AsyncPanel } from "@/components/async-panel";
 import { HistoryDialog } from "@/components/history-panel";
 import { InlineText } from "@/components/inline-edit";
+import { RowColorLegend, RowColorPicker } from "@/components/row-color";
 import { SavedViews } from "@/components/saved-views";
 import { Button } from "@/components/ui/button";
 import {
@@ -342,6 +344,10 @@ export default function VrfsPage() {
     getVisibleIds: (): number[] => filtered.map((v) => v.id),
     enabled: canWrite && !orderBlock,
   });
+  const setRowColor = useRowColor<Vrf>({
+    path: "/api/v1/vrfs",
+    setData: vrfsQ.setData,
+  });
 
   const { rowProps, focusRow } = useRowNav({
     count: filtered.length,
@@ -381,6 +387,7 @@ export default function VrfsPage() {
           onChange={(e) => setQ(e.target.value)}
           className="max-w-xs"
         />
+        <RowColorLegend />
         <SavedViews pageKey="vrfs" className="ml-auto" />
       </div>
 
@@ -426,6 +433,7 @@ export default function VrfsPage() {
                   if (ni === null) rp.onKeyDown(e);
                   else focusRow(ni);
                 }}
+                style={rowTintStyle(v.display_color)}
                 className={cn(
                   v.pinned && "bg-muted/30",
                   "focus-visible:bg-muted/50 focus-visible:outline-none"
@@ -465,6 +473,14 @@ export default function VrfsPage() {
                         pinned={v.pinned}
                         name={v.name}
                         onToggle={() => order.setPinned(v.id, !v.pinned)}
+                      />
+                    )}
+                    {canWrite && (
+                      <RowColorPicker
+                        value={v.row_color}
+                        displayColor={v.display_color}
+                        name={v.name}
+                        onPick={(color) => setRowColor(v.id, color)}
                       />
                     )}
                     <Button

@@ -10,6 +10,7 @@ import { useAuth } from "@/lib/auth";
 import { usePrefs } from "@/lib/prefs";
 import { PERM } from "@/lib/permissions";
 import { useRowNav } from "@/lib/row-nav";
+import { useRowColor, rowTintStyle } from "@/lib/row-color";
 import { useRowOrder } from "@/lib/row-order";
 import { cn } from "@/lib/utils";
 import type { Tag } from "@/types";
@@ -21,6 +22,7 @@ import {
   RowOrderDnd,
   SortableRow,
 } from "@/components/row-order";
+import { RowColorLegend, RowColorPicker } from "@/components/row-color";
 import { HistoryDialog } from "@/components/history-panel";
 import { InlineText } from "@/components/inline-edit";
 import { TagDialog } from "@/components/tag-dialog";
@@ -79,6 +81,10 @@ export default function TagsPage() {
     getVisibleIds: (): number[] => tags.map((t) => t.id),
     enabled: canWrite,
   });
+  const setRowColor = useRowColor<Tag>({
+    path: "/api/v1/tags",
+    setData: tagsQ.setData,
+  });
 
   const { rowProps, focusRow } = useRowNav({
     count: tags.length,
@@ -120,9 +126,12 @@ export default function TagsPage() {
           </Button>
         )}
       </div>
-      <p className="text-sm text-muted-foreground">
-        Tags can be attached to sites, VRFs, prefixes and addresses.
-      </p>
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          Tags can be attached to sites, VRFs, prefixes and addresses.
+        </p>
+        <RowColorLegend />
+      </div>
 
       <div className="rounded-lg border">
         <AsyncPanel
@@ -164,6 +173,7 @@ export default function TagsPage() {
                   if (ni === null) rp.onKeyDown(e);
                   else focusRow(ni);
                 }}
+                style={rowTintStyle(t.display_color)}
                 className={cn(
                   t.pinned && "bg-muted/30",
                   "focus-visible:bg-muted/50 focus-visible:outline-none"
@@ -198,6 +208,14 @@ export default function TagsPage() {
                         pinned={t.pinned}
                         name={t.name}
                         onToggle={() => order.setPinned(t.id, !t.pinned)}
+                      />
+                    )}
+                    {canWrite && (
+                      <RowColorPicker
+                        value={t.row_color}
+                        displayColor={t.display_color}
+                        name={t.name}
+                        onPick={(color) => setRowColor(t.id, color)}
                       />
                     )}
                     <Button

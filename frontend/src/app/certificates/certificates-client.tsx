@@ -18,6 +18,7 @@ import { PERM } from "@/lib/permissions";
 import { cn, foldHebrew } from "@/lib/utils";
 import { useUrlSorting, useUrlText } from "@/lib/url-state";
 import { useRowNav } from "@/lib/row-nav";
+import { useRowColor, rowTintStyle } from "@/lib/row-color";
 import { useRowOrder } from "@/lib/row-order";
 import {
   DragHandle,
@@ -30,6 +31,7 @@ import { expiryBadge } from "@/components/expiry-badge";
 import { AsyncPanel } from "@/components/async-panel";
 import { HistoryDialog } from "@/components/history-panel";
 import { InlineText } from "@/components/inline-edit";
+import { RowColorLegend, RowColorPicker } from "@/components/row-color";
 import { SavedViews } from "@/components/saved-views";
 import { SortHeader, columnAriaSort } from "@/components/sort-header";
 import type { Certificate } from "@/types";
@@ -188,6 +190,10 @@ export default function CertificatesPage() {
     getVisibleIds: (): number[] => tableRows.map((r) => r.original.id),
     enabled: canWrite && !orderBlock,
   });
+  const setRowColor = useRowColor<Certificate>({
+    path: "/api/v1/certificates",
+    setData: itemsQ.setData,
+  });
 
   const columns = useMemo<ColumnDef<Certificate>[]>(
     () => [
@@ -288,6 +294,14 @@ export default function CertificatesPage() {
                 }
               />
             )}
+            {canWrite && (
+              <RowColorPicker
+                value={c.row.original.row_color}
+                displayColor={c.row.original.display_color}
+                name={`certificate ${c.row.original.cert_name ?? c.row.original.server_name ?? c.row.original.id}`}
+                onPick={(color) => setRowColor(c.row.original.id, color)}
+              />
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -323,7 +337,7 @@ export default function CertificatesPage() {
         ),
       },
     ],
-    [canWrite, canDelete, saveField, order.setPinned, orderBlock]
+    [canWrite, canDelete, saveField, order.setPinned, orderBlock, setRowColor]
   );
 
   const table = useReactTable({
@@ -382,6 +396,7 @@ export default function CertificatesPage() {
         <span className="ml-auto text-sm text-muted-foreground">
           {tableRows.length} of {items.length}
         </span>
+        <RowColorLegend />
         <SavedViews pageKey="certificates" />
       </div>
 
@@ -423,6 +438,7 @@ export default function CertificatesPage() {
                     if (ni === null) rp.onKeyDown(e);
                     else focusRow(ni);
                   }}
+                  style={rowTintStyle(row.original.display_color)}
                   className={cn(
                     row.original.pinned && "bg-muted/30",
                     "focus-visible:bg-muted/50 focus-visible:outline-none"

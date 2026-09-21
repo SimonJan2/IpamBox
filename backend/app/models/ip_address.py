@@ -78,6 +78,8 @@ class IPAddress(Base):
         ForeignKey("import_batches.id", ondelete="SET NULL"), index=True
     )
     notes: Mapped[str | None] = mapped_column(Text)
+    # Manual row accent (#rrggbb, Tag.color format); NULL = none.
+    row_color: Mapped[str | None] = mapped_column(String(7))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 

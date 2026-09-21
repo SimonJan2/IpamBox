@@ -51,6 +51,8 @@ class VLAN(Base):
     pinned: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
+    # Manual row accent (#rrggbb, Tag.color format); NULL = none.
+    row_color: Mapped[str | None] = mapped_column(String(7))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     group: Mapped["VLANGroup | None"] = relationship(back_populates="vlans")

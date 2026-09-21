@@ -13,6 +13,8 @@ export interface Tag {
   description: string | null;
   sort_order: number | null;
   pinned: boolean;
+  row_color: string | null;
+  display_color: string | null;
   created_at: string;
 }
 
@@ -41,6 +43,8 @@ export interface Vlan {
   description: string | null;
   sort_order: number | null;
   pinned: boolean;
+  row_color: string | null;
+  display_color: string | null;
   created_at: string;
 }
 
@@ -70,6 +74,8 @@ export interface Site {
   address: string | null;
   sort_order: number | null;
   pinned: boolean;
+  row_color: string | null;
+  display_color: string | null;
   created_at: string;
 }
 
@@ -81,6 +87,8 @@ export interface Vrf {
   site_id: number | null;
   sort_order: number | null;
   pinned: boolean;
+  row_color: string | null;
+  display_color: string | null;
   created_at: string;
 }
 
@@ -131,6 +139,8 @@ export interface IpAddress {
   import_batch_id: number | null;
   last_seen: string | null;
   notes: string | null;
+  row_color: string | null;
+  display_color: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -430,6 +440,8 @@ export interface Circuit {
   import_batch_id: number | null;
   sort_order: number | null;
   pinned: boolean;
+  row_color: string | null;
+  display_color: string | null;
   created_at: string;
 }
 
@@ -445,6 +457,8 @@ export interface Certificate {
   import_batch_id: number | null;
   sort_order: number | null;
   pinned: boolean;
+  row_color: string | null;
+  display_color: string | null;
   created_at: string;
 }
 
@@ -464,6 +478,8 @@ export interface Asset {
   import_batch_id: number | null;
   sort_order: number | null;
   pinned: boolean;
+  row_color: string | null;
+  display_color: string | null;
   created_at: string;
 }
 
@@ -479,5 +495,34 @@ export interface Service {
   import_batch_id: number | null;
   sort_order: number | null;
   pinned: boolean;
+  row_color: string | null;
+  display_color: string | null;
   created_at: string;
+}
+
+// --- Global row colors (manual row_color + admin color_rules) --------------
+
+export type ColorRuleOperator =
+  | "eq"
+  | "neq"
+  | "contains"
+  | "lt"
+  | "gt"
+  | "within_days";
+
+export interface ColorRule {
+  id: number;
+  entity_type: string;
+  field: string;
+  operator: ColorRuleOperator;
+  value: string;
+  color: string;
+  position: number;
+}
+
+/** Rule-targetable column metadata from GET /color-rules/fields. */
+export interface ColorRuleFieldMeta {
+  name: string;
+  type: "text" | "date" | "bool" | "number" | "enum";
+  values: string[] | null;
 }
