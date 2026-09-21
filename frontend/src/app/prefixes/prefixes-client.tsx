@@ -22,6 +22,7 @@ import { useUrlParam, useUrlSorting, useUrlText } from "@/lib/url-state";
 import { useRowNav } from "@/lib/row-nav";
 import { SortHeader, columnAriaSort } from "@/components/sort-header";
 import { AsyncPanel } from "@/components/async-panel";
+import { DocsLink } from "@/components/docs/docs-link";
 import { HistoryDialog } from "@/components/history-panel";
 import { SavedViews } from "@/components/saved-views";
 import type { Page, Prefix, Site, Vlan, Vrf } from "@/types";
@@ -697,7 +698,7 @@ export default function PrefixesPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Subnets</h1>
+        <h1 className="flex items-center gap-1.5 text-xl font-semibold">Subnets <DocsLink slug="subnets" /></h1>
         <div className="flex gap-2">
           <Button size="sm" variant="outline" asChild>
             <a

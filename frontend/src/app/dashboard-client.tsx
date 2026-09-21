@@ -33,6 +33,7 @@ import { usePolling } from "@/lib/use-polling";
 import { timeAgo } from "@/lib/utils";
 import type { ChangeLogEntry, DashboardStats, Page, Prefix, ScanJob } from "@/types";
 import { AsyncPanel } from "@/components/async-panel";
+import { DocsLink } from "@/components/docs/docs-link";
 import { expiryBadge } from "@/components/expiry-badge";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -123,7 +124,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold">Dashboard</h1>
+      <h1 className="flex items-center gap-1.5 text-xl font-semibold">Dashboard <DocsLink slug="overview" /></h1>
 
       <AsyncPanel
         loading={statsQ.loading}

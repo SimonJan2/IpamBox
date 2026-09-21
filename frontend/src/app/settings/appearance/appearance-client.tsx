@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { SettingField } from "@/components/settings/field";
+import { DocsLink } from "@/components/docs/docs-link";
 
 export default function AppearancePage() {
   const [prefs, setPrefs] = usePrefs();
@@ -26,7 +27,7 @@ export default function AppearancePage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold">Appearance</h1>
+        <h1 className="flex items-center gap-1.5 text-xl font-semibold">Appearance <DocsLink slug="settings" /></h1>
         <p className="text-sm text-muted-foreground">
           Per-browser preferences — stored locally, applied instantly, never
           sent to the server.

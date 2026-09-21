@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { AsyncPanel } from "@/components/async-panel";
+import { DocsLink } from "@/components/docs/docs-link";
 import { SettingField } from "@/components/settings/field";
 
 type Key = keyof SettingsValues;
@@ -112,7 +113,7 @@ export default function FeaturesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold">Features</h1>
+        <h1 className="flex items-center gap-1.5 text-xl font-semibold">Features <DocsLink slug="settings" /></h1>
         <p className="text-sm text-muted-foreground">
           Behavior switches — how the app treats imported and site-derived
           data. Saved changes take effect immediately; no restart needed.

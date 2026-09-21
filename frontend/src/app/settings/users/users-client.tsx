@@ -20,6 +20,7 @@ import { useAuth } from "@/lib/auth";
 import { PERM, ROLE_META, ROLE_ORDER } from "@/lib/permissions";
 import type { RoleName, UserOut } from "@/types";
 import { AsyncPanel } from "@/components/async-panel";
+import { DocsLink } from "@/components/docs/docs-link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -273,7 +274,7 @@ export default function UsersPage() {
   if (!can(PERM.USERS_MANAGE)) {
     return (
       <div className="space-y-6">
-        <h1 className="text-xl font-semibold">Users &amp; Roles</h1>
+        <h1 className="flex items-center gap-1.5 text-xl font-semibold">Users &amp; Roles <DocsLink slug="settings" /></h1>
         <Card className="border-amber-500/30">
           <CardContent className="flex items-start gap-3 pt-6 text-sm text-muted-foreground">
             <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
@@ -288,7 +289,7 @@ export default function UsersPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold">Users &amp; Roles</h1>
+          <h1 className="flex items-center gap-1.5 text-xl font-semibold">Users &amp; Roles <DocsLink slug="settings" /></h1>
           <p className="text-sm text-muted-foreground">
             Accounts, role assignments and access tiers.
           </p>

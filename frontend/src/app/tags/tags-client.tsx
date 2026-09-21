@@ -15,6 +15,7 @@ import { useRowOrder } from "@/lib/row-order";
 import { cn } from "@/lib/utils";
 import type { Tag } from "@/types";
 import { AsyncPanel } from "@/components/async-panel";
+import { DocsLink } from "@/components/docs/docs-link";
 import {
   DragHandle,
   PinToggle,
@@ -113,7 +114,7 @@ export default function TagsPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Tags</h1>
+        <h1 className="flex items-center gap-1.5 text-xl font-semibold">Tags <DocsLink slug="tags" /></h1>
         {canWrite && (
           <Button
             size="sm"

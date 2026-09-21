@@ -9,6 +9,7 @@ import { timeAgo } from "@/lib/utils";
 import { useUrlParams, useUrlText } from "@/lib/url-state";
 import type { ChangeLogEntry, Page } from "@/types";
 import { AsyncPanel } from "@/components/async-panel";
+import { DocsLink } from "@/components/docs/docs-link";
 import { ChangeDiff } from "@/components/history-panel";
 import { SavedViews } from "@/components/saved-views";
 import { Badge } from "@/components/ui/badge";
@@ -85,7 +86,7 @@ export default function ChangelogPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Changelog</h1>
+        <h1 className="flex items-center gap-1.5 text-xl font-semibold">Changelog <DocsLink slug="changelog" /></h1>
       </div>
       <p className="text-sm text-muted-foreground">
         Every change to sites, VRFs, prefixes and addresses — who did it and

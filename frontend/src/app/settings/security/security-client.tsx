@@ -11,6 +11,7 @@ import { useAuth } from "@/lib/auth";
 import { ROLE_META } from "@/lib/permissions";
 import type { SessionOut } from "@/types";
 import { AsyncPanel } from "@/components/async-panel";
+import { DocsLink } from "@/components/docs/docs-link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -95,7 +96,7 @@ export default function SecurityPage() {
   if (auth?.allow_insecure) {
     return (
       <div className="space-y-6">
-        <h1 className="text-xl font-semibold">Account &amp; Security</h1>
+        <h1 className="flex items-center gap-1.5 text-xl font-semibold">Account &amp; Security <DocsLink slug="settings" /></h1>
         <Card className="border-amber-500/30">
           <CardContent className="flex items-start gap-3 pt-6 text-sm text-muted-foreground">
             <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
@@ -110,7 +111,7 @@ export default function SecurityPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold">Account &amp; Security</h1>
+        <h1 className="flex items-center gap-1.5 text-xl font-semibold">Account &amp; Security <DocsLink slug="settings" /></h1>
         <p className="text-sm text-muted-foreground">
           Your password and active sessions.
           {auth?.role && (

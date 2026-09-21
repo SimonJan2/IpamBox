@@ -44,6 +44,7 @@ import {
 } from "@/components/ui/table";
 import { SettingField } from "@/components/settings/field";
 import { AsyncPanel } from "@/components/async-panel";
+import { DocsLink } from "@/components/docs/docs-link";
 
 function fmtSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -221,7 +222,7 @@ export default function BackupSettingsPage() {
   if (!can(PERM.BACKUP_ACCESS)) {
     return (
       <div className="space-y-6">
-        <h1 className="text-xl font-semibold">Backup &amp; Restore</h1>
+        <h1 className="flex items-center gap-1.5 text-xl font-semibold">Backup &amp; Restore <DocsLink slug="settings" /></h1>
         <Card className="border-amber-500/30">
           <CardContent className="pt-6 text-sm text-muted-foreground">
             Your role is read-only for backups — ask an Administrator or Tier-1
@@ -235,7 +236,7 @@ export default function BackupSettingsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold">Backup &amp; Restore</h1>
+        <h1 className="flex items-center gap-1.5 text-xl font-semibold">Backup &amp; Restore <DocsLink slug="settings" /></h1>
         <p className="text-sm text-muted-foreground">
           Snapshot the entire IpamBox database to a single file. Admin
           accounts are never included; other accounts only when you opt in.

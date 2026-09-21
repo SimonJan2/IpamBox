@@ -31,6 +31,7 @@ import {
 } from "@/components/row-order";
 import { SortHeader, columnAriaSort } from "@/components/sort-header";
 import { AsyncPanel } from "@/components/async-panel";
+import { DocsLink } from "@/components/docs/docs-link";
 import { HistoryDialog } from "@/components/history-panel";
 import { InlineText } from "@/components/inline-edit";
 import { RowColorLegend, RowColorPicker } from "@/components/row-color";
@@ -683,7 +684,7 @@ export default function CircuitsPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <h1 className="text-xl font-semibold">Circuits</h1>
+          <h1 className="flex items-center gap-1.5 text-xl font-semibold">Circuits <DocsLink slug="circuits" /></h1>
           <div className="inline-flex h-8 items-center rounded-lg border bg-muted/50 p-0.5 text-muted-foreground">
             {(
               [

@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { SettingField } from "@/components/settings/field";
 import { AsyncPanel } from "@/components/async-panel";
+import { DocsLink } from "@/components/docs/docs-link";
 import { CidrListEditor } from "@/components/settings/cidr-list-editor";
 
 type Key = keyof SettingsValues;
@@ -107,7 +108,7 @@ export default function ScanningPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold">Scanning</h1>
+        <h1 className="flex items-center gap-1.5 text-xl font-semibold">Scanning <DocsLink slug="settings" /></h1>
         <p className="text-sm text-muted-foreground">
           Which networks the worker scans and how. Saved changes take effect
           immediately for manual scans and within ~1 minute for schedules — no

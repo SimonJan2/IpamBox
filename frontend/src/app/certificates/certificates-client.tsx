@@ -29,6 +29,7 @@ import {
 } from "@/components/row-order";
 import { expiryBadge } from "@/components/expiry-badge";
 import { AsyncPanel } from "@/components/async-panel";
+import { DocsLink } from "@/components/docs/docs-link";
 import { HistoryDialog } from "@/components/history-panel";
 import { InlineText } from "@/components/inline-edit";
 import { RowColorLegend, RowColorPicker } from "@/components/row-color";
@@ -372,7 +373,7 @@ export default function CertificatesPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Certificates</h1>
+        <h1 className="flex items-center gap-1.5 text-xl font-semibold">Certificates <DocsLink slug="certificates" /></h1>
         {canWrite && (
           <Button
             size="sm"

@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { useAsyncData } from "@/lib/use-async-data";
 import type { DashboardStats, SettingsOut } from "@/types";
 import { AsyncPanel } from "@/components/async-panel";
+import { DocsLink } from "@/components/docs/docs-link";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -45,7 +46,7 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold">General</h1>
+        <h1 className="flex items-center gap-1.5 text-xl font-semibold">General <DocsLink slug="settings" /></h1>
         <p className="text-sm text-muted-foreground">
           System information and environment configuration. Values marked
           <Badge variant="outline" className="mx-1 text-[10px] font-normal text-muted-foreground">
