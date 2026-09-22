@@ -133,6 +133,7 @@ export interface IpAddress {
   nat_inside_id: number | null;
   open_ports: number[] | null;
   device_type: string | null;
+  missed_scans: number;
   serial_number: string | null;
   switch_name: string | null;
   switch_port: string | null;
@@ -346,6 +347,21 @@ export interface SettingsValues {
   backup_keep: number;
   ipambox_session_hours: number;
   site_code_follow_site: boolean;
+  // Scanner reconcile policy (Settings > Features)
+  scan_marks_offline: boolean;
+  scan_reactivates_offline: boolean;
+  scan_new_hosts_discovered: boolean;
+  scan_stored_mac_wins: boolean;
+  scan_overwrites_hostname: boolean;
+  scan_infers_device_type: boolean;
+  scan_auto_create_prefix: boolean;
+  scan_infers_vrf: boolean;
+  // Lifecycle & retention — 0 = disabled
+  scan_offline_grace_scans: number;
+  discovery_expire_days: number;
+  changelog_retention_days: number;
+  scan_job_retention_days: number;
+  cert_warn_days: number;
 }
 
 export interface SettingsOut {

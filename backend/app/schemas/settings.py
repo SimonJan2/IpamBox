@@ -23,6 +23,19 @@ class SettingsPatch(BaseModel):
     backup_keep: int | None = None
     ipambox_session_hours: int | None = None
     site_code_follow_site: bool | None = None
+    scan_marks_offline: bool | None = None
+    scan_reactivates_offline: bool | None = None
+    scan_new_hosts_discovered: bool | None = None
+    scan_stored_mac_wins: bool | None = None
+    scan_overwrites_hostname: bool | None = None
+    scan_infers_device_type: bool | None = None
+    scan_auto_create_prefix: bool | None = None
+    scan_infers_vrf: bool | None = None
+    scan_offline_grace_scans: int | None = None
+    discovery_expire_days: int | None = None
+    changelog_retention_days: int | None = None
+    scan_job_retention_days: int | None = None
+    cert_warn_days: int | None = None
 
 
 class LanInfo(BaseModel):

@@ -530,8 +530,8 @@ async def test_run_scan_cancel_during_reconcile_rolls_back(
 
     real_reconcile = worker.reconcile
 
-    async def cancelling_reconcile(sess, prefix_id, vrf_id, hosts, net):
-        out = await real_reconcile(sess, prefix_id, vrf_id, hosts, net)
+    async def cancelling_reconcile(sess, prefix_id, vrf_id, hosts, net, flags=None):
+        out = await real_reconcile(sess, prefix_id, vrf_id, hosts, net, flags)
         await fake.set(worker.cancel_key(job.id), "1")
         await _api_cancel(sf, job.id)
         return out
@@ -658,3 +658,378 @@ async def test_worker_rechecks_exclusion(client, session, sf, monkeypatch):
     assert not called
     await session.refresh(job)
     assert job.status == ScanStatus.FAILED
+
+
+# --------------------------------------------------------------------------
+# reconcile policy flags (Settings > Features) — no flags arg = the original
+# hard-coded behavior; each test below exercises a changed path.
+# --------------------------------------------------------------------------
+
+
+async def test_reconcile_defaults_match_original_behavior(client, session):
+    """reconcile() called with no flags (the pre-toggles signature) must do
+    exactly what it always did: new hosts -> discovered, missing active ->
+    offline on the first miss, offline seen -> active, MAC mismatch -> live
+    wins + flag."""
+    vrf_id = (await client.get("/api/v1/vrfs")).json()[0]["id"]
+    p = await _mk_prefix(client, "10.80.0.0/24", vrf_id)
+    net = ipaddress.ip_network("10.80.0.0/24")
+    for addr, mac in (("10.80.0.10", "00:11:22:33:44:55"), ("10.80.0.20", None)):
+        r = await client.post(
+            "/api/v1/addresses",
+            json={
+                "prefix_id": p["id"],
+                "vrf_id": vrf_id,
+                "address": addr,
+                "status": "active",
+                **({"mac_address": mac} if mac else {}),
+            },
+        )
+        assert r.status_code == 201, r.text
+    # .20 goes offline first so the reactivation path is exercised
+    await reconcile(session, p["id"], vrf_id, [], net)
+    await session.commit()
+
+    hosts = [
+        HostResult(ip="10.80.0.10", mac="66:77:88:99:AA:BB"),
+        HostResult(ip="10.80.0.30", hostname="new-host"),
+    ]
+    n, new = await reconcile(session, p["id"], vrf_id, hosts, net)
+    await session.commit()
+    assert (n, new) == (2, 1)
+
+    rows = (await client.get("/api/v1/addresses")).json()
+    by_ip = {r["address"]: r for r in rows}
+    assert by_ip["10.80.0.10"]["mac_address"] == "66:77:88:99:AA:BB"
+    assert by_ip["10.80.0.10"]["custom_fields"]["mac_mismatch"]["was"] == (
+        "00:11:22:33:44:55"
+    )
+    assert by_ip["10.80.0.20"]["status"] == "offline"   # absent -> offline
+    assert by_ip["10.80.0.30"]["status"] == "discovered"  # new -> inbox
+
+
+async def test_reconcile_marks_offline_disabled(client, session):
+    """scan_marks_offline=off: absent hosts keep their status; the miss
+    counter still ticks so re-enabling has accurate data."""
+    vrf_id = (await client.get("/api/v1/vrfs")).json()[0]["id"]
+    p = await _mk_prefix(client, "10.81.0.0/24", vrf_id)
+    await client.post(
+        "/api/v1/addresses",
+        json={
+            "prefix_id": p["id"], "vrf_id": vrf_id,
+            "address": "10.81.0.10", "status": "active",
+        },
+    )
+    net = ipaddress.ip_network("10.81.0.0/24")
+    flags = {"scan_marks_offline": False}
+    await reconcile(session, p["id"], vrf_id, [], net, flags)
+    await session.commit()
+
+    row = (await client.get("/api/v1/addresses")).json()[0]
+    assert row["status"] == "active"
+    assert row["missed_scans"] == 1
+
+
+async def test_reconcile_reactivation_disabled(client, session):
+    """scan_reactivates_offline=off: a re-seen offline host stays offline —
+    last_seen still refreshes."""
+    vrf_id = (await client.get("/api/v1/vrfs")).json()[0]["id"]
+    p = await _mk_prefix(client, "10.82.0.0/24", vrf_id)
+    await client.post(
+        "/api/v1/addresses",
+        json={
+            "prefix_id": p["id"], "vrf_id": vrf_id,
+            "address": "10.82.0.10", "status": "offline",
+        },
+    )
+    net = ipaddress.ip_network("10.82.0.0/24")
+    await reconcile(
+        session, p["id"], vrf_id, [HostResult(ip="10.82.0.10")], net,
+        {"scan_reactivates_offline": False},
+    )
+    await session.commit()
+
+    row = (await client.get("/api/v1/addresses")).json()[0]
+    assert row["status"] == "offline"
+    assert row["last_seen"] is not None
+
+
+async def test_reconcile_new_hosts_active_when_inbox_disabled(client, session):
+    """scan_new_hosts_discovered=off: scan-found hosts become active
+    immediately, skipping the inbox."""
+    vrf_id = (await client.get("/api/v1/vrfs")).json()[0]["id"]
+    p = await _mk_prefix(client, "10.83.0.0/24", vrf_id)
+    net = ipaddress.ip_network("10.83.0.0/24")
+    await reconcile(
+        session, p["id"], vrf_id, [HostResult(ip="10.83.0.5")], net,
+        {"scan_new_hosts_discovered": False},
+    )
+    await session.commit()
+
+    row = (await client.get("/api/v1/addresses")).json()[0]
+    assert row["status"] == "active"
+
+
+async def test_reconcile_stored_mac_wins(client, session):
+    """scan_stored_mac_wins=on: a disagreeing scanned MAC is flagged but the
+    stored value is kept (randomized phone MACs flap every scan)."""
+    vrf_id = (await client.get("/api/v1/vrfs")).json()[0]["id"]
+    p = await _mk_prefix(client, "10.84.0.0/24", vrf_id)
+    await client.post(
+        "/api/v1/addresses",
+        json={
+            "prefix_id": p["id"], "vrf_id": vrf_id,
+            "address": "10.84.0.10", "status": "active",
+            "mac_address": "00:11:22:33:44:55",
+        },
+    )
+    net = ipaddress.ip_network("10.84.0.0/24")
+    hosts = [HostResult(ip="10.84.0.10", mac="66:77:88:99:AA:BB")]
+    await reconcile(
+        session, p["id"], vrf_id, hosts, net, {"scan_stored_mac_wins": True}
+    )
+    await session.commit()
+
+    row = (await client.get("/api/v1/addresses")).json()[0]
+    assert row["mac_address"] == "00:11:22:33:44:55"          # kept
+    assert row["custom_fields"]["mac_mismatch"]["seen"] == "66:77:88:99:AA:BB"
+
+
+async def test_reconcile_hostname_overwrite_flag(client, session):
+    """scan_overwrites_hostname: default fills only empty hostnames; on = PTR
+    is authoritative."""
+    vrf_id = (await client.get("/api/v1/vrfs")).json()[0]["id"]
+    p = await _mk_prefix(client, "10.85.0.0/24", vrf_id)
+    await client.post(
+        "/api/v1/addresses",
+        json={
+            "prefix_id": p["id"], "vrf_id": vrf_id,
+            "address": "10.85.0.10", "status": "active",
+            "hostname": "stored-name",
+        },
+    )
+    net = ipaddress.ip_network("10.85.0.0/24")
+    hosts = [HostResult(ip="10.85.0.10", hostname="ptr-name.lan")]
+
+    await reconcile(session, p["id"], vrf_id, hosts, net)  # default
+    await session.commit()
+    row = (await client.get("/api/v1/addresses")).json()[0]
+    assert row["hostname"] == "stored-name"
+
+    await reconcile(
+        session, p["id"], vrf_id, hosts, net,
+        {"scan_overwrites_hostname": True},
+    )
+    await session.commit()
+    row = (await client.get("/api/v1/addresses")).json()[0]
+    assert row["hostname"] == "ptr-name.lan"
+
+
+async def test_reconcile_device_type_protected(client, session):
+    """scan_infers_device_type=off: a set device_type survives the scan; new
+    rows still get the inferred value (nothing manual to protect)."""
+    vrf_id = (await client.get("/api/v1/vrfs")).json()[0]["id"]
+    p = await _mk_prefix(client, "10.86.0.0/24", vrf_id)
+    await client.post(
+        "/api/v1/addresses",
+        json={
+            "prefix_id": p["id"], "vrf_id": vrf_id,
+            "address": "10.86.0.10", "status": "active",
+            "custom_fields": {},
+        },
+    )
+    net = ipaddress.ip_network("10.86.0.0/24")
+    # manual classification set directly (the API create has no device_type)
+    from sqlalchemy import update
+
+    from app.models.ip_address import IPAddress
+
+    await session.execute(
+        update(IPAddress)
+        .where(IPAddress.address_int == int(ipaddress.ip_address("10.86.0.10")))
+        .values(device_type="printer")
+    )
+    await session.commit()
+
+    hosts = [
+        HostResult(ip="10.86.0.10", device_type="server"),
+        HostResult(ip="10.86.0.20", device_type="iot"),
+    ]
+    await reconcile(
+        session, p["id"], vrf_id, hosts, net,
+        {"scan_infers_device_type": False},
+    )
+    await session.commit()
+
+    by_ip = {
+        r["address"]: r for r in (await client.get("/api/v1/addresses")).json()
+    }
+    assert by_ip["10.86.0.10"]["device_type"] == "printer"  # protected
+    assert by_ip["10.86.0.20"]["device_type"] == "iot"      # new row: filled
+
+
+async def test_reconcile_offline_grace_scans(client, session):
+    """scan_offline_grace_scans=N: a host must be absent N consecutive scans
+    before it flips offline; being seen resets the counter."""
+    vrf_id = (await client.get("/api/v1/vrfs")).json()[0]["id"]
+    p = await _mk_prefix(client, "10.87.0.0/24", vrf_id)
+    await client.post(
+        "/api/v1/addresses",
+        json={
+            "prefix_id": p["id"], "vrf_id": vrf_id,
+            "address": "10.87.0.10", "status": "active",
+        },
+    )
+    net = ipaddress.ip_network("10.87.0.0/24")
+    flags = {"scan_offline_grace_scans": 2}
+    hosts = [HostResult(ip="10.87.0.10")]
+
+    def status_of(row):
+        return row["status"]
+
+    # miss 1 -> still active, counter at 1
+    await reconcile(session, p["id"], vrf_id, [], net, flags)
+    await session.commit()
+    row = (await client.get("/api/v1/addresses")).json()[0]
+    assert status_of(row) == "active" and row["missed_scans"] == 1
+
+    # miss 2 -> offline
+    await reconcile(session, p["id"], vrf_id, [], net, flags)
+    await session.commit()
+    row = (await client.get("/api/v1/addresses")).json()[0]
+    assert status_of(row) == "offline" and row["missed_scans"] == 2
+
+    # seen again -> counter resets, host reactivates
+    await reconcile(session, p["id"], vrf_id, hosts, net, flags)
+    await session.commit()
+    row = (await client.get("/api/v1/addresses")).json()[0]
+    assert status_of(row) == "active" and row["missed_scans"] == 0
+
+
+async def test_resolve_prefix_auto_create_disabled(client, session):
+    """scan_auto_create_prefix=off: an uncovered scan target fails loudly
+    instead of minting an 'Auto-created by scanner' prefix."""
+    from app.worker.worker import _resolve_prefix
+
+    vrf_id = (await client.get("/api/v1/vrfs")).json()[0]["id"]
+    with pytest.raises(RuntimeError, match="no prefix covers"):
+        await _resolve_prefix(
+            session, "10.88.0.0/24", vrf_id, None, auto_create=False
+        )
+
+    # a covering prefix still resolves normally with the flag off
+    p = await _mk_prefix(client, "10.88.0.0/16", vrf_id)
+    got = await _resolve_prefix(
+        session, "10.88.1.0/24", vrf_id, None, auto_create=False
+    )
+    assert got.id == p["id"]
+
+
+async def test_scan_vrf_infer_disabled(client, session):
+    """scan_infers_vrf=off: no prefix-matching — scans without an explicit
+    VRF always land in Global."""
+    g = await _global_id(client)
+    hl = await _extra_vrf(client)
+    await _mk_prefix(client, "10.89.0.0/24", hl)
+    net = ipaddress.ip_network("10.89.0.0/24")
+    assert await _scan_vrf(session, ScanJob(cidr=str(net)), net, infer=False) == g
+    # explicit job VRF still wins over the flag
+    assert (
+        await _scan_vrf(
+            session, ScanJob(cidr=str(net), vrf_id=hl), net, infer=False
+        )
+        == hl
+    )
+
+
+# --------------------------------------------------------------------------
+# retention sweeps — scheduler_tick's auto-purge for changelog, terminal
+# scan jobs and stale discovery-inbox rows (0 = keep forever)
+# --------------------------------------------------------------------------
+
+
+async def test_retention_sweeps(client, session):
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import update
+
+    from app.models.change_log import ChangeLog
+    from app.models.ip_address import IPAddress
+    from app.worker.worker import _retention_sweeps
+
+    now = datetime.now(timezone.utc)
+    old = now - timedelta(days=100)
+
+    vrf_id = (await client.get("/api/v1/vrfs")).json()[0]["id"]
+    p = await _mk_prefix(client, "10.95.0.0/24", vrf_id)
+    for addr in ("10.95.0.10", "10.95.0.20"):
+        r = await client.post(
+            "/api/v1/addresses",
+            json={
+                "prefix_id": p["id"], "vrf_id": vrf_id,
+                "address": addr, "status": "discovered",
+            },
+        )
+        assert r.status_code == 201, r.text
+    # active sibling that must survive the discovery sweep
+    await client.post(
+        "/api/v1/addresses",
+        json={
+            "prefix_id": p["id"], "vrf_id": vrf_id,
+            "address": "10.95.0.30", "status": "active",
+        },
+    )
+    jobs = [
+        ScanJob(cidr="10.95.1.0/24", status=ScanStatus.COMPLETED),
+        ScanJob(cidr="10.95.2.0/24", status=ScanStatus.COMPLETED),
+        ScanJob(cidr="10.95.3.0/24", status=ScanStatus.RUNNING),
+    ]
+    session.add_all(jobs)
+    await session.commit()
+    # age: one discovered host, one terminal job, all pre-existing changelog
+    await session.execute(
+        update(IPAddress)
+        .where(IPAddress.address_int == int(ipaddress.ip_address("10.95.0.10")))
+        .values(created_at=old, last_seen=old)
+    )
+    await session.execute(
+        update(ScanJob)
+        .where(ScanJob.cidr == "10.95.1.0/24")
+        .values(created_at=old)
+    )
+    await session.execute(update(ChangeLog).values(ts=old))
+    await session.commit()
+
+    # all zeros -> nothing deleted
+    assert await _retention_sweeps(session, {}, now) == {}
+    assert (await client.get("/api/v1/addresses")).json()
+
+    detail = await _retention_sweeps(
+        session,
+        {
+            "changelog_retention_days": 30,
+            "scan_job_retention_days": 30,
+            "discovery_expire_days": 30,
+        },
+        now,
+    )
+    assert detail["discovery"] == 1      # only the aged discovered host
+    assert detail["scan_jobs"] == 1      # only the aged terminal job
+    assert detail["changelog"] >= 1      # aged audit rows gone
+
+    addrs = (await client.get("/api/v1/addresses")).json()
+    by_ip = {r["address"]: r["status"] for r in addrs}
+    assert "10.95.0.10" not in by_ip
+    assert by_ip["10.95.0.20"] == "discovered"  # recent -> kept
+    assert by_ip["10.95.0.30"] == "active"      # not discovered -> kept
+
+    running = await session.get(ScanJob, jobs[2].id)
+    assert running is not None           # live jobs are never swept
+
+    # the sweep audited itself
+    audits = (
+        await session.execute(
+            select(ChangeLog).where(ChangeLog.object_repr == "retention-sweep")
+        )
+    ).scalars().all()
+    assert audits and audits[0].actor == "scheduler"

@@ -28,7 +28,7 @@ assets, and services can all be linked to a site.
 
 ## Related settings
 
-The **Site codes follow site changes** feature flag (Settings → Features)
-controls whether linked VRF names and circuit/service site fields update
-automatically when a site's code, number, or name changes. When off, stored
-mismatches are treated as deliberate manual overrides.
+The **Site codes follow site changes** feature flag (Settings → Features,
+on by default) controls whether linked VRF names and circuit/service site
+fields update automatically when a site's code, number, or name changes.
+When off, stored mismatches are treated as deliberate manual overrides.

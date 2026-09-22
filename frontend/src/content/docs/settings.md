@@ -18,7 +18,7 @@ Operational settings follow **`.env` default → database override**:
 | Section | What it does |
 |---|---|
 | **General** | System info — app version, alembic revision, detected LAN interface/CIDR, env summary |
-| **Features** | Behavior toggles — currently *Site codes follow site changes* |
+| **Features** | Behavior toggles grouped by concern — *Scanner reconciliation* (offline marking, grace scans, reactivation, inbox, MAC/hostname/device-type policy), *Scan targeting* (auto-create prefixes, VRF inference), *Discovery inbox* expiry, *Data retention* (changelog + scan history auto-purge), *Certificates* warn window, *Site cascade*. All defaults reproduce the original behavior |
 | **Scanning** | Runtime scanner config: networks, exclusions, schedule, rate limits, timeouts, ports |
 | **Backup & Restore** | Download a `.json.gz` snapshot, restore on any install, schedule recurring backups |
 | **Account & Security** | Your password and active sessions (revoke others remotely) |

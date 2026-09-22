@@ -27,7 +27,7 @@ import {
   RowOrderDnd,
   SortableRow,
 } from "@/components/row-order";
-import { expiryBadge } from "@/components/expiry-badge";
+import { ExpiryBadge } from "@/components/expiry-badge";
 import { AsyncPanel } from "@/components/async-panel";
 import { DocsLink } from "@/components/docs/docs-link";
 import { HistoryDialog } from "@/components/history-panel";
@@ -263,7 +263,7 @@ export default function CertificatesPage() {
         id: "countdown",
         header: "Countdown",
         enableSorting: false,
-        cell: (c) => expiryBadge(c.row.original.expires_on),
+        cell: (c) => <ExpiryBadge expiresOn={c.row.original.expires_on} />,
       },
       {
         accessorKey: "notes",

@@ -127,6 +127,29 @@ EDITABLE: dict[str, SettingSpec] = {
     "scan_tcp_timeout": SettingSpec("scan_tcp_timeout", _v_float(0.1, 10.0)),
     "scan_concurrency": SettingSpec("scan_concurrency", _v_int(1, 1024)),
     "site_code_follow_site": SettingSpec("site_code_follow_site", _v_bool),
+    "scan_marks_offline": SettingSpec("scan_marks_offline", _v_bool),
+    "scan_reactivates_offline": SettingSpec("scan_reactivates_offline", _v_bool),
+    "scan_new_hosts_discovered": SettingSpec(
+        "scan_new_hosts_discovered", _v_bool
+    ),
+    "scan_stored_mac_wins": SettingSpec("scan_stored_mac_wins", _v_bool),
+    "scan_overwrites_hostname": SettingSpec("scan_overwrites_hostname", _v_bool),
+    "scan_infers_device_type": SettingSpec("scan_infers_device_type", _v_bool),
+    "scan_auto_create_prefix": SettingSpec("scan_auto_create_prefix", _v_bool),
+    "scan_infers_vrf": SettingSpec("scan_infers_vrf", _v_bool),
+    "scan_offline_grace_scans": SettingSpec(
+        "scan_offline_grace_scans", _v_int(0, 100)
+    ),
+    "discovery_expire_days": SettingSpec(
+        "discovery_expire_days", _v_int(0, 3650)
+    ),
+    "changelog_retention_days": SettingSpec(
+        "changelog_retention_days", _v_int(0, 3650)
+    ),
+    "scan_job_retention_days": SettingSpec(
+        "scan_job_retention_days", _v_int(0, 3650)
+    ),
+    "cert_warn_days": SettingSpec("cert_warn_days", _v_int(1, 365)),
     "backup_interval_minutes": SettingSpec(
         "backup_interval_minutes", _v_int(0, 10080)
     ),
