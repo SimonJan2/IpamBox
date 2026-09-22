@@ -150,35 +150,39 @@ export default function AppearancePage() {
                 </Select>
               </SettingField>
 
-              <SettingField
-                label="Starfield"
-                hint="Night-sky dots in the background."
-              >
-                <Switch
-                  checked={prefs.fxStars}
-                  onCheckedChange={(v) => setPrefs({ fxStars: v })}
-                />
-              </SettingField>
+              {prefs.fx === "full" && (
+                <>
+                  <SettingField
+                    label="Starfield"
+                    hint="Night-sky dots in the background."
+                  >
+                    <Switch
+                      checked={prefs.fxStars}
+                      onCheckedChange={(v) => setPrefs({ fxStars: v })}
+                    />
+                  </SettingField>
 
-              <SettingField
-                label="Film grain"
-                hint="Subtle texture over the page."
-              >
-                <Switch
-                  checked={prefs.fxGrain}
-                  onCheckedChange={(v) => setPrefs({ fxGrain: v })}
-                />
-              </SettingField>
+                  <SettingField
+                    label="Film grain"
+                    hint="Subtle texture over the page."
+                  >
+                    <Switch
+                      checked={prefs.fxGrain}
+                      onCheckedChange={(v) => setPrefs({ fxGrain: v })}
+                    />
+                  </SettingField>
 
-              <SettingField
-                label="Login neon ring"
-                hint="Spinning border on the sign-in card."
-              >
-                <Switch
-                  checked={prefs.fxSpin}
-                  onCheckedChange={(v) => setPrefs({ fxSpin: v })}
-                />
-              </SettingField>
+                  <SettingField
+                    label="Login neon ring"
+                    hint="Spinning border on the sign-in card."
+                  >
+                    <Switch
+                      checked={prefs.fxSpin}
+                      onCheckedChange={(v) => setPrefs({ fxSpin: v })}
+                    />
+                  </SettingField>
+                </>
+              )}
             </>
           )}
         </CardContent>
