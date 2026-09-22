@@ -26,6 +26,7 @@ from app.models.base import Base
 from app.models.certificate import Certificate
 from app.models.circuit import Circuit
 from app.models.color_rule import ColorRule
+from app.models.custom_list import CustomListRow
 from app.models.ip_address import IPAddress
 from app.models.service import Service
 from app.models.site import Site
@@ -45,6 +46,7 @@ COLORABLE: dict[str, type[Base]] = {
     "services": Service,
     "tags": Tag,
     "addresses": IPAddress,
+    "custom_list_rows": CustomListRow,
 }
 
 OPERATORS = ("eq", "neq", "contains", "lt", "gt", "within_days")

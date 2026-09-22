@@ -48,6 +48,7 @@ from app.models.certificate import Certificate
 from app.models.change_log import ChangeLog
 from app.models.circuit import Circuit
 from app.models.color_rule import ColorRule
+from app.models.custom_list import CustomList, CustomListRow
 from app.models.import_batch import ImportBatch
 from app.models.ip_address import IPAddress
 from app.models.ip_range import IPRange
@@ -112,6 +113,8 @@ BACKUP_TABLES: tuple[BackupTable, ...] = (
     BackupTable("certificates", Certificate),
     BackupTable("assets", Asset),
     BackupTable("services", Service),
+    BackupTable("custom_lists", CustomList),
+    BackupTable("custom_list_rows", CustomListRow),
     BackupTable("tags", Tag),
     BackupTable("tag_assignments", TagAssignment),
     BackupTable("scan_jobs", ScanJob, sanitize=_fail_inflight_scans),

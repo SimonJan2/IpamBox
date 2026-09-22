@@ -28,3 +28,15 @@ to their upload batch — but rows can also be created and edited by hand.
 Reorder, pin, tag, row color, inline edits, history. Serial numbers and
 vendor/model pairs surface in [command palette](/docs/search-and-shortcuts)
 results under "Inventory".
+
+## Reading the page
+
+- **Stats strip** — hardware/software split, EOL passed, EOL within 90 days,
+  missing serial, no site. Each card is a click-to-filter shortcut.
+- **Kind tabs** — All / Hardware / Software segment the table.
+- **Group by** — collapse rows under category, site, or vendor headers.
+- **Columns** — visibility picker for dense vs. minimal views.
+- **Saved views** — built-ins like "EOL < 90 days" and "Routers w/o site".
+
+For sheet-shaped data that isn't an asset (server rosters, contact lists…),
+see [custom lists](/docs/lists).

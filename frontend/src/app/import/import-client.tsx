@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { Fragment, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   Check,
@@ -22,12 +22,20 @@ import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
 import { fmtTs } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
-import type { ImportBatch, Page, RowResult, SheetPreview, Site } from "@/types";
+import type {
+  ImportBatch,
+  ListTarget,
+  Page,
+  RowResult,
+  SheetPreview,
+  Site,
+} from "@/types";
 import { AsyncPanel } from "@/components/async-panel";
 import { DocsLink } from "@/components/docs/docs-link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -54,6 +62,7 @@ const FAMILY_LABEL: Record<string, string> = {
   assets: "Assets",
   services: "Services",
   inventory: "Inventory",
+  servers: "Servers",
   empty: "Empty",
   unknown: "Unknown",
 };
@@ -308,6 +317,15 @@ function SheetResults({
                   {FAMILY_LABEL[meta.family] ?? meta.family}
                 </Badge>
               )}
+              {meta?.list_name && (
+                <Badge
+                  variant="outline"
+                  dir="auto"
+                  className="border-violet-500/40 text-violet-400"
+                >
+                  list: {meta.list_name}
+                </Badge>
+              )}
               <span className="ml-auto flex gap-2 text-xs">
                 {["create", "update", "skip", "conflict", "error"]
                   .filter((k) => (counts[k] ?? 0) > 0)
@@ -323,6 +341,26 @@ function SheetResults({
             </button>
             {isOpen && (
               <div className="max-h-72 overflow-auto border-t">
+                {(meta?.list_columns?.length ?? 0) > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 border-b px-3 py-2">
+                    <span className="text-xs text-muted-foreground">
+                      Columns:
+                    </span>
+                    {(meta?.list_columns ?? []).map((c) => (
+                      <Badge
+                        key={c.key}
+                        variant="outline"
+                        className="gap-1 font-normal"
+                      >
+                        <span dir="auto">{c.label}</span>
+                        <span className="text-[10px] uppercase text-muted-foreground">
+                          {c.type}
+                          {c.multi ? "×n" : ""}
+                        </span>
+                      </Badge>
+                    ))}
+                  </div>
+                )}
                 <RowsGrid rows={sheetRows.slice(0, SHEET_ROW_CAP)} showSheet={false} />
                 {sheetRows.length > SHEET_ROW_CAP && (
                   <p className="px-3 py-2 text-xs text-muted-foreground">
@@ -371,6 +409,10 @@ export default function ImportPage() {
   const [overrides, setOverrides] = useState<Record<string, number | string>>(
     {}
   );
+  // sheet -> custom-list target (absent = auto family import)
+  const [listTargets, setListTargets] = useState<
+    Record<string, { name: string; key_column: string; also_ipam: boolean }>
+  >({});
   const [preview, setPreview] = useState<PreviewResp | null>(null);
   const [commitResult, setCommitResult] = useState<CommitResp | null>(null);
   const [busy, setBusy] = useState(false);
@@ -385,6 +427,7 @@ export default function ImportPage() {
     setSheets([]);
     setSkipped(new Set());
     setOverrides({});
+    setListTargets({});
     setPreview(null);
     setCommitResult(null);
   };
@@ -395,6 +438,7 @@ export default function ImportPage() {
     setCommitResult(null);
     setOverrides({});
     setSkipped(new Set());
+    setListTargets({});
     try {
       const r = await api.upload<UploadResp>(
         `/api/v1/imports/workbook?filename=${encodeURIComponent(file.name)}`,
@@ -423,6 +467,18 @@ export default function ImportPage() {
           site_overrides: overrides,
           skip_sheets: [...skipped],
           create_containers: true,
+          list_sheets: Object.fromEntries(
+            Object.entries(listTargets)
+              .filter(([s]) => !skipped.has(s))
+              .map(([s, t]) => [
+                s,
+                {
+                  name: t.name || null,
+                  key_column: t.key_column || null,
+                  also_ipam: t.also_ipam,
+                } satisfies ListTarget,
+              ])
+          ),
         }
       );
       setPreview(r);
@@ -508,7 +564,7 @@ export default function ImportPage() {
         <input
           ref={fileRef}
           type="file"
-          accept=".xlsx"
+          accept=".xlsx,.csv"
           className="hidden"
           onChange={(e) => {
             const f = e.target.files?.[0];
@@ -557,6 +613,7 @@ export default function ImportPage() {
                   <TableHead className="w-10"></TableHead>
                   <TableHead>Sheet</TableHead>
                   <TableHead>Detected as</TableHead>
+                  <TableHead>Import as</TableHead>
                   <TableHead className="w-16">Rows</TableHead>
                   <TableHead>Site</TableHead>
                   <TableHead>Warnings</TableHead>
@@ -565,9 +622,10 @@ export default function ImportPage() {
               <TableBody>
                 {sheets.map((s) => {
                   const off = skipped.has(s.sheet);
+                  const tgt = listTargets[s.sheet];
                   return (
+                    <Fragment key={s.sheet}>
                     <TableRow
-                      key={s.sheet}
                       className={off ? "opacity-40" : undefined}
                     >
                       <TableCell>
@@ -589,6 +647,57 @@ export default function ImportPage() {
                         <Badge variant="outline">
                           {FAMILY_LABEL[s.family] ?? s.family}
                         </Badge>
+                        {s.list_name && (
+                          <Badge
+                            variant="outline"
+                            dir="auto"
+                            className="ml-1 border-violet-500/40 text-violet-400"
+                          >
+                            → {s.list_name}
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {off || s.family === "empty" ? (
+                          <span className="text-muted-foreground">—</span>
+                        ) : (
+                          <Select
+                            value={listTargets[s.sheet] ? "list" : "auto"}
+                            onValueChange={(v) => {
+                              const next = { ...listTargets };
+                              if (v === "auto") delete next[s.sheet];
+                              else
+                                next[s.sheet] = {
+                                  name: s.sheet,
+                                  key_column: "",
+                                  // IP sheets still feed the IPAM by default;
+                                  // entity sheets default to list-only
+                                  also_ipam:
+                                    s.family === "site_sheet" ||
+                                    s.family === "servers",
+                                };
+                              setListTargets(next);
+                            }}
+                          >
+                            <SelectTrigger
+                              className="h-8 w-36"
+                              aria-label={`Import target for sheet ${s.sheet}`}
+                            >
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="auto">
+                                Auto
+                                {s.family !== "unknown" &&
+                                  ` (${FAMILY_LABEL[s.family] ?? s.family})`}
+                              </SelectItem>
+                              <SelectItem value="list">
+                                Custom list
+                                {s.family === "unknown" ? " (suggested)" : ""}
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
                       </TableCell>
                       <TableCell className="font-mono text-muted-foreground">
                         {s.rows}
@@ -648,6 +757,82 @@ export default function ImportPage() {
                         )}
                       </TableCell>
                     </TableRow>
+                    {tgt && !off && (
+                      <TableRow className="bg-muted/20">
+                        <TableCell />
+                        <TableCell colSpan={6}>
+                          <div className="flex flex-wrap items-center gap-3 py-1 text-sm">
+                            <span className="text-muted-foreground">
+                              List name:
+                            </span>
+                            <Input
+                              dir="auto"
+                              className="h-8 w-56"
+                              value={tgt.name}
+                              aria-label={`List name for sheet ${s.sheet}`}
+                              onChange={(e) =>
+                                setListTargets({
+                                  ...listTargets,
+                                  [s.sheet]: { ...tgt, name: e.target.value },
+                                })
+                              }
+                            />
+                            <span className="text-muted-foreground">
+                              Merge key:
+                            </span>
+                            <Select
+                              value={tgt.key_column || "__auto__"}
+                              onValueChange={(v) =>
+                                setListTargets({
+                                  ...listTargets,
+                                  [s.sheet]: {
+                                    ...tgt,
+                                    key_column: v === "__auto__" ? "" : v,
+                                  },
+                                })
+                              }
+                            >
+                              <SelectTrigger
+                                className="h-8 w-44"
+                                aria-label={`Merge key column for sheet ${s.sheet}`}
+                              >
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__auto__">
+                                  Auto (first text column)
+                                </SelectItem>
+                                {s.headers.map((h) => (
+                                  <SelectItem key={h} value={h}>
+                                    <span dir="auto">{h}</span>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            {s.family !== "unknown" && (
+                              <label className="flex items-center gap-1.5 text-muted-foreground">
+                                <Checkbox
+                                  checked={tgt.also_ipam}
+                                  aria-label={`Also import ${s.sheet} to ${FAMILY_LABEL[s.family] ?? s.family}`}
+                                  onCheckedChange={(v) =>
+                                    setListTargets({
+                                      ...listTargets,
+                                      [s.sheet]: {
+                                        ...tgt,
+                                        also_ipam: v === true,
+                                      },
+                                    })
+                                  }
+                                />
+                                also import to{" "}
+                                {FAMILY_LABEL[s.family] ?? s.family}
+                              </label>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    </Fragment>
                   );
                 })}
               </TableBody>

@@ -19,6 +19,7 @@ from app.models.certificate import Certificate
 from app.models.change_log import ChangeLog
 from app.models.circuit import Circuit
 from app.models.color_rule import ColorRule
+from app.models.custom_list import CustomList, CustomListRow
 from app.models.import_batch import ImportBatch
 from app.models.ip_address import IPAddress
 from app.models.ip_range import IPRange
@@ -48,6 +49,8 @@ AUDITED_MODELS: tuple = (
     Asset,
     Service,
     ColorRule,
+    CustomList,
+    CustomListRow,
 )
 # churn-only columns that produce noise, never signal — sort_order/pinned
 # change on every drag/drop and would spam the audit log per gesture
@@ -103,11 +106,26 @@ def _update_changes(obj) -> list[dict]:
         hist = getattr(insp.attrs, f).history
         if not hist.has_changes():
             continue
+        before = hist.deleted[0] if hist.deleted else None
+        after = hist.added[0] if hist.added else None
+        if isinstance(before, dict) and isinstance(after, dict):
+            # JSONB blobs (row data, custom_fields, columns) — diff per key
+            # so history shows "data.c1: x → y", not two opaque JSON blobs.
+            for k in dict.fromkeys([*before, *after]):
+                if before.get(k) != after.get(k):
+                    out.append(
+                        {
+                            "field": f"{f}.{k}",
+                            "before": _ser(before.get(k)),
+                            "after": _ser(after.get(k)),
+                        }
+                    )
+            continue
         out.append(
             {
                 "field": f,
-                "before": _ser(hist.deleted[0] if hist.deleted else None),
-                "after": _ser(hist.added[0] if hist.added else None),
+                "before": _ser(before),
+                "after": _ser(after),
             }
         )
     return out

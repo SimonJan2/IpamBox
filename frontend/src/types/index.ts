@@ -404,6 +404,7 @@ export type SheetFamily =
   | "assets"
   | "services"
   | "inventory"
+  | "servers"
   | "site_sheet"
   | "empty"
   | "unknown";
@@ -428,6 +429,10 @@ export interface SheetPreview {
   site_name: string | null;
   matched_by: "octet" | "code" | "name" | "override" | null;
   warnings: string[];
+  /** set when the sheet is imported as a custom list */
+  list_name?: string | null;
+  /** inferred column defs for list-targeted sheets */
+  list_columns?: ListColumn[] | null;
 }
 
 export interface RowResult {
@@ -554,4 +559,76 @@ export interface Page<T> {
   total: number;
   limit: number | null;
   offset: number;
+}
+
+// --- Custom lists (user-defined tables from workbook sheets) ----------------
+
+export type ListColumnType =
+  | "text"
+  | "ip"
+  | "date"
+  | "select"
+  | "number"
+  | "url"
+  | "owner";
+
+export interface ListColumn {
+  /** Positional key ("c0"…) — stable across renames; row data keys on it. */
+  key: string;
+  label: string;
+  type: ListColumnType;
+  /** select only */
+  options?: string[] | null;
+  /** ip only: comma-separated multi-value cells */
+  multi?: boolean | null;
+}
+
+export interface CustomList {
+  id: number;
+  name: string;
+  slug: string;
+  description: string | null;
+  icon: string | null;
+  columns: ListColumn[] | null;
+  key_column: string | null;
+  source_sheet: string | null;
+  import_batch_id: number | null;
+  sort_order: number | null;
+  created_at: string;
+  row_count: number;
+}
+
+export interface CustomListRow {
+  id: number;
+  list_id: number;
+  data: Record<string, string> | null;
+  site_id: number | null;
+  sort_order: number | null;
+  pinned: boolean;
+  row_color: string | null;
+  display_color: string | null;
+  manually_edited: boolean;
+  import_batch_id: number | null;
+  created_at: string;
+}
+
+/** Live ip_addresses lookup for an ip-typed cell. */
+export interface ResolvedIp {
+  id: number;
+  prefix_id: number;
+  status: IpStatus;
+  hostname: string | null;
+  last_seen: string | null;
+}
+
+export interface ListRowsPage extends Page<CustomListRow> {
+  /** ip -> the address-table row it resolves to (empty when none resolve) */
+  resolved: Record<string, ResolvedIp>;
+}
+
+/** Import wizard: target a sheet as a custom list. */
+export interface ListTarget {
+  name?: string | null;
+  key_column?: string | null;
+  also_ipam: boolean;
 }

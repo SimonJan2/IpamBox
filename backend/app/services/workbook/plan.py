@@ -9,6 +9,7 @@ from collections import Counter, defaultdict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.custom_list import CustomList, CustomListRow
 from app.models.ip_address import IPAddress
 from app.models.ip_range import IPRange
 from app.models.prefix import Prefix, PrefixStatus
@@ -19,6 +20,11 @@ from app.services import prefix_math
 from app.services.ipam import slugify, vrf_name_for
 from app.services.workbook import normalize as nz
 from app.services.workbook.classify import classify_sheet
+from app.services.workbook.listparse import (
+    extract_list_table,
+    key_for,
+    pick_key_column,
+)
 from app.services.workbook.parsers import PARSERS
 
 HOLDING_SLUG = "imported-unmatched"
@@ -42,6 +48,10 @@ class DbState:
         self.vlan_by_key: dict[tuple[int | None, int], VLAN] = {}
         self.addr_by_key: dict[tuple[int, int], IPAddress] = {}
         self.range_keys: set[tuple[int, int, int]] = set()
+        self.list_by_slug: dict[str, CustomList] = {}
+        self.list_by_name: dict[str, CustomList] = {}
+        # list_id -> normalized key-column value -> row (for merge preview)
+        self.list_rows: dict[int, dict[str, CustomListRow]] = {}
 
 
 async def load_state(session: AsyncSession) -> DbState:
@@ -67,6 +77,21 @@ async def load_state(session: AsyncSession) -> DbState:
         st.addr_by_key[(a.vrf_id, int(a.address_int))] = a
     for r in (await session.execute(select(IPRange))).scalars():
         st.range_keys.add((r.vrf_id, int(r.start_int), int(r.end_int)))
+    lists = (await session.execute(select(CustomList))).scalars().all()
+    list_by_id = {l.id: l for l in lists}
+    for l in lists:
+        st.list_by_slug[l.slug] = l
+        st.list_by_name[nz.fold_hebrew(l.name).lower()] = l
+        st.list_rows[l.id] = {}
+    # index each existing row by its list's key column so plan-time merge
+    # diffs against the real stored keys
+    for r in (await session.execute(select(CustomListRow))).scalars():
+        lst = list_by_id.get(r.list_id)
+        if lst is None or not lst.key_column:
+            continue
+        k = key_for(r.data or {}, lst.key_column)
+        if k:
+            st.list_rows[r.list_id][k] = r
     return st
 
 
@@ -93,6 +118,7 @@ class _Planner:
             for k in (
                 "sites", "vrfs", "prefixes", "ranges", "addresses",
                 "circuits", "certificates", "assets", "services",
+                "custom_lists",
             )
         }
         self.rows: list[dict] = []
@@ -108,6 +134,8 @@ class _Planner:
         # (first, second) octet pair -> site_key, seeded by sites-master rows
         # so non-10.x networks (Integration's 172.20-21.x) resolve correctly
         self._block_site: dict[tuple[int, int], str] = {}
+        self._list_names: dict[str, str] = {}  # sheet -> custom list name
+        self._list_cols: dict[str, list[dict]] = {}  # sheet -> inferred cols
 
     # -- reporting ------------------------------------------------------
 
@@ -772,6 +800,154 @@ class _Planner:
             self.plan["services"].append({**r, "site_key": site_key})
             self.report(r["sheet"], r["row"], "create", r.get("name") or "service")
 
+    # -- custom lists ----------------------------------------------------
+
+    def _find_list(self, name: str) -> CustomList | None:
+        slug = slugify(name)
+        if slug in self.st.list_by_slug:
+            return self.st.list_by_slug[slug]
+        return self.st.list_by_name.get(nz.fold_hebrew(name).lower())
+
+    @staticmethod
+    def _remap_columns(existing: list[dict], incoming: list[dict]):
+        """Map incoming column keys onto an existing list's defs by folded
+        label — a re-export may reorder/insert columns. Unmatched incoming
+        labels get fresh keys appended; returns (final_cols, key_map)."""
+        cols = [dict(c) for c in existing]
+        by_label = {
+            nz.fold_hebrew(c.get("label") or "").lower(): c for c in cols
+        }
+        used = {c["key"] for c in cols}
+        next_i = 0
+        for c in cols:
+            m = re.fullmatch(r"c(\d+)", str(c.get("key") or ""))
+            if m:
+                next_i = max(next_i, int(m.group(1)) + 1)
+        key_map: dict[str, str] = {}
+        for col in incoming:
+            match = by_label.get(nz.fold_hebrew(col["label"]).lower())
+            if match is not None and match["key"] not in key_map.values():
+                key_map[col["key"]] = match["key"]
+                # adopt the incoming col's richer type info (e.g. multi)
+                match.update({k: v for k, v in col.items() if k != "key"})
+                continue
+            while f"c{next_i}" in used:
+                next_i += 1
+            new_col = {**col, "key": f"c{next_i}"}
+            used.add(new_col["key"])
+            next_i += 1
+            cols.append(new_col)
+            by_label[nz.fold_hebrew(new_col["label"]).lower()] = new_col
+            key_map[col["key"]] = new_col["key"]
+        return cols, key_map
+
+    def _resolve_key_column(self, columns: list[dict], rows: list[dict],
+                            wanted: str | None) -> str | None:
+        """User-picked key column may arrive as a key ('c0') or a header
+        label ('Name'); fall back to content-based auto-pick."""
+        if wanted:
+            keys = {c["key"] for c in columns}
+            if wanted in keys:
+                return wanted
+            folded = nz.fold_hebrew(wanted).lower()
+            for c in columns:
+                if nz.fold_hebrew(c["label"]).lower() == folded:
+                    return c["key"]
+        return pick_key_column(columns, rows)
+
+    def add_list_sheet(self, sm, hidx: int, target) -> dict:
+        """Extract a sheet as custom-list rows and diff it against the
+        existing list (merge-by-key preview) so the wizard shows real
+        create/update/skip counts before commit. Returns the plan entry."""
+        name = nz.clean(target.name)[:255] or nz.clean(sm.name)[:255] or "list"
+        columns, rows = extract_list_table(sm, hidx)
+
+        existing = self._find_list(name)
+        if existing is not None:
+            columns, key_map = self._remap_columns(
+                existing.columns or [], columns
+            )
+            for r in rows:
+                r["data"] = {
+                    key_map[k]: v for k, v in r["data"].items() if k in key_map
+                }
+
+        key_col = self._resolve_key_column(
+            columns, rows, target.key_column
+        ) or (existing.key_column if existing else None)
+
+        entry = {
+            "sheet": sm.name,
+            "name": name,
+            "key_column": key_col,
+            "columns": columns,
+            "list_id": existing.id if existing else None,
+            "rows": [],
+        }
+        seen_keys: dict[str, int] = {}
+        live = (
+            self.st.list_rows.get(existing.id, {}) if existing is not None else {}
+        )
+        matched_ids: set[int] = set()
+        for r in rows:
+            k = key_for(r["data"], key_col)
+            label = str(r["data"].get(key_col) or f"row {r['row']}") if key_col else f"row {r['row']}"
+            if k and k in seen_keys:
+                entry["rows"].append({**r, "action": "conflict"})
+                self.report(
+                    sm.name, r["row"], "conflict",
+                    f"list '{name}': duplicate key '{label}' — first wins",
+                )
+                continue
+            if k:
+                seen_keys[k] = r["row"]
+            if existing is None:
+                entry["rows"].append({**r, "action": "create", "key": k})
+                self.report(sm.name, r["row"], "create", f"list '{name}': {label}")
+                continue
+            row = live.get(k) if k else None
+            if row is None:
+                entry["rows"].append({**r, "action": "create", "key": k})
+                self.report(sm.name, r["row"], "create", f"list '{name}': {label}")
+                continue
+            matched_ids.add(row.id)
+            if row.manually_edited and (row.data or {}) != r["data"]:
+                entry["rows"].append(
+                    {**r, "action": "conflict", "target_id": row.id, "key": k}
+                )
+                self.report(
+                    sm.name, r["row"], "conflict",
+                    f"list '{name}': '{label}' was edited in-app — kept",
+                )
+            elif (row.data or {}) == r["data"]:
+                entry["rows"].append(
+                    {**r, "action": "skip", "target_id": row.id, "key": k}
+                )
+                self.report(
+                    sm.name, r["row"], "skip",
+                    f"list '{name}': '{label}' unchanged",
+                )
+            else:
+                entry["rows"].append(
+                    {**r, "action": "update", "target_id": row.id, "key": k}
+                )
+                self.report(
+                    sm.name, r["row"], "update",
+                    f"list '{name}': '{label}' changed",
+                )
+        # rows absent from the re-imported sheet are kept but reported —
+        # silent deletes would hide drift; conflicts would overstate it
+        if existing is not None and key_col:
+            for k, row in live.items():
+                if row.id not in matched_ids and k not in seen_keys:
+                    label = str((row.data or {}).get(key_col) or row.id)
+                    self.report(
+                        sm.name, 0, "skip",
+                        f"list '{name}': '{label}' missing from source — kept",
+                    )
+        self.plan["custom_lists"].append(entry)
+        return entry
+
     def _site_warnings(self, sheet_name: str, site: dict, how: str | None) -> list[str]:
         """Honesty checks on an octet/name match — inactive sites and
         title/site disagreements surface as warnings, not silent picks."""
@@ -828,19 +1004,38 @@ class _Planner:
 
         # pre-pass: resolve every address sheet's site BEFORE entity families
         # run — a circuits sheet early in the workbook must still see sites
-        # created by site sheets at the end of it
+        # created by site sheets at the end of it. List-only sheets don't
+        # feed the IPAM, so they don't need a site at all.
+        list_targets = self.opt.list_sheets or {}
         for sm in sheets:
             family, _hidx, records, _warns = parsed[sm.name]
-            if family in ("site_sheet", "servers") and sm.name not in self.opt.skip_sheets:
+            tgt = list_targets.get(sm.name)
+            if (
+                family in ("site_sheet", "servers")
+                and sm.name not in self.opt.skip_sheets
+                and (tgt is None or tgt.also_ipam)
+            ):
                 self.resolve_sheet_site(sm.name, self._sheet_octets(records))
 
         for sm in sheets:
-            family, _hidx, records, warns = parsed[sm.name]
+            family, hidx, records, warns = parsed[sm.name]
             if family == "empty" or sm.name in self.opt.skip_sheets:
                 self.sheet_previews.append(
                     _preview(sm, family, len(records), warns, None, None, None)
                 )
                 continue
+            tgt = list_targets.get(sm.name)
+            if tgt is not None:
+                entry = self.add_list_sheet(sm, hidx, tgt)
+                self._list_names[sm.name] = entry["name"]
+                # inferred columns surface in the sheet preview so the
+                # wizard can badge the detected types
+                self._list_cols[sm.name] = entry["columns"]
+                if not tgt.also_ipam:
+                    self.sheet_previews.append(
+                        _preview(sm, family, len(records), warns, None, None, None)
+                    )
+                    continue
             if family == "site_sheet":
                 octets = self._sheet_octets(records)
                 site_key, how = self.resolve_sheet_site(sm.name, octets)
@@ -881,6 +1076,12 @@ class _Planner:
                              warns + ["unrecognized sheet layout — skipped"],
                              None, None, None)
                 )
+
+        for p in self.sheet_previews:
+            list_name = self._list_names.get(p["sheet"])
+            if list_name:
+                p["list_name"] = list_name
+                p["list_columns"] = self._list_cols.get(p["sheet"], [])
 
         self.plan["sites"] = list(self._sites.values())
         self.plan["vrfs"] = list(self._vrfs.values())
