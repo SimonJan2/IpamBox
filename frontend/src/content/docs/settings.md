@@ -23,7 +23,7 @@ Operational settings follow **`.env` default → database override**:
 | **Backup & Restore** | Download a `.json.gz` snapshot, restore on any install, schedule recurring backups |
 | **Account & Security** | Your password and active sessions (revoke others remotely) |
 | **Users & Roles** | Admin console — create users, set [roles](/docs/accounts-and-roles) |
-| **Appearance** | Theme (IpamBox Tokyo Night is the default; also IpamBox Dark/Light, LocalSend Mint/Dark, NetBox Light/Dark, system), density, list preferences |
+| **Appearance** | Theme (IpamBox Tokyo Night is the default; also IpamBox Tokyo Night Storm, IpamBox Dark/Light, LocalSend Mint/Dark, NetBox Light/Dark, system), density, list preferences |
 | **Color Rules** | Admin-managed conditional row coloring — see [Row Colors](/docs/row-colors) |
 | **Data & Maintenance** | Purge scans/changelog/discovery, trigger a backup now, factory reset |
 
