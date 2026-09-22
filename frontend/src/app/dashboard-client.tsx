@@ -34,7 +34,7 @@ import { timeAgo } from "@/lib/utils";
 import type { ChangeLogEntry, DashboardStats, Page, Prefix, ScanJob } from "@/types";
 import { AsyncPanel } from "@/components/async-panel";
 import { DocsLink } from "@/components/docs/docs-link";
-import { expiryBadge } from "@/components/expiry-badge";
+import { ExpiryBadge } from "@/components/expiry-badge";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -239,7 +239,7 @@ export default function DashboardPage() {
                       {[c.platform, c.server_name].filter(Boolean).join(" · ") || "—"}
                     </span>
                   </span>
-                  {expiryBadge(c.expires_on)}
+                  <ExpiryBadge expiresOn={c.expires_on} />
                 </Link>
               ))}
             </AsyncPanel>

@@ -130,6 +130,63 @@ async def test_backup_files_report_effective_schedule(client: AsyncClient):
     assert body["keep"] == 5
 
 
+async def test_feature_toggles_patch_and_defaults(client: AsyncClient):
+    """Every new Settings > Features key is runtime-editable; untouched keys
+    keep the defaults that reproduce the original behavior."""
+    body = (await client.get("/api/v1/settings")).json()["values"]
+    assert body["scan_marks_offline"] is True
+    assert body["scan_reactivates_offline"] is True
+    assert body["scan_new_hosts_discovered"] is True
+    assert body["scan_stored_mac_wins"] is False
+    assert body["scan_overwrites_hostname"] is False
+    assert body["scan_infers_device_type"] is True
+    assert body["scan_auto_create_prefix"] is True
+    assert body["scan_infers_vrf"] is True
+    assert body["scan_offline_grace_scans"] == 0
+    assert body["discovery_expire_days"] == 0
+    assert body["changelog_retention_days"] == 0
+    assert body["scan_job_retention_days"] == 0
+    assert body["cert_warn_days"] == 30
+
+    r = await client.patch(
+        "/api/v1/settings",
+        json={
+            "scan_marks_offline": False,
+            "scan_offline_grace_scans": 3,
+            "cert_warn_days": 60,
+        },
+    )
+    assert r.status_code == 200, r.text
+    v = r.json()["values"]
+    assert v["scan_marks_offline"] is False
+    assert v["scan_offline_grace_scans"] == 3
+    assert v["cert_warn_days"] == 60
+    assert r.json()["sources"]["scan_marks_offline"] == "db"
+
+    # validation: non-coercible values and out-of-range ints are refused
+    r = await client.patch(
+        "/api/v1/settings", json={"scan_marks_offline": ["yes"]}
+    )
+    assert r.status_code == 422
+    r = await client.patch(
+        "/api/v1/settings", json={"scan_offline_grace_scans": 101}
+    )
+    assert r.status_code == 422
+    r = await client.patch("/api/v1/settings", json={"cert_warn_days": 0})
+    assert r.status_code == 422
+    r = await client.patch(
+        "/api/v1/settings", json={"discovery_expire_days": -1}
+    )
+    assert r.status_code == 422
+
+    # null resets back to the behavior-preserving default
+    r = await client.patch(
+        "/api/v1/settings", json={"scan_marks_offline": None}
+    )
+    assert r.json()["values"]["scan_marks_offline"] is True
+    assert r.json()["sources"]["scan_marks_offline"] == "default"
+
+
 async def test_internal_keys_hidden(client: AsyncClient, session):
     session.add(AppSetting(key="_last_scan_at", value="2026-01-01T00:00:00"))
     await session.commit()

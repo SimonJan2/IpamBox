@@ -66,6 +66,11 @@ class IPAddress(Base):
     # device classification derived from ports + vendor + hostname.
     open_ports: Mapped[list[int] | None] = mapped_column(ARRAY(Integer))
     device_type: Mapped[str | None] = mapped_column(String(32))
+    # Consecutive scans where this host was absent — drives the
+    # scan_offline_grace_scans hysteresis (0 = seen on the last scan).
+    missed_scans: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0"
+    )
     # Imported-inventory fields (Network_Address.xlsx site sheets).
     serial_number: Mapped[str | None] = mapped_column(String(128))
     switch_name: Mapped[str | None] = mapped_column(String(255))

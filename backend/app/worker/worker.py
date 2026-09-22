@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from arq import cron
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 
 from app.core.config import get_settings
 from app.core.db import SessionLocal
@@ -17,7 +17,8 @@ from app.core.redis import (
     redis_settings_from_url,
 )
 from app.core.security import set_actor
-from app.models.ip_address import IPAddress
+from app.models.change_log import ChangeLog
+from app.models.ip_address import IPAddress, IPStatus
 from app.models.prefix import Prefix, PrefixStatus
 from app.models.scan_job import ScanJob, ScanStatus
 from app.models.vrf import VRF
@@ -78,17 +79,26 @@ async def _infer_scan_vrf(session, net) -> int:
     return await _global_vrf_id(session)
 
 
-async def _scan_vrf(session, job: ScanJob, net) -> int:
+async def _scan_vrf(session, job: ScanJob, net, infer: bool = True) -> int:
     if job.vrf_id is not None:
         return job.vrf_id
     if job.prefix_id is not None:
         prefix = await session.get(Prefix, job.prefix_id)
         if prefix is not None:
             return prefix.vrf_id
+    # scan_infers_vrf off = never guess from prefixes — always Global
+    if not infer:
+        return await _global_vrf_id(session)
     return await _infer_scan_vrf(session, net)
 
 
-async def _resolve_prefix(session, cidr: str, vrf_id: int, prefix_id: int | None) -> Prefix:
+async def _resolve_prefix(
+    session,
+    cidr: str,
+    vrf_id: int,
+    prefix_id: int | None,
+    auto_create: bool = True,
+) -> Prefix:
     if prefix_id is not None:
         row = await session.get(Prefix, prefix_id)
         if row:
@@ -108,6 +118,13 @@ async def _resolve_prefix(session, cidr: str, vrf_id: int, prefix_id: int | None
             return p  # addresses logically belong to the covering prefix
         if net.subnet_of(pn):
             containers.append(p)
+    if not auto_create:
+        # scan_auto_create_prefix off = documented-first: the scan must land
+        # inside an existing prefix, otherwise it fails loudly.
+        raise RuntimeError(
+            f"no prefix covers {net} in this VRF — document it first or "
+            "re-enable scan_auto_create_prefix"
+        )
     # auto-create an ACTIVE prefix for the scanned CIDR (legal inside containers)
     row = Prefix(
         prefix=str(net),
@@ -224,9 +241,17 @@ async def run_scan(ctx: dict, scan_id: int) -> dict:
                     f"scan target {net} has {usable} usable hosts — exceeds "
                     f"scan_max_hosts={eff.values['scan_max_hosts']}"
                 )
-            vrf_id = await _scan_vrf(session, job, net)
+            vrf_id = await _scan_vrf(
+                session, job, net,
+                infer=bool(eff.values.get("scan_infers_vrf", True)),
+            )
             job.vrf_id = vrf_id
-            prefix = await _resolve_prefix(session, cidr, vrf_id, job.prefix_id)
+            prefix = await _resolve_prefix(
+                session, cidr, vrf_id, job.prefix_id,
+                auto_create=bool(
+                    eff.values.get("scan_auto_create_prefix", True)
+                ),
+            )
             job.prefix_id = prefix.id
             if (await _job_status(session, scan_id)) in _TERMINAL:
                 # cancelled while resolving — don't resurrect it as RUNNING
@@ -253,7 +278,9 @@ async def run_scan(ctx: dict, scan_id: int) -> dict:
                 should_stop=_cancelled,
             )
 
-            discovered, new = await reconcile(session, prefix.id, vrf_id, hosts, net)
+            discovered, new = await reconcile(
+                session, prefix.id, vrf_id, hosts, net, eff.values
+            )
             # A cancel can land during reconcile — the flag is only polled
             # inside scan_cidr's phases, and the row may have been cancelled
             # behind our stale copy. Re-check both before committing results;
@@ -399,6 +426,68 @@ async def run_scheduled_backup(ctx: dict) -> dict:
     return {"file": path.name, "pruned": pruned}
 
 
+async def _retention_sweeps(session, values: dict, now: datetime) -> dict:
+    """Auto-purge rows past their configured retention (0 = keep forever).
+
+    Mirrors the manual purges in api/v1/maintenance.py but runs unattended in
+    the scheduler tick — each sweep writes one summary changelog row when it
+    actually deleted something.
+    """
+    detail: dict[str, int] = {}
+
+    days = int(values.get("changelog_retention_days") or 0)
+    if days > 0:
+        res = await session.execute(
+            delete(ChangeLog).where(
+                ChangeLog.ts < now - timedelta(days=days)
+            )
+        )
+        detail["changelog"] = res.rowcount or 0
+
+    days = int(values.get("scan_job_retention_days") or 0)
+    if days > 0:
+        res = await session.execute(
+            delete(ScanJob).where(
+                ScanJob.status.in_(_TERMINAL),
+                ScanJob.created_at < now - timedelta(days=days),
+            )
+        )
+        detail["scan_jobs"] = res.rowcount or 0
+
+    days = int(values.get("discovery_expire_days") or 0)
+    if days > 0:
+        # last_seen wins over created_at: a discovered host that keeps
+        # answering scans isn't stale, it's just unreviewed.
+        res = await session.execute(
+            delete(IPAddress).where(
+                IPAddress.status == IPStatus.DISCOVERED,
+                func.coalesce(IPAddress.last_seen, IPAddress.created_at)
+                < now - timedelta(days=days),
+            )
+        )
+        detail["discovery"] = res.rowcount or 0
+
+    if any(detail.values()):
+        await session.execute(
+            ChangeLog.__table__.insert(),
+            [
+                {
+                    "actor": "scheduler",
+                    "action": "delete",
+                    "object_type": "Maintenance",
+                    "object_id": None,
+                    "object_repr": "retention-sweep",
+                    "changes": [
+                        {"field": "result", "before": None, "after": detail}
+                    ],
+                }
+            ],
+        )
+        await session.commit()
+        log.info("retention sweeps deleted: %s", detail)
+    return detail
+
+
 def _due(last_iso: str | None, interval_minutes: int, now: datetime) -> bool:
     if interval_minutes <= 0:
         return False
@@ -451,6 +540,9 @@ async def scheduler_tick(ctx: dict) -> dict:
     ):
         await r.set("ipam:sched:last_backup_at", now.isoformat())
         ran.append("backups")
+
+    async with SessionLocal() as session:
+        await _retention_sweeps(session, eff.values, now)
 
     if "scans" in ran:
         await run_scheduled_scans(ctx)

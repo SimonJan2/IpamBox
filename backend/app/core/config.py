@@ -39,8 +39,25 @@ class Settings(BaseSettings):
     # Read-endpoint safety caps
     ipambox_max_split_children: int = 4096  # /prefixes/{id}/split child limit
 
-    # Feature toggles — runtime-editable behavior switches (Settings > Features)
-    site_code_follow_site: bool = False  # treat mismatched stored site codes as stale
+    # Feature toggles — runtime-editable behavior switches (Settings > Features).
+    # Defaults reproduce the original hard-coded behavior; flipping a toggle is
+    # the only way behavior changes.
+    site_code_follow_site: bool = True   # cascade site code/number/name to followers
+    # Scanner reconcile policy
+    scan_marks_offline: bool = True        # missing hosts -> OFFLINE
+    scan_reactivates_offline: bool = True  # OFFLINE -> ACTIVE when re-seen
+    scan_new_hosts_discovered: bool = True # new scan hosts land in the inbox
+    scan_stored_mac_wins: bool = False     # keep stored MAC on mismatch (still flags)
+    scan_overwrites_hostname: bool = False # PTR overwrites a set hostname
+    scan_infers_device_type: bool = True   # scanner guess fills device_type
+    scan_auto_create_prefix: bool = True   # create a prefix when none covers a scan
+    scan_infers_vrf: bool = True           # pick VRF by prefix match, else Global
+    # Lifecycle & retention — 0 = disabled
+    scan_offline_grace_scans: int = 0      # consecutive misses before OFFLINE
+    discovery_expire_days: int = 0         # auto-purge stale DISCOVERED rows
+    changelog_retention_days: int = 0      # auto-purge old changelog entries
+    scan_job_retention_days: int = 0       # auto-purge terminal scan jobs
+    cert_warn_days: int = 30               # amber "expiring soon" threshold
 
     # Auth settings (env vars are IPAMBOX_*)
     ipambox_password: str = ""  # pre-provision the admin password

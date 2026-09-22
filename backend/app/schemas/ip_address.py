@@ -92,6 +92,7 @@ class IPAddressOut(BaseModel):
     nat_inside_id: int | None
     open_ports: list[int] | None
     device_type: str | None
+    missed_scans: int
     serial_number: str | None
     switch_name: str | None
     switch_port: str | None
