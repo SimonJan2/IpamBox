@@ -14,6 +14,7 @@ import Link from "next/link";
 import {
   ArrowLeft,
   Download,
+  ExternalLink,
   GripVertical,
   History,
   Loader2,
@@ -761,21 +762,19 @@ export default function ListClient({ slug }: { slug: string }) {
                       href={v}
                       target="_blank"
                       rel="noreferrer"
-                      dir="ltr"
-                      className="max-w-[220px] truncate text-sky-400 hover:underline"
+                      aria-label={`Open ${v}`}
+                      className="text-sky-400 hover:text-sky-300"
                     >
-                      {v}
+                      <ExternalLink className="h-3.5 w-3.5" />
                     </a>
                   ) : null}
-                  {canWrite && (
-                    <InlineText
-                      value={v || null}
-                      onSave={(nv) => saveCell(row.id, col.key, nv)}
-                      dir="ltr"
-                      empty=""
-                      {...edit}
-                    />
-                  )}
+                  <InlineText
+                    value={v || null}
+                    onSave={(nv) => saveCell(row.id, col.key, nv)}
+                    dir="ltr"
+                    empty=""
+                    {...edit}
+                  />
                 </span>
               );
             case "owner":

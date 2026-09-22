@@ -1,0 +1,73 @@
+﻿Name,Guest OS,IP Address,Cert,Cert Expiry,License,Mgmt URL,vCPUs,Owner
+SRV-DMSF-000,Microsoft Windows Server 2022 (64-bit),10.137.8.241,DEMO-CERT,8/9/2027,DEMO-LIC,https://srv-dmsf-000.demo.local,4,infra-demo
+SRV-DMSF-001,Rocky Linux 9 (64-bit),10.137.8.136 169.254.249.67,,12/5/2026,DEMO-LIC,https://srv-dmsf-001.demo.local,8,ops-lead
+SRV-DMSF-002,VMware Photon OS (64-bit),10.137.8.27,,17/9/2025,DEMO-LIC,https://srv-dmsf-002.demo.local,4,noc-team
+SRV-DMSF-003,Rocky Linux 9 (64-bit),10.137.8.126,DEMO-WC-2027,5/5/2025,DEMO-LIC,https://srv-dmsf-003.demo.local,2,ops-lead
+SRV-DMSF-004,Rocky Linux 9 (64-bit),10.137.8.161,,11/11/2027,DEMO-LIC,,4,infra-demo
+SRV-DMSF-005,Rocky Linux 9 (64-bit),10.137.8.216,,19/7/2026,Volume,https://srv-dmsf-005.demo.local,16,ops-lead
+SRV-DMSF-006,Ubuntu Linux (64-bit),10.137.8.193,INTERNAL-DEMO-CA,14/11/2026,Volume,https://srv-dmsf-006.demo.local,2,ops-lead
+SRV-DMSF-007,Microsoft Windows 11 (64-bit),10.137.8.106,,9/5/2028,Volume,https://srv-dmsf-007.demo.local,2,sysdesk
+SRV-DMSF-008,Microsoft Windows 11 (64-bit),10.137.8.151 169.254.244.210,DEMO-WC-2027,,OEM,https://srv-dmsf-008.demo.local,16,noc-team
+SRV-DMSF-009,VMware Photon OS (64-bit),10.137.8.6,,22/5/2027,DEMO-LIC,,16,sysdesk
+SRV-DMSF-010,Rocky Linux 9 (64-bit),"10.137.8.35, 10.137.8.95",,14/11/2026,DEMO-LIC,https://srv-dmsf-010.demo.local,2,ops-lead
+SRV-DMSF-011,VMware Photon OS (64-bit),10.137.8.94,,,DEMO-LIC,https://srv-dmsf-011.demo.local,2,infra-demo
+SRV-DMSF-012,Rocky Linux 9 (64-bit),10.137.8.187,INTERNAL-DEMO-CA,7/2/2027,OEM,https://srv-dmsf-012.demo.local,4,sysdesk
+SRV-DMSF-013,Ubuntu Linux (64-bit),"10.137.8.15, 10.137.8.168",DEMO-CERT,1/3/2027,OEM,,2,sysdesk
+SRV-DMSF-014,VMware Photon OS (64-bit),10.137.8.224,DEMO-CERT,10/12/2028,OEM,https://srv-dmsf-014.demo.local,4,noc-team
+SRV-DMSF-015,Rocky Linux 9 (64-bit),10.137.8.221,DEMO-WC-2027,22/3/2027,Volume,,2,noc-team
+SRV-DMSF-016,Ubuntu Linux (64-bit),"10.137.8.194, 10.137.8.202",DEMO-WC-2027,8/8/2027,DEMO-LIC,https://srv-dmsf-016.demo.local,16,noc-team
+SRV-DMSF-017,Microsoft Windows 11 (64-bit),10.137.8.179,DEMO-CERT,17/8/2027,OEM,https://srv-dmsf-017.demo.local,4,sysdesk
+SRV-DMSF-018,Rocky Linux 9 (64-bit),10.137.8.51,DEMO-WC-2027,,Volume,https://srv-dmsf-018.demo.local,4,sysdesk
+SRV-DMSF-019,Microsoft Windows Server 2022 (64-bit),10.137.8.145,DEMO-WC-2027,24/5/2026,DEMO-LIC,https://srv-dmsf-019.demo.local,2,infra-demo
+SRV-DMSF-020,Ubuntu Linux (64-bit),10.137.8.171,DEMO-CERT,,DEMO-LIC,https://srv-dmsf-020.demo.local,2,ops-lead
+SRV-DMSF-021,Microsoft Windows Server 2022 (64-bit),10.137.8.38,DEMO-WC-2027,7/9/2027,Volume,,16,noc-team
+SRV-DMSF-022,Ubuntu Linux (64-bit),10.137.8.134,DEMO-CERT,9/7/2026,OEM,https://srv-dmsf-022.demo.local,4,sysdesk
+SRV-DMSF-023,VMware Photon OS (64-bit),10.137.8.39,DEMO-WC-2027,,OEM,,8,sysdesk
+SRV-DMSF-024,VMware Photon OS (64-bit),10.137.8.70,DEMO-CERT,8/6/2027,DEMO-LIC,,16,noc-team
+SRV-DMSF-025,Microsoft Windows Server 2022 (64-bit),10.137.8.21,,3/1/2026,Volume,https://srv-dmsf-025.demo.local,16,noc-team
+SRV-DMSF-026,Rocky Linux 9 (64-bit),"10.137.8.210, 10.137.8.236",,7/4/2028,DEMO-LIC,,16,ops-lead
+SRV-DMSF-027,VMware Photon OS (64-bit),10.137.8.206,DEMO-WC-2027,4/3/2025,DEMO-LIC,https://srv-dmsf-027.demo.local,4,noc-team
+SRV-DMSF-028,VMware Photon OS (64-bit),10.137.8.229,INTERNAL-DEMO-CA,12/10/2027,DEMO-LIC,https://srv-dmsf-028.demo.local,8,infra-demo
+SRV-DMSF-029,Ubuntu Linux (64-bit),10.137.8.140,DEMO-WC-2027,19/5/2026,Volume,https://srv-dmsf-029.demo.local,8,ops-lead
+SRV-DMSF-030,VMware Photon OS (64-bit),10.137.8.19,DEMO-CERT,22/2/2027,OEM,https://srv-dmsf-030.demo.local,16,sysdesk
+SRV-DMSF-031,Microsoft Windows Server 2022 (64-bit),10.137.8.33,INTERNAL-DEMO-CA,6/12/2025,Volume,,4,noc-team
+SRV-DMSF-032,Rocky Linux 9 (64-bit),10.137.8.118,DEMO-CERT,2/2/2026,Volume,https://srv-dmsf-032.demo.local,4,ops-lead
+SRV-DMSF-033,Rocky Linux 9 (64-bit),10.137.8.148,INTERNAL-DEMO-CA,,Volume,https://srv-dmsf-033.demo.local,8,sysdesk
+SRV-DMSF-034,Microsoft Windows 11 (64-bit),"10.137.8.203, 10.137.8.220",,,OEM,https://srv-dmsf-034.demo.local,8,infra-demo
+SRV-DMSF-035,Ubuntu Linux (64-bit),10.137.8.93 169.254.65.220,INTERNAL-DEMO-CA,,OEM,https://srv-dmsf-035.demo.local,4,ops-lead
+SRV-DMSF-036,Microsoft Windows Server 2022 (64-bit),10.137.8.243,INTERNAL-DEMO-CA,18/5/2026,OEM,https://srv-dmsf-036.demo.local,4,noc-team
+SRV-DMSF-037,VMware Photon OS (64-bit),10.137.8.176,DEMO-WC-2027,8/8/2028,OEM,https://srv-dmsf-037.demo.local,4,sysdesk
+SRV-DMSF-038,VMware Photon OS (64-bit),10.137.8.58,DEMO-WC-2027,26/1/2026,OEM,https://srv-dmsf-038.demo.local,8,ops-lead
+SRV-DMSF-039,VMware Photon OS (64-bit),10.137.8.159,INTERNAL-DEMO-CA,11/3/2026,Volume,https://srv-dmsf-039.demo.local,2,infra-demo
+SRV-DMSF-040,Ubuntu Linux (64-bit),10.137.8.89,INTERNAL-DEMO-CA,19/4/2027,Volume,https://srv-dmsf-040.demo.local,2,infra-demo
+SRV-DMSF-041,Microsoft Windows Server 2022 (64-bit),10.137.8.173,DEMO-WC-2027,27/7/2028,Volume,https://srv-dmsf-041.demo.local,16,noc-team
+SRV-DMSF-042,Rocky Linux 9 (64-bit),10.137.8.175,,2/5/2025,DEMO-LIC,,2,ops-lead
+SRV-DMSF-043,Ubuntu Linux (64-bit),10.137.8.183,DEMO-CERT,,OEM,,2,sysdesk
+SRV-DMSF-044,Microsoft Windows 11 (64-bit),10.137.8.116,DEMO-CERT,,Volume,https://srv-dmsf-044.demo.local,16,noc-team
+SRV-DMSF-045,VMware Photon OS (64-bit),10.137.8.31,DEMO-CERT,4/10/2027,DEMO-LIC,https://srv-dmsf-045.demo.local,8,sysdesk
+SRV-DMSF-046,Microsoft Windows Server 2022 (64-bit),10.137.8.62,INTERNAL-DEMO-CA,27/8/2026,Volume,https://srv-dmsf-046.demo.local,4,noc-team
+SRV-DMSF-047,Microsoft Windows 11 (64-bit),"10.137.8.7, 10.137.8.102",DEMO-WC-2027,20/1/2026,OEM,https://srv-dmsf-047.demo.local,8,sysdesk
+SRV-DMSF-048,Microsoft Windows 11 (64-bit),10.137.8.124,,4/8/2027,OEM,https://srv-dmsf-048.demo.local,8,ops-lead
+SRV-DMSF-049,Rocky Linux 9 (64-bit),"10.137.8.99, 10.137.8.209",,6/12/2026,OEM,https://srv-dmsf-049.demo.local,4,noc-team
+SRV-DMSF-050,Ubuntu Linux (64-bit),"10.137.8.83, 10.137.8.114",INTERNAL-DEMO-CA,23/1/2026,DEMO-LIC,https://srv-dmsf-050.demo.local,16,ops-lead
+SRV-DMSF-051,Microsoft Windows 11 (64-bit),"10.137.8.78, 10.137.8.81",INTERNAL-DEMO-CA,4/6/2026,DEMO-LIC,https://srv-dmsf-051.demo.local,16,sysdesk
+SRV-DMSF-052,Ubuntu Linux (64-bit),10.137.8.139,,21/4/2028,OEM,https://srv-dmsf-052.demo.local,4,infra-demo
+SRV-DMSF-053,Rocky Linux 9 (64-bit),"10.137.8.48, 10.137.8.184",,20/4/2027,DEMO-LIC,https://srv-dmsf-053.demo.local,2,infra-demo
+SRV-DMSF-054,Ubuntu Linux (64-bit),10.137.8.212,,25/12/2026,OEM,https://srv-dmsf-054.demo.local,16,ops-lead
+SRV-DMSF-055,Ubuntu Linux (64-bit),10.137.8.135,,2/9/2028,OEM,https://srv-dmsf-055.demo.local,2,noc-team
+SRV-DMSF-056,Microsoft Windows Server 2022 (64-bit),10.137.8.115,DEMO-CERT,18/2/2027,DEMO-LIC,,4,sysdesk
+SRV-DMSF-057,Microsoft Windows 11 (64-bit),10.137.8.125,INTERNAL-DEMO-CA,8/6/2027,Volume,https://srv-dmsf-057.demo.local,8,sysdesk
+SRV-DMSF-058,VMware Photon OS (64-bit),10.137.8.44,INTERNAL-DEMO-CA,,DEMO-LIC,https://srv-dmsf-058.demo.local,16,noc-team
+SRV-DMSF-059,VMware Photon OS (64-bit),"10.137.8.239, 10.137.8.153",,27/6/2026,DEMO-LIC,,4,ops-lead
+SRV-DMSF-060,Microsoft Windows Server 2022 (64-bit),10.137.8.14,INTERNAL-DEMO-CA,24/4/2028,OEM,,8,ops-lead
+SRV-DMSF-061,Rocky Linux 9 (64-bit),"10.137.8.130, 10.137.8.109",DEMO-CERT,5/12/2027,DEMO-LIC,https://srv-dmsf-061.demo.local,4,infra-demo
+SRV-DMSF-062,Ubuntu Linux (64-bit),10.137.8.56,,8/6/2028,OEM,https://srv-dmsf-062.demo.local,8,infra-demo
+SRV-DMSF-063,VMware Photon OS (64-bit),10.137.8.63,,10/10/2028,OEM,https://srv-dmsf-063.demo.local,4,infra-demo
+SRV-DMSF-064,Microsoft Windows Server 2022 (64-bit),10.137.8.64,DEMO-WC-2027,,DEMO-LIC,https://srv-dmsf-064.demo.local,4,infra-demo
+SRV-DMSF-065,Microsoft Windows Server 2022 (64-bit),"10.137.8.8, 10.137.8.215",,12/6/2025,OEM,https://srv-dmsf-065.demo.local,8,ops-lead
+SRV-DMSF-066,VMware Photon OS (64-bit),10.137.8.162,DEMO-CERT,7/10/2025,DEMO-LIC,https://srv-dmsf-066.demo.local,8,sysdesk
+SRV-DMSF-067,Rocky Linux 9 (64-bit),10.137.8.71,DEMO-CERT,,OEM,https://srv-dmsf-067.demo.local,4,ops-lead
+SRV-DMSF-068,Ubuntu Linux (64-bit),"10.137.8.22, 10.137.8.61",INTERNAL-DEMO-CA,9/10/2027,Volume,https://srv-dmsf-068.demo.local,4,noc-team
+SRV-DMSF-069,Rocky Linux 9 (64-bit),"10.137.8.103, 10.137.8.128",INTERNAL-DEMO-CA,16/8/2028,OEM,https://srv-dmsf-069.demo.local,4,sysdesk
+SRV-DMSF-070,Ubuntu Linux (64-bit),10.137.8.122,,26/1/2025,Volume,https://srv-dmsf-070.demo.local,8,noc-team
+SRV-DMSF-071,VMware Photon OS (64-bit),10.137.8.34,DEMO-WC-2027,6/2/2025,Volume,https://srv-dmsf-071.demo.local,16,noc-team

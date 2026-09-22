@@ -1,0 +1,61 @@
+﻿address,prefix,hostname,mac_address,status,role,notes
+10.130.0.90,10.130.0.0/24,csv-host-000,00:00:5E:44:FB:6D,active,hsrp,csv demo row
+10.131.0.164,10.131.0.0/24,csv-host-001,,dhcp,vip,csv demo row
+10.130.0.92,10.130.0.0/24,csv-host-002,,active,,
+10.130.0.237,10.130.0.0/24,csv-host-003,00:00:5E:E8:B4:6C,dhcp,vrrp,
+10.131.0.148,10.131.0.0/24,csv-host-004,00005ef209be,active,vrrp,
+10.131.0.100,10.131.0.0/24,csv-host-005,0000.5e87.8370,dhcp,vrrp,imported example
+10.131.0.22,10.131.0.0/24,csv-host-006,00005e4e7b2e,active,vip,imported example
+10.130.0.98,10.130.0.0/24,csv-host-007,,active,,imported example
+10.131.0.144,10.131.0.0/24,csv-host-008,,active,vip,csv demo row
+10.132.0.158,10.132.0.0/24,csv-host-009,0000.5e6a.3918,active,,
+10.130.0.179,10.130.0.0/24,csv-host-010,,active,vrrp,imported example
+10.130.0.118,10.130.0.0/24,csv-host-011,0000.5ee7.4b71,reserved,vip,imported example
+10.130.0.132,10.130.0.0/24,csv-host-012,00005e5258ff,active,vip,csv demo row
+10.131.0.240,10.131.0.0/24,csv-host-013,,active,vrrp,imported example
+10.130.0.218,10.130.0.0/24,csv-host-014,,active,vip,
+10.132.0.89,10.132.0.0/24,csv-host-015,00005ea0e8e9,dhcp,vrrp,imported example
+10.131.0.48,10.131.0.0/24,csv-host-016,,active,vrrp,
+10.132.0.35,10.132.0.0/24,csv-host-017,00-OF-231-126-235,reserved,vrrp,csv demo row
+10.131.0.4,10.131.0.0/24,csv-host-018,00005eb09f23,reserved,vip,csv demo row
+10.131.0.233,10.131.0.0/24,csv-host-019,00005e9b454b,active,,csv demo row
+10.132.0.127,10.132.0.0/24,csv-host-020,,active,,csv demo row
+10.132.0.15,10.132.0.0/24,csv-host-021,0000.5efb.721d,active,,
+10.130.0.202,10.130.0.0/24,csv-host-022,00-OF-92-36-00,active,hsrp,csv demo row
+10.132.0.163,10.132.0.0/24,csv-host-023,,dhcp,,imported example
+10.132.0.114,10.132.0.0/24,csv-host-024,,active,vip,imported example
+10.132.0.25,10.132.0.0/24,csv-host-025,,dhcp,vip,imported example
+10.131.0.189,10.131.0.0/24,csv-host-026,00:00:5E:48:2E:EF,reserved,hsrp,imported example
+10.130.0.214,10.130.0.0/24,csv-host-027,00-OF-122-200-68,reserved,hsrp,
+10.132.0.241,10.132.0.0/24,csv-host-028,00-OF-190-139-176,active,,csv demo row
+10.130.0.130,10.130.0.0/24,csv-host-029,00005e3e257d,dhcp,hsrp,
+10.131.0.31,10.131.0.0/24,csv-host-030,00:00:5E:12:2A:C2,dhcp,,imported example
+10.131.0.87,10.131.0.0/24,csv-host-031,0000.5e40.83a8,active,,
+10.132.0.121,10.132.0.0/24,csv-host-032,,active,vip,imported example
+10.130.0.38,10.130.0.0/24,csv-host-033,0000.5e26.8116,active,,
+10.130.0.95,10.130.0.0/24,csv-host-034,,active,vip,csv demo row
+10.130.0.206,10.130.0.0/24,csv-host-035,,active,,imported example
+10.131.0.155,10.131.0.0/24,csv-host-036,00-OF-12-27-122,dhcp,,
+10.131.0.190,10.131.0.0/24,csv-host-037,0000.5e7d.899a,reserved,hsrp,imported example
+10.131.0.199,10.131.0.0/24,csv-host-038,00:00:5E:8B:61:72,active,hsrp,csv demo row
+10.131.0.118,10.131.0.0/24,csv-host-039,00005ec6abe5,dhcp,,
+10.131.0.29,10.131.0.0/24,csv-host-040,00005e1715ba,active,,imported example
+10.132.0.148,10.132.0.0/24,csv-host-041,00:00:5E:73:37:30,dhcp,hsrp,
+10.132.0.204,10.132.0.0/24,csv-host-042,00-OF-129-225-254,active,hsrp,csv demo row
+10.132.0.222,10.132.0.0/24,csv-host-043,0000.5e4b.6d75,active,vip,imported example
+10.130.0.149,10.130.0.0/24,csv-host-044,00005e3a2f13,active,vip,imported example
+10.131.0.55,10.131.0.0/24,csv-host-045,0000.5e4d.b827,reserved,hsrp,csv demo row
+10.130.0.18,10.130.0.0/24,csv-host-046,00:00:5E:80:50:8F,active,vrrp,
+10.130.0.97,10.130.0.0/24,csv-host-047,00005e08e493,active,,imported example
+10.131.0.53,10.131.0.0/24,csv-host-048,00:00:5E:36:49:28,dhcp,vrrp,
+10.132.0.123,10.132.0.0/24,csv-host-049,0000.5e63.20d4,active,vip,csv demo row
+10.132.0.151,10.132.0.0/24,csv-host-050,00:00:5E:AE:90:BC,active,,csv demo row
+10.132.0.125,10.132.0.0/24,csv-host-051,,reserved,,csv demo row
+10.131.0.241,10.131.0.0/24,csv-host-052,00-OF-182-65-179,reserved,,
+10.130.0.152,10.130.0.0/24,csv-host-053,0000.5e9e.aa7a,active,hsrp,
+10.130.0.178,10.130.0.0/24,csv-host-054,00:00:5E:7C:1B:B7,dhcp,,
+10.131.0.210,10.131.0.0/24,csv-host-055,00-OF-181-170-242,active,,csv demo row
+10.130.0.235,10.130.0.0/24,csv-host-056,00:00:5E:58:A8:96,active,vip,imported example
+10.132.0.215,10.132.0.0/24,csv-host-057,00:00:5E:2B:1F:B1,active,vip,csv demo row
+10.131.0.163,10.131.0.0/24,csv-host-058,,active,vrrp,csv demo row
+10.130.0.155,10.130.0.0/24,csv-host-059,,active,vip,imported example
