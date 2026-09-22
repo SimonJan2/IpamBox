@@ -53,6 +53,7 @@ from app.models.import_batch import ImportBatch
 from app.models.ip_address import IPAddress
 from app.models.ip_range import IPRange
 from app.models.prefix import Prefix
+from app.models.rack import Rack, RackDevice
 from app.models.scan_job import ScanJob
 from app.models.service import Service
 from app.models.site import Site
@@ -113,6 +114,9 @@ BACKUP_TABLES: tuple[BackupTable, ...] = (
     BackupTable("certificates", Certificate),
     BackupTable("assets", Asset),
     BackupTable("services", Service),
+    # racks -> sites; rack_devices -> racks + assets + ip_addresses
+    BackupTable("racks", Rack),
+    BackupTable("rack_devices", RackDevice),
     BackupTable("custom_lists", CustomList),
     BackupTable("custom_list_rows", CustomListRow),
     BackupTable("tags", Tag),

@@ -10,6 +10,7 @@ from app.models.import_batch import ImportBatch, ImportBatchStatus
 from app.models.ip_address import IPAddress, IPRole, IPStatus
 from app.models.ip_range import IPRange, IPRangeRole
 from app.models.prefix import Prefix, PrefixStatus
+from app.models.rack import Rack, RackDevice, RackFace
 from app.models.scan_job import ScanJob, ScanStatus
 from app.models.service import Service
 from app.models.site import Site
@@ -35,6 +36,9 @@ __all__ = [
     "VRF",
     "Prefix",
     "PrefixStatus",
+    "Rack",
+    "RackDevice",
+    "RackFace",
     "IPAddress",
     "IPStatus",
     "IPRole",

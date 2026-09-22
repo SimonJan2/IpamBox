@@ -24,6 +24,7 @@ from app.models.import_batch import ImportBatch
 from app.models.ip_address import IPAddress
 from app.models.ip_range import IPRange
 from app.models.prefix import Prefix
+from app.models.rack import Rack, RackDevice
 from app.models.service import Service
 from app.models.site import Site
 from app.models.tag import Tag, TagAssignment
@@ -51,6 +52,8 @@ AUDITED_MODELS: tuple = (
     ColorRule,
     CustomList,
     CustomListRow,
+    Rack,
+    RackDevice,
 )
 # churn-only columns that produce noise, never signal — sort_order/pinned
 # change on every drag/drop and would spam the audit log per gesture

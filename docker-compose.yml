@@ -66,6 +66,8 @@ services:
       BACKUP_DIR: ${BACKUP_DIR:-/backups}
       BACKUP_INTERVAL_MINUTES: ${BACKUP_INTERVAL_MINUTES:-0}
       BACKUP_KEEP: ${BACKUP_KEEP:-14}
+      # self-hosted Rackula instance for "Open in Rackula" (empty = off)
+      IPAMBOX_RACKULA_BASE_URL: ${IPAMBOX_RACKULA_BASE_URL:-}
     volumes:
       - backupdata:/backups
     networks:

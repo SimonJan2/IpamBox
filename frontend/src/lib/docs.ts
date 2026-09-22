@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import {
   Building2,
   Cable,
+  Container,
   FolderTree,
   Globe,
   HardDrive,
@@ -154,6 +155,14 @@ export const DOC_ARTICLES: DocArticle[] = [
     category: "inventory",
     icon: ListOrdered,
     keywords: ["list", "custom", "spreadsheet", "sheet", "table", "servers"],
+  },
+  {
+    slug: "racks",
+    title: "Racks",
+    description: "Rack elevations — device placement, faces, and Rackula round-trip.",
+    category: "inventory",
+    icon: Container,
+    keywords: ["rack", "elevation", "rackula", "cabinet", "u position", "datacenter"],
   },
   {
     slug: "services",

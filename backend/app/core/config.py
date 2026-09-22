@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -69,6 +70,12 @@ class Settings(BaseSettings):
     # these networks (comma-separated IPs/CIDRs). Loopback covers dev mode;
     # compose adds the pinned `ipam` bridge subnet (see docker-compose.yml).
     ipambox_trusted_proxies: str = "127.0.0.1,::1"
+
+    # Rackula round-trip: base URL of a self-hosted instance — enables the
+    # "Open in Rackula" button on rack pages. Empty = air-gapped.
+    rackula_base_url: str = Field(
+        default="", validation_alias="IPAMBOX_RACKULA_BASE_URL"
+    )
 
     @property
     def cors_origin_list(self) -> list[str]:
