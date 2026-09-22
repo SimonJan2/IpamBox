@@ -1,0 +1,21 @@
+﻿Vendor,Product,Contact Role,Email,Phone,SLA,Notes
+DemoSoft Demo,DemoFirewall,NOC,contact0@demo-vendor.example,555-011,24x7,
+F5 Demo,DemoSwitch,Support,contact1@demo-vendor.example,555-0139,8x5,
+DemoSoft Demo,DemoRouter,Escalation,contact2@demo-vendor.example,555-0197,best effort,
+F5 Demo,DemoVM,Support,contact3@demo-vendor.example,555-013,24x7,renewal Q3
+Check Point Demo,DemoCam,NOC,contact4@demo-vendor.example,555-0178,24x7,demo only
+DemoSoft Demo,DemoVM,NOC,contact5@demo-vendor.example,555-0169,24x7,
+DemoSoft Demo,DemoVM,Support,contact6@demo-vendor.example,555-015,8x5,demo only
+F5 Demo,DemoSwitch,Support,contact7@demo-vendor.example,555-017,best effort,demo only
+F5 Demo,DemoFirewall,NOC,contact8@demo-vendor.example,555-0132,24x7,demo only
+VMware Demo,DemoSwitch,Sales,contact9@demo-vendor.example,555-0197,8x5,demo only
+VMware Demo,DemoVM,TAM,contact10@demo-vendor.example,555-0170,8x5,renewal Q3
+DemoSoft Demo,DemoCam,TAM,contact11@demo-vendor.example,555-0133,24x7,demo only
+F5 Demo,DemoVM,Sales,contact12@demo-vendor.example,555-0128,best effort,renewal Q3
+VMware Demo,DemoVM,Sales,contact13@demo-vendor.example,555-0195,best effort,demo only
+DemoSoft Demo,DemoRouter,Escalation,contact14@demo-vendor.example,555-0158,best effort,renewal Q3
+DemoSoft Demo,DemoCam,Sales,contact15@demo-vendor.example,555-0190,best effort,demo only
+DemoSoft Demo,DemoSwitch,Support,contact16@demo-vendor.example,555-0165,8x5,demo only
+F5 Demo,DemoVM,TAM,contact17@demo-vendor.example,555-0134,best effort,
+F5 Demo,DemoLink,TAM,contact18@demo-vendor.example,555-0139,24x7,
+HPE Demo,DemoCam,TAM,contact19@demo-vendor.example,555-0175,24x7,demo only

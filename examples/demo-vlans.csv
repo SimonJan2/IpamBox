@@ -1,0 +1,15 @@
+﻿vid,name,group,scope,description
+5,VLAN5-MGMT,Infrastructure,all sites,switch/AP management — demo
+6,VLAN6-OOB,Infrastructure,DC + large sites,out-of-band management — demo
+10,VLAN10-USERS,Corporate,all sites,wired workstations — demo
+20,VLAN20-VOICE,Corporate,all sites,VoIP phones — demo
+30,VLAN30-PRINTERS,Corporate,all sites,network printers — demo
+40,VLAN40-GUEST,Corporate,small sites,guest wireless — demo
+50,VLAN50-WIFI-CORP,Corporate,medium+ sites,corporate wireless — demo
+100,VLAN100-SERVERS,Data Center,large sites,server segment — demo
+110,VLAN110-STORAGE,Data Center,large sites,storage / SAN — demo
+120,VLAN120-BACKUP,Data Center,large sites,backup traffic — demo
+200,VLAN200-IOT,OT & IoT,medium+ sites,iot sensors — demo
+210,VLAN210-CAMERAS,OT & IoT,large sites,cctv cameras — demo
+220,VLAN220-ACCESS-CTRL,OT & IoT,medium+ sites,door controllers — demo
+999,VLAN999-QUARANTINE,Security,all sites,isolation / quarantine — demo

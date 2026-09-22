@@ -1,0 +1,60 @@
+﻿IP Address,end ip,Subnet mask,Defult Gatway,VLAN/LAN,Node Name,Counter/Location,MAC,description,switch,port,מס דלפק באפלקציה ,מוגדר תחת אתר,הערות
+10.130.1.,187,255.255.255.0,10.130.1.254,VLAN10-USERS,pc-democsv-001,demo counter 5,00005e3067c3,שמור לדמו,sw-democsv-01,Gi1/0/8,11,,
+10.130.2.,183,255.255.255.0,10.130.1.254,VLAN20-VOICE,pc-democsv-002,demo counter 12,00005ecb46d2,spare - demo,sw-democsv-01,Gi1/0/40,23,,הועבר לקומה 2
+10.130.2.,88,255.255.255.0,10.130.1.254,VLAN20-VOICE,pc-democsv-003,demo counter 13,00:00:5E:65:75:FE,שרת דמו,sw-democsv-01,Gi1/0/8,29,,לא פעיל
+10.130.1.,72,255.255.255.0,10.130.1.254,VLAN10-USERS,pc-democsv-004,demo counter 22,00005e24738e,demo voip phone,sw-democsv-01,Gi1/0/5,17,,
+10.130.1.,221,255.255.255.0,10.130.1.254,VLAN10-USERS,pc-democsv-005,demo counter 21,00005e52cb96,שרת דמו,sw-democsv-01,Gi1/0/17,17,,הועבר לקומה 2
+10.130.2.,43,255.255.255.0,10.130.1.254,VLAN20-VOICE,pc-democsv-006,demo counter 2,00005e8d7a1f,demo printer,sw-democsv-01,Gi1/0/5,18,,פעיל
+10.130.2.,21,255.255.255.0,10.130.1.254,VLAN20-VOICE,pc-democsv-007,demo counter 18,00:00:5E:51:40:19,טלפון דמו,sw-democsv-01,Gi1/0/18,8,,הוסר - נשאר לתיעוד
+10.130.3.,243,255.255.255.0,10.130.1.254,VLAN30-PRINTERS,pc-democsv-008,demo counter 23,00:00:5E:2B:0B:6B,מתג דמו,sw-democsv-01,Gi1/0/38,13,,פעיל
+10.130.2.,243,255.255.255.0,10.130.1.254,VLAN20-VOICE,pc-democsv-009,demo counter 5,00:00:5E:0B:47:28,מצלמת דמו,sw-democsv-01,Gi1/0/25,1,,הועבר לקומה 2
+10.130.1.,124,255.255.255.0,10.130.1.254,VLAN10-USERS,pc-democsv-010,demo counter 26,00:00:5E:0E:A7:5E,demo plc controller,sw-democsv-01,Gi1/0/1,17,,פעיל
+10.130.2.,251,255.255.255.0,10.130.1.254,VLAN20-VOICE,pc-democsv-011,demo counter 4,00005eafd4a2,dhcp pool - demo,sw-democsv-01,Gi1/0/45,24,,
+10.130.2.,253,255.255.255.0,10.130.1.254,VLAN20-VOICE,pc-democsv-012,demo counter 15,00:00:5E:AF:03:88,מתג דמו,sw-democsv-01,Gi1/0/44,28,,בהקמה
+10.130.2.,44,255.255.255.0,10.130.1.254,VLAN20-VOICE,pc-democsv-013,demo counter 26,00:00:5E:B3:A3:32,demo voip phone,sw-democsv-01,Gi1/0/40,28,,
+10.130.3.,53,255.255.255.0,10.130.1.254,VLAN30-PRINTERS,pc-democsv-014,demo counter 2,00:00:5E:E8:47:1D,מתג דמו,sw-democsv-01,Gi1/0/17,7,,הוסר - נשאר לתיעוד
+10.130.3.,247,255.255.255.0,10.130.1.254,VLAN30-PRINTERS,pc-democsv-015,demo counter 15,00:00:5E:F3:ED:CC,מצלמת דמו,sw-democsv-01,Gi1/0/25,9,,פעיל
+10.130.1.,194,255.255.255.0,10.130.1.254,VLAN10-USERS,pc-democsv-016,demo counter 14,00:00:5E:AC:AE:60,demo voip phone,sw-democsv-01,Gi1/0/8,21,,פעיל
+10.130.2.,127,255.255.255.0,10.130.1.254,VLAN20-VOICE,pc-democsv-017,demo counter 19,00:00:5E:70:70:F1,dhcp pool - demo,sw-democsv-01,Gi1/0/33,5,,
+10.130.3.,92,255.255.255.0,10.130.1.254,VLAN30-PRINTERS,pc-democsv-018,demo counter 13,00005e01b6da,demo printer,sw-democsv-01,Gi1/0/19,14,,פעיל
+10.130.2.,112,255.255.255.0,10.130.1.254,VLAN20-VOICE,pc-democsv-019,demo counter 21,0000.5e09.2e8a,demo voip phone,sw-democsv-01,Gi1/0/24,18,,
+10.130.3.,189,255.255.255.0,10.130.1.254,VLAN30-PRINTERS,pc-democsv-020,demo counter 22,00005ee9e411,dhcp pool - demo,sw-democsv-01,Gi1/0/21,20,,בהקמה
+10.130.3.,43,255.255.255.0,10.130.1.254,VLAN30-PRINTERS,pc-democsv-021,demo counter 13,00005ea2fba3,spare - demo,sw-democsv-01,Gi1/0/36,29,,
+10.130.3.,200,255.255.255.0,10.130.1.254,VLAN30-PRINTERS,pc-democsv-022,demo counter 5,0000.5e48.dc94,reserved for demo,sw-democsv-01,Gi1/0/26,20,,הוסר - נשאר לתיעוד
+10.130.1.,211,255.255.255.0,10.130.1.254,VLAN10-USERS,pc-democsv-023,demo counter 7,00:00:5E:59:BF:BA,demo voip phone,sw-democsv-01,Gi1/0/11,13,,בהקמה
+10.130.3.,191,255.255.255.0,10.130.1.254,VLAN30-PRINTERS,pc-democsv-024,demo counter 19,00:00:5E:1B:2D:5B,demo access point,sw-democsv-01,Gi1/0/39,19,,
+10.130.3.,149,255.255.255.0,10.130.1.254,VLAN30-PRINTERS,pc-democsv-025,demo counter 8,00005e28448c,שמור לדמו,sw-democsv-01,Gi1/0/4,18,,
+10.130.3.,126,255.255.255.0,10.130.1.254,VLAN30-PRINTERS,pc-democsv-026,demo counter 21,0000.5e0f.d9fa,שמור לדמו,sw-democsv-01,Gi1/0/23,25,,הועבר לקומה 2
+10.130.3.,142,255.255.255.0,10.130.1.254,VLAN30-PRINTERS,pc-democsv-027,demo counter 15,00:00:5E:BA:FB:6A,שמור לדמו,sw-democsv-01,Gi1/0/2,19,,פעיל
+10.130.3.,154,255.255.255.0,10.130.1.254,VLAN30-PRINTERS,pc-democsv-028,demo counter 2,00:00:5E:23:9A:5C,demo camera,sw-democsv-01,Gi1/0/7,4,,פעיל
+10.130.2.,72,255.255.255.0,10.130.1.254,VLAN20-VOICE,pc-democsv-029,demo counter 27,00005e1f875d,מדפסת דמו,sw-democsv-01,Gi1/0/46,13,,פעיל
+10.130.3.,64,255.255.255.0,10.130.1.254,VLAN30-PRINTERS,pc-democsv-030,demo counter 7,00:00:5E:7E:1E:F8,נקודת גישה דמו,sw-democsv-01,Gi1/0/8,3,,
+10.130.2.,142,255.255.255.0,10.130.1.254,VLAN20-VOICE,pc-democsv-031,demo counter 4,00-OF-119-174-15,demo voip phone,sw-democsv-01,Gi1/0/20,19,,הוסר - נשאר לתיעוד
+10.130.3.,193,255.255.255.0,10.130.1.254,VLAN30-PRINTERS,pc-democsv-032,demo counter 11,0000.5e13.3b63,reserved for demo,sw-democsv-01,Gi1/0/23,26,,
+10.130.2.,3,255.255.255.0,10.130.1.254,VLAN20-VOICE,pc-democsv-033,demo counter 5,0000.5ef6.7e7e,demo plc controller,sw-democsv-01,Gi1/0/47,19,,
+10.130.1.,154,255.255.255.0,10.130.1.254,VLAN10-USERS,pc-democsv-034,demo counter 25,00005eac2a9a,demo plc controller,sw-democsv-01,Gi1/0/43,3,,
+10.130.1.,8,255.255.255.0,10.130.1.254,VLAN10-USERS,pc-democsv-035,demo counter 1,00005e56e5ab,עמדת דמו,sw-democsv-01,Gi1/0/43,23,,לא פעיל
+10.130.1.,166,255.255.255.0,10.130.1.254,VLAN10-USERS,pc-democsv-036,demo counter 22,00005e70fe94,dhcp pool - demo,sw-democsv-01,Gi1/0/6,17,,
+10.130.2.,252,255.255.255.0,10.130.1.254,VLAN20-VOICE,pc-democsv-037,demo counter 5,00:00:5E:67:28:A8,שמור לדמו,sw-democsv-01,Gi1/0/12,9,,הוסר - נשאר לתיעוד
+10.130.2.,18,255.255.255.0,10.130.1.254,VLAN20-VOICE,pc-democsv-038,demo counter 29,00005e4cd264,תחנת דמו,sw-democsv-01,Gi1/0/26,10,,
+10.130.3.,24,255.255.255.0,10.130.1.254,VLAN30-PRINTERS,pc-democsv-039,demo counter 18,00:00:5E:3C:68:D4,שרת דמו,sw-democsv-01,Gi1/0/16,26,,הוסר - נשאר לתיעוד
+10.130.2.,89,255.255.255.0,10.130.1.254,VLAN20-VOICE,pc-democsv-040,demo counter 8,00005eade54b,demo workstation,sw-democsv-01,Gi1/0/31,25,,לא פעיל
+10.130.3.,225,255.255.255.0,10.130.1.254,VLAN30-PRINTERS,pc-democsv-041,demo counter 16,00005e538e42,מצלמת דמו,sw-democsv-01,Gi1/0/13,23,,
+10.130.2.,180,255.255.255.0,10.130.1.254,VLAN20-VOICE,pc-democsv-042,demo counter 20,00-OF-218-148-111,נקודת גישה דמו,sw-democsv-01,Gi1/0/47,4,,
+10.130.1.,157,255.255.255.0,10.130.1.254,VLAN10-USERS,pc-democsv-043,demo counter 2,0000.5e7a.1c71,שרת דמו,sw-democsv-01,Gi1/0/27,21,,פעיל
+10.130.3.,85,255.255.255.0,10.130.1.254,VLAN30-PRINTERS,pc-democsv-044,demo counter 11,00:00:5E:22:22:35,שמור לדמו,sw-democsv-01,Gi1/0/41,5,,
+10.130.3.,62,255.255.255.0,10.130.1.254,VLAN30-PRINTERS,pc-democsv-045,demo counter 18,00:00:5E:D8:96:43,demo access point,sw-democsv-01,Gi1/0/47,5,,
+10.130.2.,217,255.255.255.0,10.130.1.254,VLAN20-VOICE,pc-democsv-046,demo counter 24,00-OF-217-105-224,demo workstation,sw-democsv-01,Gi1/0/17,4,,
+10.130.2.,36,255.255.255.0,10.130.1.254,VLAN20-VOICE,pc-democsv-047,demo counter 15,00:00:5E:6F:DB:BA,נקודת גישה דמו,sw-democsv-01,Gi1/0/33,21,,בהקמה
+10.130.2.,140,255.255.255.0,10.130.1.254,VLAN20-VOICE,pc-democsv-048,demo counter 4,00-OF-91-116-42,spare - demo,sw-democsv-01,Gi1/0/46,12,,
+10.130.1.,248,255.255.255.0,10.130.1.254,VLAN10-USERS,pc-democsv-049,demo counter 21,00:00:5E:18:DE:72,מתג דמו,sw-democsv-01,Gi1/0/43,22,,
+10.130.1.,25,255.255.255.0,10.130.1.254,VLAN10-USERS,pc-democsv-050,demo counter 10,0000.5e0a.8f44,שמור לדמו,sw-democsv-01,Gi1/0/14,15,,בהקמה
+10.130.3.,32,255.255.255.0,10.130.1.254,VLAN30-PRINTERS,pc-democsv-051,demo counter 18,00-OF-188-22-222,מדפסת דמו,sw-democsv-01,Gi1/0/3,12,,הוסר - נשאר לתיעוד
+10.130.3.,242,255.255.255.0,10.130.1.254,VLAN30-PRINTERS,pc-democsv-052,demo counter 15,00005e48dbef,נקודת גישה דמו,sw-democsv-01,Gi1/0/13,22,,פעיל
+10.130.2.,78,255.255.255.0,10.130.1.254,VLAN20-VOICE,pc-democsv-053,demo counter 6,00:00:5E:38:33:B7,טלפון דמו,sw-democsv-01,Gi1/0/3,16,,פעיל
+10.130.1.,112,255.255.255.0,10.130.1.254,VLAN10-USERS,pc-democsv-054,demo counter 8,00-OF-115-74-27,מדפסת דמו,sw-democsv-01,Gi1/0/29,26,,
+10.130.3.,122,255.255.255.0,10.130.1.254,VLAN30-PRINTERS,pc-democsv-055,demo counter 24,00:00:5E:9A:A0:8F,מדפסת דמו,sw-democsv-01,Gi1/0/36,8,,בהקמה
+10.130.2.,79,255.255.255.0,10.130.1.254,VLAN20-VOICE,pc-democsv-056,demo counter 17,00005e9dd1b5,מדפסת דמו,sw-democsv-01,Gi1/0/37,24,,הוסר - נשאר לתיעוד
+10.130.1.,55,255.255.255.0,10.130.1.254,VLAN10-USERS,pc-democsv-057,demo counter 3,00005e8cf28a,עמדת דמו,sw-democsv-01,Gi1/0/17,20,,
+10.130.3.,231,255.255.255.0,10.130.1.254,VLAN30-PRINTERS,pc-democsv-058,demo counter 5,00-OF-205-153-204,uplink to core,sw-democsv-01,Gi1/0/25,4,,פעיל
+10.130.1.,12,255.255.255.0,10.130.1.254,VLAN10-USERS,pc-democsv-059,demo counter 5,00:00:5E:0C:B1:BE,demo workstation,sw-democsv-01,Gi1/0/2,7,,
