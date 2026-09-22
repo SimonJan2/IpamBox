@@ -13,6 +13,7 @@ export type ThemeChoice =
   | "netbox-dark"
   | "tokyonight"
   | "tokyonight-storm"
+  | "cyberpunk"
   | "system";
 /** A concrete theme after "system" resolves. */
 export type ResolvedTheme = Exclude<ThemeChoice, "system">;
@@ -25,6 +26,7 @@ export const THEMES: readonly {
   label: string;
   mode: "dark" | "light";
 }[] = [
+  { value: "cyberpunk", label: "IpamBox Nightwire", mode: "dark" },
   { value: "tokyonight", label: "IpamBox Tokyo Night", mode: "dark" },
   { value: "tokyonight-storm", label: "IpamBox Tokyo Night Storm", mode: "dark" },
   { value: "dark", label: "IpamBox Dark", mode: "dark" },
@@ -56,6 +58,10 @@ export interface Prefs {
   fxStars: boolean;
   fxGrain: boolean;
   fxSpin: boolean;
+  /** Cyberpunk-specific effect switches. */
+  fxScanlines: boolean;
+  fxGlitch: boolean;
+  fxHud: boolean;
   pageSize: number;
   landing: string;
   tsFormat: TsFormat;
@@ -71,12 +77,15 @@ export interface Prefs {
 }
 
 export const DEFAULT_PREFS: Prefs = {
-  theme: "tokyonight",
+  theme: "cyberpunk",
   density: "comfortable",
   fx: "full",
   fxStars: true,
   fxGrain: true,
   fxSpin: true,
+  fxScanlines: true,
+  fxGlitch: true,
+  fxHud: true,
   pageSize: 50,
   landing: "/",
   tsFormat: "local",
@@ -113,7 +122,7 @@ export function resolveTheme(theme: ThemeChoice): ResolvedTheme {
   if (typeof window === "undefined") return "dark";
   return window.matchMedia("(prefers-color-scheme: light)").matches
     ? "light"
-    : "tokyonight";
+    : "cyberpunk";
 }
 
 export function applyPrefs(p: Prefs) {
@@ -124,6 +133,9 @@ export function applyPrefs(p: Prefs) {
   root.dataset.fxStars = p.fxStars ? "1" : "0";
   root.dataset.fxGrain = p.fxGrain ? "1" : "0";
   root.dataset.fxSpin = p.fxSpin ? "1" : "0";
+  root.dataset.fxScanlines = p.fxScanlines ? "1" : "0";
+  root.dataset.fxGlitch = p.fxGlitch ? "1" : "0";
+  root.dataset.fxHud = p.fxHud ? "1" : "0";
 }
 
 /** Applies prefs to <html> and keeps them live (system theme + cross-page). */

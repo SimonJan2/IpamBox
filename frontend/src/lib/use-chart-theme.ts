@@ -15,14 +15,14 @@ export interface ChartTheme {
   tooltipText: string;
 }
 
-// Pre-mount placeholder — replaced on first effect. Tokyo Night values so
-// SSR/first paint can't flash mismatched chrome on the (default) TN theme.
+// Pre-mount placeholder — replaced on first effect. Nightwire values so
+// SSR/first paint can't flash mismatched chrome on the default theme.
 const FALLBACK: ChartTheme = {
-  axis: "hsl(229 23% 44%)",
-  cursor: "hsl(229 73% 86% / 0.05)",
-  tooltipBg: "hsl(230 24% 19%)",
-  tooltipBorder: "hsl(228 23% 21%)",
-  tooltipText: "hsl(229 73% 86%)",
+  axis: "hsl(187 7% 51%)",
+  cursor: "hsl(180 8% 92% / 0.05)",
+  tooltipBg: "hsl(213 22% 7%)",
+  tooltipBorder: "hsl(213 21% 14%)",
+  tooltipText: "hsl(180 8% 92%)",
 };
 
 function readTheme(): ChartTheme {

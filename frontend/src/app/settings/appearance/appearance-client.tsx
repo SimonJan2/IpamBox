@@ -23,7 +23,9 @@ import { DocsLink } from "@/components/docs/docs-link";
 
 export default function AppearancePage() {
   const [prefs, setPrefs] = usePrefs();
-  const isTn = resolveTheme(prefs.theme).startsWith("tokyonight");
+  const resolved = resolveTheme(prefs.theme);
+  const isTn = resolved.startsWith("tokyonight");
+  const isCp = resolved.startsWith("cyberpunk");
 
   return (
     <div className="space-y-6">
@@ -129,11 +131,11 @@ export default function AppearancePage() {
             />
           </SettingField>
 
-          {isTn && (
+          {(isTn || isCp) && (
             <>
               <SettingField
                 label="Ambient effects"
-                hint="Tokyo Night extras — Calm keeps the look but stops motion, Off strips the ambience."
+                hint="Theme ambience — Calm keeps the look but stops motion, Off strips the extras."
               >
                 <Select
                   value={prefs.fx}
@@ -150,7 +152,7 @@ export default function AppearancePage() {
                 </Select>
               </SettingField>
 
-              {prefs.fx === "full" && (
+              {prefs.fx === "full" && isTn && (
                 <>
                   <SettingField
                     label="Starfield"
@@ -179,6 +181,40 @@ export default function AppearancePage() {
                     <Switch
                       checked={prefs.fxSpin}
                       onCheckedChange={(v) => setPrefs({ fxSpin: v })}
+                    />
+                  </SettingField>
+                </>
+              )}
+
+              {prefs.fx === "full" && isCp && (
+                <>
+                  <SettingField
+                    label="Scanlines"
+                    hint="CRT line texture over the page."
+                  >
+                    <Switch
+                      checked={prefs.fxScanlines}
+                      onCheckedChange={(v) => setPrefs({ fxScanlines: v })}
+                    />
+                  </SettingField>
+
+                  <SettingField
+                    label="RGB glitch"
+                    hint="Chromatic aberration on headings and hovers."
+                  >
+                    <Switch
+                      checked={prefs.fxGlitch}
+                      onCheckedChange={(v) => setPrefs({ fxGlitch: v })}
+                    />
+                  </SettingField>
+
+                  <SettingField
+                    label="HUD frame"
+                    hint="Corner brackets on the viewport."
+                  >
+                    <Switch
+                      checked={prefs.fxHud}
+                      onCheckedChange={(v) => setPrefs({ fxHud: v })}
                     />
                   </SettingField>
                 </>
