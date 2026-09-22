@@ -224,6 +224,28 @@ export function IpDrawer({
               )}
             </div>
           )}
+          {/* imported sheet metadata (guest_os, cert, license, owner…) — the
+              workbook keeps these as custom_fields on the address row */}
+          {addr?.custom_fields &&
+            Object.keys(addr.custom_fields).length > 0 && (
+              <div className="rounded-md border p-3 text-sm space-y-1">
+                <div className="mb-1 text-xs font-medium text-muted-foreground">
+                  Imported fields
+                </div>
+                {Object.entries(addr.custom_fields).map(([k, v]) =>
+                  v === null || v === "" || k === "mac_mismatch" ? null : (
+                    <div key={k} className="flex gap-2 text-muted-foreground">
+                      <span dir="ltr" className="shrink-0 font-mono text-xs">
+                        {k}:
+                      </span>
+                      <span dir="auto" className="break-words text-foreground/80">
+                        {typeof v === "object" ? JSON.stringify(v) : String(v)}
+                      </span>
+                    </div>
+                  )
+                )}
+              </div>
+            )}
           <div className="grid gap-1.5">
             <Label htmlFor={addr ? `${uid}-tags` : undefined}>Tags</Label>
             {addr ? (

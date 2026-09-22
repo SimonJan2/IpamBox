@@ -10,6 +10,7 @@ import {
   Globe,
   HardDrive,
   History,
+  ListOrdered,
   Network,
   Search,
   Server,
@@ -69,6 +70,19 @@ interface SearchOut {
     name: string | null;
     beneficiary: string | null;
     site_code: string | null;
+  }[];
+  lists: {
+    id: number;
+    name: string;
+    slug: string;
+    description: string | null;
+  }[];
+  list_rows: {
+    id: number;
+    list_id: number;
+    list_slug: string;
+    list_name: string;
+    label: string;
   }[];
   jump: {
     address: string;
@@ -172,6 +186,22 @@ function itemsFor(res: SearchOut, q: string): Item[] {
       label: s.name ?? `#${s.id}`,
       sub: s.beneficiary ?? s.site_code ?? undefined,
       href: `/services?q=${ENC(q)}`,
+    });
+  for (const l of res.lists ?? [])
+    items.push({
+      group: "Lists",
+      icon: ListOrdered,
+      label: l.name,
+      sub: l.description ?? undefined,
+      href: `/lists/${l.slug}`,
+    });
+  for (const r of res.list_rows ?? [])
+    items.push({
+      group: "Lists",
+      icon: ListOrdered,
+      label: r.label,
+      sub: r.list_name,
+      href: `/lists/${r.list_slug}?q=${ENC(r.label)}`,
     });
   return items;
 }

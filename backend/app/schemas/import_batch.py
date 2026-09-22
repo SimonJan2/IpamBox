@@ -32,6 +32,22 @@ class SheetPreview(BaseModel):
     # "octet" | "octet-new" | "title" | "name" | "override" | None
     matched_by: str | None = None
     warnings: list[str] = []
+    # set when the sheet is targeted as a custom list (list_sheets option)
+    list_name: str | None = None
+    # inferred column defs for list-targeted sheets — [{key,label,type,…}]
+    list_columns: list[dict] | None = None
+
+
+class ListTarget(BaseModel):
+    """Import a sheet as a custom list (user-selected or suggested)."""
+
+    # display name for the list — defaults to the sheet title when empty
+    name: str | None = None
+    # merge-identity column: a column key ("c0") or header label; None = auto
+    key_column: str | None = None
+    # also run the sheet's detected family parser (IPs still land in the
+    # IPAM) — default on; turn off to keep the sheet only as a list
+    also_ipam: bool = True
 
 
 class PreviewOptions(BaseModel):
@@ -45,6 +61,8 @@ class PreviewOptions(BaseModel):
     skip_sheets: list[str] = Field(default_factory=list)
     # create a 10.{N}.0.0/16 container prefix per numbered site
     create_containers: bool = True
+    # sheet name -> custom-list target
+    list_sheets: dict[str, ListTarget] = Field(default_factory=dict)
 
 
 class CommitOptions(BaseModel):

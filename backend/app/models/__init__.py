@@ -5,6 +5,7 @@ from app.models.certificate import Certificate
 from app.models.change_log import ChangeLog
 from app.models.circuit import Circuit
 from app.models.color_rule import ColorRule
+from app.models.custom_list import CustomList, CustomListRow
 from app.models.import_batch import ImportBatch, ImportBatchStatus
 from app.models.ip_address import IPAddress, IPRole, IPStatus
 from app.models.ip_range import IPRange, IPRangeRole
@@ -25,6 +26,8 @@ __all__ = [
     "Certificate",
     "Circuit",
     "ColorRule",
+    "CustomList",
+    "CustomListRow",
     "ImportBatch",
     "ImportBatchStatus",
     "Service",

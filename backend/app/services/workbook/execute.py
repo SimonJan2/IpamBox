@@ -16,6 +16,7 @@ from app.models.asset import Asset
 from app.models.certificate import Certificate
 from app.models.change_log import ChangeLog
 from app.models.circuit import Circuit
+from app.models.custom_list import CustomList, CustomListRow
 from app.models.ip_address import IPAddress, IPStatus
 from app.models.ip_range import IPRange
 from app.models.prefix import Prefix, PrefixStatus
@@ -24,6 +25,7 @@ from app.models.site import Site
 from app.models.vlan import VLAN
 from app.models.vrf import VRF
 from app.services.ipam import slugify
+from app.services.workbook.listparse import key_for
 
 
 class PlanError(Exception):
@@ -187,6 +189,104 @@ def _group_by_sheet(rows):
     return groups
 
 
+async def _get_or_create_list(session, entry, batch_id) -> CustomList:
+    lst = None
+    if entry.get("list_id"):
+        lst = await session.get(CustomList, entry["list_id"])
+    if lst is None:
+        slug_base = slugify(entry["name"])
+        lst = (
+            await session.execute(
+                select(CustomList).where(CustomList.slug == slug_base)
+            )
+        ).scalar_one_or_none()
+    if lst is None:
+        slug, n = slug_base, 2
+        taken = set((await session.execute(select(CustomList.slug))).scalars())
+        while slug in taken:
+            slug = f"{slug_base}-{n}"
+            n += 1
+        lst = CustomList(name=entry["name"], slug=slug)
+        session.add(lst)
+        await session.flush()
+    # the plan already remapped incoming data onto these column keys
+    lst.columns = entry.get("columns") or []
+    lst.key_column = entry.get("key_column")
+    lst.source_sheet = entry.get("sheet")
+    lst.import_batch_id = batch_id
+    return lst
+
+
+async def _apply_list(session, entry, batch_id, rep) -> None:
+    """Merge-by-key sync of one custom list. Manual edits, pins, colors and
+    row order survive; vanished source rows are kept and reported."""
+    lst = await _get_or_create_list(session, entry, batch_id)
+    key_col = entry.get("key_column")
+    live: dict[str, CustomListRow] = {}
+    if key_col:
+        for row in (
+            await session.execute(
+                select(CustomListRow).where(CustomListRow.list_id == lst.id)
+            )
+        ).scalars():
+            k = key_for(row.data or {}, key_col)
+            if k:
+                live.setdefault(k, row)
+
+    name = lst.name
+    seen_keys: set[str] = set()
+    for i, r in enumerate(entry.get("rows", [])):
+        k = r.get("key") or key_for(r.get("data") or {}, key_col)
+        if k:
+            seen_keys.add(k)
+        action = r.get("action")
+        label = str((r.get("data") or {}).get(key_col) or f"row {r['row']}")
+        if action in ("skip", "conflict"):
+            rep(entry["sheet"], r["row"], action, f"list '{name}': {label}")
+            continue
+        row = None
+        if action == "update" and r.get("target_id"):
+            row = await session.get(CustomListRow, r["target_id"])
+            if row is not None and row.list_id != lst.id:
+                row = None
+        if row is None and k:
+            row = live.get(k)
+        if row is not None:
+            # re-check at commit time: a UI edit between preview and commit
+            # still wins over the sheet
+            if row.manually_edited and (row.data or {}) != r["data"]:
+                rep(
+                    entry["sheet"], r["row"], "conflict",
+                    f"list '{name}': '{label}' was edited in-app — kept",
+                )
+                continue
+            if (row.data or {}) != r["data"]:
+                row.data = r["data"]
+            row.import_batch_id = batch_id
+            rep(
+                entry["sheet"], r["row"], "update",
+                f"list '{name}': '{label}'",
+            )
+            continue
+        session.add(
+            CustomListRow(
+                list_id=lst.id, data=r.get("data") or {},
+                sort_order=i, import_batch_id=batch_id,
+            )
+        )
+        rep(entry["sheet"], r["row"], "create", f"list '{name}': {label}")
+    await session.flush()
+
+    if key_col:
+        for k, row in live.items():
+            if k not in seen_keys:
+                label = str((row.data or {}).get(key_col) or row.id)
+                rep(
+                    entry["sheet"], 0, "skip",
+                    f"list '{name}': '{label}' missing from source — kept",
+                )
+
+
 async def execute_plan(
     session: AsyncSession,
     batch,
@@ -328,6 +428,22 @@ async def execute_plan(
                 if not partial:
                     raise
                 rep(r["sheet"], r["row"], "error", str(e)[:200])
+
+    # -- custom lists (merge-by-key per list) ------------------------------
+    for entry in plan.get("custom_lists", []):
+        try:
+            if partial:
+                async with session.begin_nested():
+                    await _apply_list(session, entry, batch.id, rep)
+            else:
+                await _apply_list(session, entry, batch.id, rep)
+        except Exception as e:
+            if not partial:
+                raise
+            rep(
+                entry["sheet"], 0, "error",
+                f"list '{entry.get('name')}': {str(e)[:200]}",
+            )
 
     counts = Counter(r["action"] for r in results)
     return {"counts": dict(counts), "rows": results}

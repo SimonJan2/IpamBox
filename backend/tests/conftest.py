@@ -68,7 +68,8 @@ async def session(engine, sf):
                 "TRUNCATE scan_jobs, ip_addresses, ip_ranges, prefixes, vrfs, "
                 "sites, users, change_log, tag_assignments, tags, vlans, "
                 "vlan_groups, app_settings, import_batches, circuits, "
-                "certificates, assets, services, color_rules "
+                "certificates, assets, services, color_rules, "
+                "custom_list_rows, custom_lists "
                 "RESTART IDENTITY CASCADE"
             )
         )

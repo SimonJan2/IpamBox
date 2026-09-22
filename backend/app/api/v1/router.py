@@ -9,6 +9,7 @@ from app.api.v1 import (
     discovery,
     entities,
     imports,
+    lists,
     maintenance,
     prefixes,
     ranges,
@@ -45,3 +46,4 @@ api_router.include_router(entities.circuits_router)
 api_router.include_router(entities.certificates_router)
 api_router.include_router(entities.assets_router)
 api_router.include_router(entities.services_router)
+api_router.include_router(lists.router)

@@ -8,6 +8,7 @@ import {
   History,
   Inbox,
   LayoutDashboard,
+  ListOrdered,
   Network,
   Palette,
   ScanLine,
@@ -145,6 +146,14 @@ export const DOC_ARTICLES: DocArticle[] = [
     category: "inventory",
     icon: HardDrive,
     keywords: ["asset", "serial", "hardware", "software", "eol"],
+  },
+  {
+    slug: "lists",
+    title: "Custom Lists",
+    description: "User-defined tables with typed columns and live IP resolution.",
+    category: "inventory",
+    icon: ListOrdered,
+    keywords: ["list", "custom", "spreadsheet", "sheet", "table", "servers"],
   },
   {
     slug: "services",

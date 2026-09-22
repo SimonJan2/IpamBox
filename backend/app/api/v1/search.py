@@ -20,6 +20,7 @@ from app.core.deps import DATA_READ, require_perm
 from app.models.asset import Asset
 from app.models.certificate import Certificate
 from app.models.circuit import Circuit
+from app.models.custom_list import CustomList, CustomListRow
 from app.models.ip_address import IPAddress
 from app.models.prefix import Prefix
 from app.models.service import Service
@@ -32,6 +33,8 @@ from app.schemas.search import (
     SearchCertificate,
     SearchCircuit,
     SearchJump,
+    SearchList,
+    SearchListRow,
     SearchOut,
     SearchPrefix,
     SearchService,
@@ -56,6 +59,19 @@ def _folded(col):
     return func.translate(cast(col, String), _HE_FINALS, _HE_BASE)
 
 
+def _row_label(row: CustomListRow, lst: CustomList) -> str:
+    """Short label for a list-row search hit: key-column value, else the
+    first non-empty cell in column order."""
+    data = row.data or {}
+    if lst.key_column and data.get(lst.key_column):
+        return str(data[lst.key_column])
+    for c in lst.columns or []:
+        v = data.get(c.get("key"))
+        if v not in (None, ""):
+            return str(v)
+    return f"row {row.id}"
+
+
 @router.get("", response_model=SearchOut)
 async def search(
     q: str = Query(default="", max_length=200),
@@ -64,7 +80,8 @@ async def search(
 ):
     empty = SearchOut(
         addresses=[], prefixes=[], sites=[], vrfs=[], vlans=[],
-        circuits=[], certificates=[], assets=[], services=[], jump=None,
+        circuits=[], certificates=[], assets=[], services=[],
+        lists=[], list_rows=[], jump=None,
     )
     q = q.strip()
     if not q:
@@ -77,6 +94,9 @@ async def search(
 
     async def take(stmt):
         return (await session.execute(stmt.limit(PER_GROUP))).scalars().all()
+
+    async def take_rows(stmt):
+        return (await session.execute(stmt.limit(PER_GROUP))).all()
 
     addresses = await take(
         select(IPAddress).where(
@@ -151,6 +171,18 @@ async def search(
         select(Service)
         .where(match(Service.name, Service.beneficiary, Service.site_code))
         .order_by(Service.id)
+    )
+    lists = await take(
+        select(CustomList)
+        .where(match(CustomList.name, CustomList.description))
+        .order_by(CustomList.id)
+    )
+    # row search: jsonb::text match across all cells, joined to its list
+    list_row_hits = await take_rows(
+        select(CustomListRow, CustomList)
+        .join(CustomList, CustomListRow.list_id == CustomList.id)
+        .where(match(CustomListRow.data))
+        .order_by(CustomListRow.id)
     )
 
     # "what is 10.20.3.44?" -> jump straight to the prefix holding it.
@@ -259,6 +291,20 @@ async def search(
                 id=s.id, name=s.name, beneficiary=s.beneficiary, site_code=s.site_code
             )
             for s in services
+        ],
+        lists=[
+            SearchList(id=l.id, name=l.name, slug=l.slug, description=l.description)
+            for l in lists
+        ],
+        list_rows=[
+            SearchListRow(
+                id=r.id,
+                list_id=r.list_id,
+                list_slug=l.slug,
+                list_name=l.name,
+                label=_row_label(r, l),
+            )
+            for r, l in list_row_hits
         ],
         jump=jump,
     )

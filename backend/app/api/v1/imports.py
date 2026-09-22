@@ -28,7 +28,7 @@ from app.schemas.import_batch import (
 from app.services.ipam import IPAMError, get_or_404
 from app.services.workbook.execute import PlanError, commit_batch
 from app.services.workbook.plan import build_import_plan
-from app.services.workbook.reader import load_workbook_bytes
+from app.services.workbook.reader import load_upload
 
 router = APIRouter(prefix="/imports", tags=["imports"])
 settings = get_settings()
@@ -52,9 +52,11 @@ def _load_sheets(batch: ImportBatch):
     if not path.is_file():
         raise HTTPException(410, "stored workbook file is gone — re-upload")
     try:
-        return load_workbook_bytes(path.read_bytes())
+        # batch.filename is the original upload name — the stored path's
+        # batch_N_ prefix must not leak into a CSV's derived sheet name
+        return load_upload(path.read_bytes(), batch.filename or path.name)
     except Exception as e:
-        raise HTTPException(422, f"cannot parse workbook: {e}")
+        raise HTTPException(422, f"cannot parse stored file: {e}")
 
 
 @router.post(
@@ -67,18 +69,20 @@ async def upload_workbook(
     session: AsyncSession = Depends(get_session),
     filename: str = "workbook.xlsx",
 ):
-    """Upload an .xlsx as raw body (?filename=…). Stores the file, runs sheet
-    detection, returns the batch + per-sheet family summary."""
+    """Upload an .xlsx/.csv as raw body (?filename=…). Stores the file, runs
+    sheet detection, returns the batch + per-sheet family summary."""
     payload = await request.body()
     if len(payload) > MAX_IMPORT_BYTES:
-        raise HTTPException(413, "workbook too large")
-    if not zipfile.is_zipfile(__import__("io").BytesIO(payload)):
-        raise HTTPException(422, "not an .xlsx file (expected a ZIP container)")
+        raise HTTPException(413, "file too large")
+    if not zipfile.is_zipfile(__import__("io").BytesIO(payload)) and not (
+        filename.lower().endswith(".csv")
+    ):
+        raise HTTPException(422, "not an .xlsx or .csv file")
 
     try:
-        sheets = load_workbook_bytes(payload)
+        sheets = load_upload(payload, filename)
     except Exception as e:
-        raise HTTPException(422, f"cannot parse workbook: {e}")
+        raise HTTPException(422, f"cannot parse file: {e}")
 
     batch = ImportBatch(
         filename=Path(filename).name,

@@ -1,14 +1,25 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
-import { History, Pencil, Plus, Trash2 } from "lucide-react";
+import {
+  Columns3,
+  History,
+  Layers,
+  Pencil,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 import {
   flexRender,
   getCoreRowModel,
+  getExpandedRowModel,
+  getGroupedRowModel,
   getSortedRowModel,
   useReactTable,
   type ColumnDef,
+  type ExpandedState,
+  type VisibilityState,
 } from "@tanstack/react-table";
 
 import { api } from "@/lib/api";
@@ -46,6 +57,12 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
@@ -97,6 +114,11 @@ export default function InventoryPage() {
   });
   const [q, setQ] = useUrlText("q");
   const [kindFilter, setKindFilter] = useUrlParam("kind", "all");
+  // operational quick-filters set by the stats cards
+  const [flag, setFlag] = useUrlParam("flag", "");
+  const [groupBy, setGroupBy] = useUrlParam("group", "");
+  const [hide, setHide] = useUrlParam("hide", "");
+  const [expanded, setExpanded] = useState<ExpandedState>(true);
   const [sorting, setSorting] = useUrlSorting();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Asset | null>(null);
@@ -209,10 +231,34 @@ export default function InventoryPage() {
     [items, siteName]
   );
 
+  const stats = useMemo(() => {
+    const now = Date.now();
+    const in90 = now + 90 * 86_400_000;
+    const s = { hardware: 0, software: 0, eol_past: 0, eol_90: 0, no_serial: 0, no_site: 0 };
+    for (const a of rows) {
+      if (a.kind === "hardware") s.hardware++;
+      else s.software++;
+      const eol = a.eol_on ? new Date(a.eol_on).getTime() : null;
+      if (eol !== null && eol < now) s.eol_past++;
+      else if (eol !== null && eol < in90) s.eol_90++;
+      if (!a.serial_number) s.no_serial++;
+      if (!a.site_id) s.no_site++;
+    }
+    return s;
+  }, [rows]);
+
   const filtered = useMemo(() => {
     const needle = foldHebrew(q.toLowerCase());
+    const now = Date.now();
+    const in90 = now + 90 * 86_400_000;
     return rows.filter((a) => {
       if (kindFilter !== "all" && a.kind !== kindFilter) return false;
+      const eol = a.eol_on ? new Date(a.eol_on).getTime() : null;
+      if (flag === "eol_past" && !(eol !== null && eol < now)) return false;
+      if (flag === "eol_90" && !(eol !== null && eol >= now && eol < in90))
+        return false;
+      if (flag === "no_serial" && a.serial_number) return false;
+      if (flag === "no_site" && a.site_id) return false;
       if (!q) return true;
       return [
         a.vendor,
@@ -226,7 +272,7 @@ export default function InventoryPage() {
         a.site_name,
       ].some((f) => f != null && foldHebrew(f.toLowerCase()).includes(needle));
     });
-  }, [rows, q, kindFilter]);
+  }, [rows, q, kindFilter, flag]);
 
   const eolBadge = (eol: string | null) => {
     if (!eol) return <span className="text-muted-foreground">—</span>;
@@ -249,14 +295,19 @@ export default function InventoryPage() {
     ? "Row order is fixed while a column sort is on — clear the sort to drag."
     : q
       ? "Row order is fixed while searching — clear the search to drag."
-      : kindFilter !== "all"
-        ? "Row order is fixed while the kind filter is on — clear it to drag."
-        : null;
+      : groupBy
+        ? "Row order is fixed while grouped — clear the grouping to drag."
+        : flag
+          ? "Row order is fixed while a quick filter is on — clear it to drag."
+          : kindFilter !== "all"
+            ? "Row order is fixed while the kind filter is on — clear it to drag."
+            : null;
   const order = useRowOrder<Asset>({
     path: "/api/v1/assets",
     items,
     setData: itemsQ.setData,
-    getVisibleIds: (): number[] => tableRows.map((r) => r.original.id),
+    getVisibleIds: (): number[] =>
+      tableRows.filter((r) => !r.getIsGrouped()).map((r) => r.original.id),
     enabled: canWrite && !orderBlock,
   });
   const setRowColor = useRowColor<Asset>({
@@ -271,6 +322,7 @@ export default function InventoryPage() {
             {
               id: "order",
               enableSorting: false,
+              enableHiding: false,
               header: () => <span className="sr-only">Reorder</span>,
               cell: (c) => (
                 <DragHandle
@@ -297,6 +349,18 @@ export default function InventoryPage() {
         accessorKey: "kind",
         header: ({ column }) => <SortHeader column={column}>Kind</SortHeader>,
         cell: (c) => <Badge variant="outline">{c.getValue<string>()}</Badge>,
+      },
+      {
+        id: "category",
+        accessorFn: (a) => a.category ?? "",
+        header: ({ column }) => (
+          <SortHeader column={column}>Category</SortHeader>
+        ),
+        cell: (c) => (
+          <span dir="auto" className="text-muted-foreground">
+            {c.getValue<string>() || "—"}
+          </span>
+        ),
       },
       {
         accessorKey: "vendor",
@@ -377,6 +441,7 @@ export default function InventoryPage() {
         id: "actions",
         header: () => <div className="text-right">Actions</div>,
         enableSorting: false,
+        enableHiding: false,
         cell: (c) => (
           <div className="flex justify-end gap-1">
             {canWrite && (
@@ -434,22 +499,45 @@ export default function InventoryPage() {
     [canWrite, canDelete, saveField, order.setPinned, orderBlock, setRowColor]
   );
 
+  // URL-backed column visibility (?hide=col1,col2) + grouping (?group=…)
+  const columnVisibility = useMemo<VisibilityState>(() => {
+    const hidden = new Set(hide ? hide.split(",") : []);
+    const v: VisibilityState = {};
+    for (const id of [
+      "model", "kind", "category", "vendor", "serial_number",
+      "site", "purpose", "version", "support_status", "eol_on",
+    ]) {
+      v[id] = !hidden.has(id);
+    }
+    return v;
+  }, [hide]);
+  const grouping = useMemo(() => (groupBy ? [groupBy] : []), [groupBy]);
+
   const table = useReactTable({
     data: filtered,
     columns,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
-    state: { sorting },
+    getGroupedRowModel: getGroupedRowModel(),
+    getExpandedRowModel: getExpandedRowModel(),
+    state: { sorting, grouping, columnVisibility, expanded },
     onSortingChange: setSorting,
+    onExpandedChange: setExpanded,
   });
 
   const tableRows = table.getRowModel().rows;
-  const visibleIds = tableRows.map((r) => r.original.id);
+  const visibleIds = tableRows
+    .filter((r) => !r.getIsGrouped())
+    .map((r) => r.original.id);
   const { rowProps, focusRow } = useRowNav({
     count: tableRows.length,
     onOpen: (i) => {
-      const a = tableRows[i]?.original;
-      if (!a) return;
+      const tr = tableRows[i];
+      if (!tr || tr.getIsGrouped()) {
+        tr?.toggleExpanded();
+        return;
+      }
+      const a = tr.original;
       if (canWrite) {
         setEditing(a);
         setDialogOpen(true);
@@ -480,6 +568,40 @@ export default function InventoryPage() {
         )}
       </div>
 
+      {/* stats strip — each card is a click-to-filter shortcut */}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        {(
+          [
+            ["Hardware", stats.hardware, "", "hardware"] as const,
+            ["Software", stats.software, "", "software"] as const,
+            ["EOL passed", stats.eol_past, "eol_past", ""] as const,
+            ["EOL < 90d", stats.eol_90, "eol_90", ""] as const,
+            ["No serial", stats.no_serial, "no_serial", ""] as const,
+            ["No site", stats.no_site, "no_site", ""] as const,
+          ]
+        ).map(([label, n, flagKey, kindKey]) => {
+          const activeFlag = flagKey !== "" && flag === flagKey;
+          const activeKind = kindKey !== "" && kindFilter === kindKey;
+          return (
+            <button
+              key={label}
+              type="button"
+              onClick={() => {
+                if (flagKey) setFlag(activeFlag ? "" : flagKey);
+                if (kindKey) setKindFilter(activeKind ? "all" : kindKey);
+              }}
+              className={cn(
+                "rounded-lg border bg-card px-3 py-2 text-left transition-colors hover:bg-accent/50",
+                (activeFlag || activeKind) && "border-emerald-500/50 bg-emerald-500/10"
+              )}
+            >
+              <div className="text-xl font-semibold">{n}</div>
+              <div className="text-xs text-muted-foreground">{label}</div>
+            </button>
+          );
+        })}
+      </div>
+
       <div className="flex flex-wrap items-center gap-2">
         <Input
           placeholder="Search inventory…"
@@ -487,21 +609,93 @@ export default function InventoryPage() {
           onChange={(e) => setQ(e.target.value)}
           className="max-w-xs"
         />
-        <Select value={kindFilter} onValueChange={setKindFilter}>
-          <SelectTrigger className="w-36">
+        <div
+          role="group"
+          aria-label="Kind filter"
+          className="flex rounded-lg border p-0.5"
+        >
+          {(
+            [
+              ["all", "All"],
+              ["hardware", "Hardware"],
+              ["software", "Software"],
+            ] as const
+          ).map(([v, label]) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setKindFilter(v)}
+              className={cn(
+                "rounded-md px-3 py-1 text-sm transition-colors",
+                kindFilter === v
+                  ? "bg-emerald-500/15 text-emerald-400"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <Select
+          value={groupBy || "__none__"}
+          onValueChange={(v) => setGroupBy(v === "__none__" ? "" : v)}
+        >
+          <SelectTrigger className="w-40" aria-label="Group by">
+            <Layers className="h-3.5 w-3.5 text-muted-foreground" />
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All kinds</SelectItem>
-            <SelectItem value="hardware">Hardware</SelectItem>
-            <SelectItem value="software">Software</SelectItem>
+            <SelectItem value="__none__">No grouping</SelectItem>
+            <SelectItem value="category">Group by category</SelectItem>
+            <SelectItem value="site">Group by site</SelectItem>
+            <SelectItem value="vendor">Group by vendor</SelectItem>
           </SelectContent>
         </Select>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="sm" aria-label="Choose columns">
+              <Columns3 className="h-4 w-4" /> Columns
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {table
+              .getAllColumns()
+              .filter((c) => c.getCanHide())
+              .map((c) => (
+                <DropdownMenuCheckboxItem
+                  key={c.id}
+                  checked={c.getIsVisible()}
+                  onCheckedChange={(v) => {
+                    const hidden = new Set(hide ? hide.split(",") : []);
+                    if (v) hidden.delete(c.id);
+                    else hidden.add(c.id);
+                    setHide([...hidden].join(","));
+                  }}
+                >
+                  {c.id.replace(/_/g, " ")}
+                </DropdownMenuCheckboxItem>
+              ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {flag && (
+          <Button variant="ghost" size="sm" onClick={() => setFlag("")}>
+            Clear filter ×
+          </Button>
+        )}
         <span className="ml-auto text-sm text-muted-foreground">
           {tableRows.length} of {items.length}
         </span>
         <RowColorLegend />
-        <SavedViews pageKey="inventory" />
+        <SavedViews
+          pageKey="inventory"
+          builtins={[
+            { name: "EOL < 90 days", query: "flag=eol_90" },
+            { name: "EOL passed", query: "flag=eol_past" },
+            { name: "Missing serial", query: "flag=no_serial" },
+            { name: "Routers w/o site", query: "q=router&flag=no_site" },
+            { name: "Servers", query: "q=server&group=category" },
+          ]}
+        />
       </div>
 
       <div className="rounded-lg border">
@@ -526,11 +720,35 @@ export default function InventoryPage() {
             ))}
           </TableHeader>
           <TableBody>
-            {sorting.length === 0 && tableRows[0]?.original.pinned && (
+            {sorting.length === 0 && !groupBy && tableRows[0]?.original.pinned && (
               <PinnedDivider colSpan={columns.length} />
             )}
             {tableRows.map((row, i) => {
               const rp = rowProps(i);
+              if (row.getIsGrouped()) {
+                // collapsible group header — leafRows holds the members
+                return (
+                  <TableRow key={row.id} className="bg-muted/40">
+                    <TableCell colSpan={columns.length} className="py-1.5">
+                      <button
+                        type="button"
+                        onClick={() => row.toggleExpanded()}
+                        className="flex items-center gap-2 font-medium"
+                      >
+                        <span className="text-muted-foreground">
+                          {row.getIsExpanded() ? "▾" : "▸"}
+                        </span>
+                        <span dir="auto">
+                          {String(row.getValue(groupBy) || "—")}
+                        </span>
+                        <Badge variant="outline" className="text-muted-foreground">
+                          {row.getLeafRows().length}
+                        </Badge>
+                      </button>
+                    </TableCell>
+                  </TableRow>
+                );
+              }
               return (
                 <SortableRow
                   key={row.id}
