@@ -12,6 +12,7 @@ export type ThemeChoice =
   | "netbox"
   | "netbox-dark"
   | "tokyonight"
+  | "tokyonight-storm"
   | "system";
 /** A concrete theme after "system" resolves. */
 export type ResolvedTheme = Exclude<ThemeChoice, "system">;
@@ -25,6 +26,7 @@ export const THEMES: readonly {
   mode: "dark" | "light";
 }[] = [
   { value: "tokyonight", label: "IpamBox Tokyo Night", mode: "dark" },
+  { value: "tokyonight-storm", label: "IpamBox Tokyo Night Storm", mode: "dark" },
   { value: "dark", label: "IpamBox Dark", mode: "dark" },
   { value: "light", label: "IpamBox Light", mode: "light" },
   { value: "localsend", label: "LocalSend Mint", mode: "light" },
@@ -43,9 +45,17 @@ export interface SavedView {
   query: string;
 }
 
+/** Ambient-effects master level — "full" everything on, "calm" keeps the
+ *  static ambience but kills motion, "off" strips ambient layers too. */
+export type FxLevel = "full" | "calm" | "off";
+
 export interface Prefs {
   theme: ThemeChoice;
   density: DensityChoice;
+  fx: FxLevel;
+  fxStars: boolean;
+  fxGrain: boolean;
+  fxSpin: boolean;
   pageSize: number;
   landing: string;
   tsFormat: TsFormat;
@@ -63,6 +73,10 @@ export interface Prefs {
 export const DEFAULT_PREFS: Prefs = {
   theme: "tokyonight",
   density: "comfortable",
+  fx: "full",
+  fxStars: true,
+  fxGrain: true,
+  fxSpin: true,
   pageSize: 50,
   landing: "/",
   tsFormat: "local",
@@ -94,7 +108,7 @@ export function savePrefs(patch: Partial<Prefs>): Prefs {
   return next;
 }
 
-function resolveTheme(theme: ThemeChoice): ResolvedTheme {
+export function resolveTheme(theme: ThemeChoice): ResolvedTheme {
   if (theme !== "system") return theme;
   if (typeof window === "undefined") return "dark";
   return window.matchMedia("(prefers-color-scheme: light)").matches
@@ -106,6 +120,10 @@ export function applyPrefs(p: Prefs) {
   const root = document.documentElement;
   root.dataset.theme = resolveTheme(p.theme);
   root.dataset.density = p.density;
+  root.dataset.fx = p.fx;
+  root.dataset.fxStars = p.fxStars ? "1" : "0";
+  root.dataset.fxGrain = p.fxGrain ? "1" : "0";
+  root.dataset.fxSpin = p.fxSpin ? "1" : "0";
 }
 
 /** Applies prefs to <html> and keeps them live (system theme + cross-page). */

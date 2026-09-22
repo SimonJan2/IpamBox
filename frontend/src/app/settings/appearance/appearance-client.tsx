@@ -2,7 +2,7 @@
 
 import { Palette } from "lucide-react";
 
-import { THEMES, usePrefs } from "@/lib/prefs";
+import { THEMES, resolveTheme, usePrefs } from "@/lib/prefs";
 import {
   Card,
   CardContent,
@@ -23,6 +23,7 @@ import { DocsLink } from "@/components/docs/docs-link";
 
 export default function AppearancePage() {
   const [prefs, setPrefs] = usePrefs();
+  const isTn = resolveTheme(prefs.theme).startsWith("tokyonight");
 
   return (
     <div className="space-y-6">
@@ -127,6 +128,59 @@ export default function AppearancePage() {
               onCheckedChange={(v) => setPrefs({ showSlugs: v })}
             />
           </SettingField>
+
+          {isTn && (
+            <>
+              <SettingField
+                label="Ambient effects"
+                hint="Tokyo Night extras — Calm keeps the look but stops motion, Off strips the ambience."
+              >
+                <Select
+                  value={prefs.fx}
+                  onValueChange={(v) => setPrefs({ fx: v as typeof prefs.fx })}
+                >
+                  <SelectTrigger aria-label="Ambient effects">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="full">Full</SelectItem>
+                    <SelectItem value="calm">Calm (no motion)</SelectItem>
+                    <SelectItem value="off">Off (flat)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </SettingField>
+
+              <SettingField
+                label="Starfield"
+                hint="Night-sky dots in the background."
+              >
+                <Switch
+                  checked={prefs.fxStars}
+                  onCheckedChange={(v) => setPrefs({ fxStars: v })}
+                />
+              </SettingField>
+
+              <SettingField
+                label="Film grain"
+                hint="Subtle texture over the page."
+              >
+                <Switch
+                  checked={prefs.fxGrain}
+                  onCheckedChange={(v) => setPrefs({ fxGrain: v })}
+                />
+              </SettingField>
+
+              <SettingField
+                label="Login neon ring"
+                hint="Spinning border on the sign-in card."
+              >
+                <Switch
+                  checked={prefs.fxSpin}
+                  onCheckedChange={(v) => setPrefs({ fxSpin: v })}
+                />
+              </SettingField>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>
