@@ -155,6 +155,7 @@ EDITABLE: dict[str, SettingSpec] = {
     ),
     "backup_keep": SettingSpec("backup_keep", _v_int(1, 100)),
     "ipambox_session_hours": SettingSpec("ipambox_session_hours", _v_int(1, 720)),
+    "rackula_base_url": SettingSpec("rackula_base_url", _v_str(255)),
 }
 
 

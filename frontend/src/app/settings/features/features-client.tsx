@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   Archive,
+  Container,
   Crosshair,
   FileBadge,
   Inbox,
@@ -42,7 +43,7 @@ type FeatureDef = {
   key: Key;
   label: string;
   hint: string;
-  type?: "bool" | "int";
+  type?: "bool" | "int" | "str";
   min?: number;
   max?: number;
 };
@@ -159,6 +160,18 @@ const GROUPS: {
         min: 1,
         max: 365,
         hint: "Default 30: certificates expiring within this many days show the amber 'Nd left' badge.",
+      },
+    ],
+  },
+  {
+    title: "Rackula",
+    icon: Container,
+    features: [
+      {
+        key: "rackula_base_url",
+        label: "Rackula instance URL",
+        type: "str",
+        hint: "Base URL of a self-hosted Rackula instance, e.g. http://rackula:8042 — enables 'Open in Rackula'. Leave empty in air-gapped setups.",
       },
     ],
   },
@@ -290,6 +303,14 @@ export default function FeaturesPage() {
                             ? 0
                             : Number(e.target.value)) as never
                         )
+                      }
+                    />
+                  ) : f.type === "str" ? (
+                    <Input
+                      dir="ltr"
+                      value={draft[f.key] as string}
+                      onChange={(e) =>
+                        set(f.key, e.target.value as never)
                       }
                     />
                   ) : (

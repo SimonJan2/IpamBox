@@ -36,6 +36,7 @@ class SettingsPatch(BaseModel):
     changelog_retention_days: int | None = None
     scan_job_retention_days: int | None = None
     cert_warn_days: int | None = None
+    rackula_base_url: str | None = None
 
 
 class LanInfo(BaseModel):

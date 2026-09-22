@@ -17,6 +17,7 @@ so the import pipeline can be exercised end-to-end with zero production data.
 | `demo-contacts-list.csv` | `/lists` → Import file | Vendor/contact table that becomes a custom list. |
 | `demo-vlans.csv` | `/lists` → Import file | The VLAN scheme reference (vid, name, group, scope, description) — becomes a custom list documenting what the workbooks deploy. |
 | `demo-servers-list.csv` | `/lists` → Import a file | Servers table mirroring a real servers-sheet export — classifies as `servers` so the wizard also offers "import to IPAM" (rows land on the `Demo Server Farm` site). Exercises every inferred column type: `text` key, `select` (Guest OS / Cert / License), `ip` with multi-value cells, `date` (Cert Expiry — expiry badges), `url` (Mgmt URL), `number` (vCPUs), `owner` (Owner). |
+| `demo-rack.Rackula.zip` | `/racks/[id]` → Import from Rackula | 42U demo rack, 18 devices: servers, switches, patch panels, UPS, PDUs, blanks — including a front+rear pair sharing U1. Choose **merge** on an empty rack; importing a second time shows the conflict report. |
 | `generate_demo_data.py` | `python3 generate_demo_data.py` | Regenerates everything deterministically (fixed seed). Requires `openpyxl`. |
 
 ## `Network_Address_DEMO.xlsx` — the clean flagship

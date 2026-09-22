@@ -362,6 +362,7 @@ export interface SettingsValues {
   changelog_retention_days: number;
   scan_job_retention_days: number;
   cert_warn_days: number;
+  rackula_base_url: string;
 }
 
 export interface SettingsOut {
@@ -631,4 +632,90 @@ export interface ListTarget {
   name?: string | null;
   key_column?: string | null;
   also_ipam: boolean;
+}
+
+// --- Racks (elevation view + Rackula round-trip) ----------------------------
+
+export type RackFace = "front" | "rear" | "both";
+
+export interface Rack {
+  id: number;
+  site_id: number | null;
+  name: string;
+  description: string | null;
+  room: string | null;
+  height_u: number;
+  width: number;
+  notes: string | null;
+  pinned: boolean;
+  sort_order: number | null;
+  row_color: string | null;
+  display_color: string | null;
+  created_at: string;
+  device_count: number;
+  used_u: number;
+}
+
+/** Resolved FK summary on a rack device — id for the link, label to show. */
+export interface LinkedRef {
+  id: number;
+  label: string;
+}
+
+export interface IpRef extends LinkedRef {
+  prefix_id: number;
+}
+
+export interface RackDevice {
+  id: number;
+  rack_id: number;
+  name: string;
+  device_type: string | null;
+  u_position: number;
+  u_height: number;
+  face: RackFace;
+  colour: string | null;
+  category: string | null;
+  manufacturer: string | null;
+  model: string | null;
+  asset_id: number | null;
+  ip_address_id: number | null;
+  asset: LinkedRef | null;
+  ip: IpRef | null;
+  source: string;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RackDetail extends Rack {
+  devices: RackDevice[];
+}
+
+/** POST /racks/{id}/devices payload (also one entry of the import body). */
+export interface RackDeviceCreate {
+  name: string;
+  device_type?: string | null;
+  u_position: number;
+  u_height?: number;
+  face?: RackFace;
+  colour?: string | null;
+  category?: string | null;
+  manufacturer?: string | null;
+  model?: string | null;
+  asset_id?: number | null;
+  ip_address_id?: number | null;
+  source?: "manual" | "rackula";
+  notes?: string | null;
+}
+
+export interface SkippedDevice {
+  name: string | null;
+  u_position: number | null;
+  reason: string;
+}
+
+export interface RackImportResult {
+  created: number;
+  skipped: SkippedDevice[];
 }

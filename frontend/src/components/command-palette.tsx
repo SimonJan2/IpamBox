@@ -6,6 +6,7 @@ import {
   BookOpen,
   Building2,
   Cable,
+  Container,
   Crosshair,
   Globe,
   HardDrive,
@@ -83,6 +84,12 @@ interface SearchOut {
     list_slug: string;
     list_name: string;
     label: string;
+  }[];
+  racks: {
+    id: number;
+    name: string;
+    room: string | null;
+    site_id: number | null;
   }[];
   jump: {
     address: string;
@@ -202,6 +209,14 @@ function itemsFor(res: SearchOut, q: string): Item[] {
       label: r.label,
       sub: r.list_name,
       href: `/lists/${r.list_slug}?q=${ENC(r.label)}`,
+    });
+  for (const r of res.racks ?? [])
+    items.push({
+      group: "Racks",
+      icon: Container,
+      label: r.name,
+      sub: r.room ?? undefined,
+      href: `/racks/${r.id}`,
     });
   return items;
 }

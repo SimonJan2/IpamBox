@@ -23,6 +23,7 @@ from app.models.circuit import Circuit
 from app.models.custom_list import CustomList, CustomListRow
 from app.models.ip_address import IPAddress
 from app.models.prefix import Prefix
+from app.models.rack import Rack, RackDevice
 from app.models.service import Service
 from app.models.site import Site
 from app.models.vlan import VLAN
@@ -37,6 +38,7 @@ from app.schemas.search import (
     SearchListRow,
     SearchOut,
     SearchPrefix,
+    SearchRack,
     SearchService,
     SearchSite,
     SearchVlan,
@@ -81,7 +83,7 @@ async def search(
     empty = SearchOut(
         addresses=[], prefixes=[], sites=[], vrfs=[], vlans=[],
         circuits=[], certificates=[], assets=[], services=[],
-        lists=[], list_rows=[], jump=None,
+        lists=[], list_rows=[], racks=[], jump=None,
     )
     q = q.strip()
     if not q:
@@ -176,6 +178,21 @@ async def search(
         select(CustomList)
         .where(match(CustomList.name, CustomList.description))
         .order_by(CustomList.id)
+    )
+    # rack names/rooms, plus racks containing a matching device name
+    racks = await take(
+        select(Rack)
+        .where(
+            or_(
+                match(Rack.name, Rack.room),
+                Rack.id.in_(
+                    select(RackDevice.rack_id).where(
+                        match(RackDevice.name, RackDevice.model)
+                    )
+                ),
+            )
+        )
+        .order_by(Rack.name)
     )
     # row search: jsonb::text match across all cells, joined to its list
     list_row_hits = await take_rows(
@@ -305,6 +322,10 @@ async def search(
                 label=_row_label(r, l),
             )
             for r, l in list_row_hits
+        ],
+        racks=[
+            SearchRack(id=r.id, name=r.name, room=r.room, site_id=r.site_id)
+            for r in racks
         ],
         jump=jump,
     )

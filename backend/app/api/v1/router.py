@@ -12,6 +12,7 @@ from app.api.v1 import (
     lists,
     maintenance,
     prefixes,
+    racks,
     ranges,
     scans,
     search,
@@ -47,3 +48,4 @@ api_router.include_router(entities.certificates_router)
 api_router.include_router(entities.assets_router)
 api_router.include_router(entities.services_router)
 api_router.include_router(lists.router)
+api_router.include_router(racks.router)

@@ -19,6 +19,7 @@ export const G_CHORDS: Record<string, { href: string; label: string }> = {
   s: { href: "/scans", label: "Scans" },
   i: { href: "/discovery", label: "Discovery inbox" },
   c: { href: "/changelog", label: "Changelog" },
+  r: { href: "/racks", label: "Racks" },
   h: { href: "/docs", label: "Docs" },
 };
 

@@ -47,9 +47,14 @@ Scapy raw-socket scanning · Next.js 15 dark-mode UI
   headers and duplicated column blocks. Hebrew content is normalized and
   every imported row keeps provenance back to its upload batch.
 - **Extended entities**: WAN circuits, certificate expiry tracking
-  (30-day countdown), SW/HW asset + serial-number inventory, and a
-  service catalog — first-class tables with pages, search, RBAC,
-  backup and changelog coverage.
+  (30-day countdown), SW/HW asset + serial-number inventory, rack
+  elevations, and a service catalog — first-class tables with pages,
+  search, RBAC, backup and changelog coverage.
+- **Rack elevations**: racks with per-U device placement on front/rear
+  faces, a read-only SVG elevation view, and collision validation
+  (front+rear share a U; same-face overlaps are rejected). Round-trips
+  with a self-hosted [Rackula](https://github.com/RackulaLives/Rackula)
+  instance via share URLs and `.Rackula.zip` archives for heavy editing.
 - **Hebrew data support**: final-letter folding in search (type
   `רשת`, match `רשתו`), `dir="auto"` on free-text cells so RTL text
   renders correctly, LTR-pinned IP/MAC columns, Hebrew-safe site slugs.
@@ -195,6 +200,7 @@ apply without a restart, and can be reset back to the env value per key.
 | `BACKUP_INTERVAL_MINUTES` ✎ | recurring backup interval; `0` = manual only | `0` |
 | `BACKUP_KEEP` ✎ | how many scheduled files to retain | `14` |
 | `IMPORT_DIR` | where uploaded workbooks are stored for re-preview/commit | `<BACKUP_DIR>/imports` |
+| `IPAMBOX_RACKULA_BASE_URL` ✎ | self-hosted Rackula URL enabling "Open in Rackula" | — |
 
 > **Secrets**: prefer `IPAMBOX_PASSWORD_FILE` (e.g. a Docker secret) over
 > `IPAMBOX_PASSWORD` so the value never sits in your env/compose file.
@@ -209,6 +215,7 @@ apply without a restart, and can be reset back to the env value per key.
 | `/prefixes/[id]` | Address map (grid/list views), ranges, bulk ops, CSV |
 | `/circuits` `/certificates` | WAN circuits, certificate expiry (30d countdown) |
 | `/inventory` `/services` | SW/HW + serial inventory, service catalog |
+| `/racks` `/racks/[id]` | Rack list + read-only elevation, Rackula round-trip |
 | `/import` | Workbook import wizard — upload, detection, preview, commit |
 | `/vlans` `/tags` | VLAN groups + VLANs, tag management |
 | `/scans` | Trigger/schedule/cancel scans, live progress |

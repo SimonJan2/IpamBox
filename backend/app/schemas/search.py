@@ -87,6 +87,13 @@ class SearchListRow(BaseModel):
     label: str
 
 
+class SearchRack(BaseModel):
+    id: int
+    name: str
+    room: str | None
+    site_id: int | None
+
+
 class SearchJump(BaseModel):
     """q parsed as an IP address -> the deepest prefix containing it."""
     address: str
@@ -107,4 +114,5 @@ class SearchOut(BaseModel):
     services: list[SearchService]
     lists: list[SearchList] = []
     list_rows: list[SearchListRow] = []
+    racks: list[SearchRack] = []
     jump: SearchJump | None
