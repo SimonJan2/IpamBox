@@ -9,6 +9,8 @@ import {
   History,
   Pencil,
   Plus,
+  Printer,
+  QrCode,
   Trash2,
   Upload,
 } from "lucide-react";
@@ -20,14 +22,16 @@ import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
 import { useSetting } from "@/lib/features";
 import { encodeShareUrl, exportZip } from "@/lib/rackula";
-import { cn } from "@/lib/utils";
+import { cn, timeAgo } from "@/lib/utils";
 import type { RackDetail, RackDevice, Site, Page } from "@/types";
 import { RackElevation, usedUSlots } from "@/components/racks/rack-elevation";
 import { DeviceFormDialog } from "@/components/racks/device-form";
 import { RackulaImportDialog } from "@/components/racks/rackula-import";
+import { RackQrDialog } from "@/components/racks/rack-qr";
 import { AsyncPanel } from "@/components/async-panel";
 import { DocsLink } from "@/components/docs/docs-link";
 import { HistoryDialog } from "@/components/history-panel";
+import { IpStatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -59,6 +63,19 @@ export default function RackDetailPage({ id }: { id: string }) {
   const rackulaBase = useSetting("rackula_base_url");
 
   const rackQ = useAsyncData(() => api.get<RackDetail>(`/api/v1/racks/${id}`), [id]);
+  // "Next free" hint for a 1U front device — refetches with the rack.
+  const nextFreeQ = useAsyncData(async () => {
+    if (!rackQ.data) return null;
+    try {
+      return await api
+        .get<{ u_position: number | null }>(
+          `/api/v1/racks/${id}/next-free-u?height=1&face=front`
+        )
+        .then((r) => r.u_position);
+    } catch {
+      return null;
+    }
+  }, [rackQ.data]);
   const sitesQ = useAsyncData(async () => {
     try {
       return await api.get<Page<Site>>("/api/v1/sites").then((p) => p.items);
@@ -72,6 +89,7 @@ export default function RackDetailPage({ id }: { id: string }) {
   const [deleting, setDeleting] = useState<RackDevice | null>(null);
   const [historyFor, setHistoryFor] = useState<RackDevice | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
   const [selected, setSelected] = useState<RackDevice | null>(null);
 
   const rack = rackQ.data;
@@ -130,11 +148,20 @@ export default function RackDetailPage({ id }: { id: string }) {
             <span className="text-sm font-normal text-muted-foreground">
               {rack.height_u}U{siteName ? ` · ${siteName}` : ""}
               {rack.room ? ` · ${rack.room}` : ""}
+              {nextFreeQ.data ? ` · next free U${nextFreeQ.data}` : ""}
             </span>
           )}
           <DocsLink slug="racks" />
         </h1>
         <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" size="sm" onClick={() => setQrOpen(true)} disabled={!rack}>
+            <QrCode /> QR
+          </Button>
+          <Button variant="secondary" size="sm" asChild>
+            <Link href={`/racks/${id}/print`}>
+              <Printer /> Print
+            </Link>
+          </Button>
           {shareUrl && (
             <Button variant="secondary" size="sm" asChild>
               <a href={shareUrl} target="_blank" rel="noreferrer">
@@ -213,7 +240,7 @@ export default function RackDetailPage({ id }: { id: string }) {
                     </p>
                   )}
                   {selected.ip && (
-                    <p>
+                    <p className="flex items-center gap-1.5">
                       IP:{" "}
                       <Link
                         href={`/prefixes/${selected.ip.prefix_id}`}
@@ -222,6 +249,12 @@ export default function RackDetailPage({ id }: { id: string }) {
                       >
                         {selected.ip.label}
                       </Link>
+                      {selected.ip_status && <IpStatusBadge s={selected.ip_status} />}
+                    </p>
+                  )}
+                  {selected.ip_last_seen && (
+                    <p className="text-muted-foreground">
+                      Last seen {timeAgo(selected.ip_last_seen)}
                     </p>
                   )}
                   {selected.notes && (
@@ -260,6 +293,7 @@ export default function RackDetailPage({ id }: { id: string }) {
                     <TableHead>Name</TableHead>
                     <TableHead>Face</TableHead>
                     <TableHead>Type</TableHead>
+                    <TableHead>Status</TableHead>
                     <TableHead>Links</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -291,6 +325,13 @@ export default function RackDetailPage({ id }: { id: string }) {
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {d.device_type ?? "—"}
+                      </TableCell>
+                      <TableCell>
+                        {d.ip_status ? (
+                          <IpStatusBadge s={d.ip_status} />
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {[d.asset?.label, d.ip?.label].filter(Boolean).join(" · ") || "—"}
@@ -342,7 +383,7 @@ export default function RackDetailPage({ id }: { id: string }) {
                   {devices.length === 0 && (
                     <TableRow>
                       <TableCell
-                        colSpan={6}
+                        colSpan={7}
                         className="py-10 text-center text-muted-foreground"
                       >
                         Empty rack — add a device or import a Rackula layout.
@@ -373,6 +414,12 @@ export default function RackDetailPage({ id }: { id: string }) {
             heightU={rack.height_u}
             existing={devices}
             onImported={refresh}
+          />
+          <RackQrDialog
+            open={qrOpen}
+            onOpenChange={setQrOpen}
+            rackId={rack.id}
+            name={rack.name}
           />
         </>
       )}

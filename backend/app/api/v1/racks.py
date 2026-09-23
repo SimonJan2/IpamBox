@@ -4,20 +4,23 @@ Not a `_crud_router` — device collision validation, resolved asset/ip
 summaries on the detail response, and the transactional import endpoint
 don't fit the factory.
 """
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
-from app.core.deps import DATA_DELETE, DATA_WRITE, require_perm
+from app.core.deps import DATA_DELETE, DATA_READ, DATA_WRITE, require_perm
 from app.models.asset import Asset
 from app.models.ip_address import IPAddress
-from app.models.rack import Rack, RackDevice
+from app.models.rack import Rack, RackDevice, RackFace
 from app.schemas.common import Page, ReorderBody, ip_display
 from app.schemas.rack import (
     IpRef,
     LinkedRef,
+    NextFreeUOut,
     RackCreate,
     RackDetail,
     RackDeviceCreate,
@@ -32,7 +35,7 @@ from app.schemas.rack import (
 from app.services.colors import stamp_colors
 from app.services.ipam import IPAMError, get_or_404
 from app.services.ordering import ordered, reorder
-from app.services.racks import check_placement, used_u
+from app.services.racks import check_placement, find_free_u, used_u
 from app.services.workbook.normalize import fold_hebrew
 
 router = APIRouter(prefix="/racks", tags=["racks"])
@@ -84,6 +87,8 @@ def _device_out(d: RackDevice) -> RackDeviceOut:
         if ip.hostname:
             label = f"{label} ({ip.hostname})"
         out.ip = IpRef(id=ip.id, label=label, prefix_id=ip.prefix_id)
+        out.ip_status = ip.status
+        out.ip_last_seen = ip.last_seen
     return out
 
 
@@ -183,6 +188,28 @@ async def get_rack(rack_id: int, session: AsyncSession = Depends(get_session)):
     return out
 
 
+@router.get(
+    "/{rack_id}/next-free-u",
+    response_model=NextFreeUOut,
+    dependencies=[Depends(require_perm(DATA_READ))],
+)
+async def next_free_u(
+    rack_id: int,
+    height: int = Query(ge=1),
+    face: RackFace = RackFace.FRONT,
+    side: Literal["bottom", "top"] = "bottom",
+    session: AsyncSession = Depends(get_session),
+):
+    """Lowest (side=bottom) or highest (side=top) start U where a `height`-U
+    `face` device fits — the read-only analog of next-available-IP."""
+    rack = await _get_rack(session, rack_id)
+    try:
+        u = find_free_u(rack, await _devices(session, rack.id), height, face, side)
+    except IPAMError as e:
+        raise HTTPException(e.status_code, str(e))
+    return NextFreeUOut(u_position=u)
+
+
 @router.patch(
     "/{rack_id}",
     response_model=RackOut,
@@ -260,8 +287,8 @@ async def create_device(
     except IntegrityError as e:
         await session.rollback()
         raise HTTPException(409, "duplicate or invalid value") from e
-    await session.refresh(device, ["created_at", "updated_at"])
-    return device
+    await session.refresh(device, ["created_at", "updated_at", "asset", "ip_address"])
+    return _device_out(device)
 
 
 @router.patch(

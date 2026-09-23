@@ -1,5 +1,8 @@
 """Rack elevations: CRUD, face-aware collision rules, Rackula import."""
 
+import ipaddress
+from datetime import datetime, timezone
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.redis import get_redis
 from app.core.security import hash_password
+from app.models.ip_address import IPAddress, IPStatus
+from app.models.rack import Rack
 from app.models.user import User, UserRole
 from app.services.backup import BACKUP_TABLES
 
@@ -17,11 +22,16 @@ PASSWORD = "rack-test-pw1"
 async def auth_on():
     settings = get_settings()
     settings.ipambox_allow_insecure = False
+    # httpx won't send a Secure cookie over http://test — force it off so
+    # login flows work regardless of the container env.
+    cookie_secure = settings.ipambox_cookie_secure
+    settings.ipambox_cookie_secure = False
     r = get_redis()
     try:
         yield
     finally:
         settings.ipambox_allow_insecure = True
+        settings.ipambox_cookie_secure = cookie_secure
         for pattern in ("ipam:session:*", "ipam:loginfails:*", "ipam:lockout:*"):
             async for key in r.scan_iter(pattern):
                 await r.delete(key)
@@ -206,6 +216,136 @@ async def test_shrinking_rack_below_devices_rejected(client: AsyncClient):
     await _dev(client, rack["id"], u_position=9, u_height=2)  # U9-10
     r = await client.patch(f"/api/v1/racks/{rack['id']}", json={"height_u": 8})
     assert r.status_code == 422
+
+
+# ------------------------------------------------------------- next-free-u
+
+
+async def _next_free(client: AsyncClient, rack_id: int, **params) -> int | None:
+    r = await client.get(f"/api/v1/racks/{rack_id}/next-free-u", params=params)
+    assert r.status_code == 200, r.text
+    return r.json()["u_position"]
+
+
+async def test_next_free_u_empty_rack(client: AsyncClient):
+    rack = await _rack(client)  # height_u=12
+    assert await _next_free(client, rack["id"], height=1) == 1
+    assert await _next_free(client, rack["id"], height=1, side="top") == 12
+    assert await _next_free(client, rack["id"], height=4, side="top") == 9
+
+
+async def test_next_free_u_face_aware(client: AsyncClient):
+    rack = await _rack(client)
+    await _dev(client, rack["id"], name="rear-pdu", u_position=1, face="rear")
+    # a rear device does NOT block a front request at the same U
+    assert await _next_free(client, rack["id"], height=1, face="front") == 1
+    assert await _next_free(client, rack["id"], height=1, face="rear") == 2
+    # `both` collides with everything: rear is now blocked at U1 AND U2
+    await _dev(client, rack["id"], name="shelf", u_position=2, face="both")
+    assert await _next_free(client, rack["id"], height=1, face="rear") == 3
+    assert await _next_free(client, rack["id"], height=1, face="both") == 3
+    # front still legally sits over the rear device at U1
+    assert await _next_free(client, rack["id"], height=1, face="front") == 1
+
+
+async def test_next_free_u_skips_fragmented_gaps(client: AsyncClient):
+    rack = await _rack(client, height_u=6)
+    for u in (1, 3, 5):
+        await _dev(client, rack["id"], u_position=u, face="front")
+    # three 1U gaps (U2, U4, U6) fit 1U but no contiguous 2U exists
+    assert await _next_free(client, rack["id"], height=1) == 2
+    assert await _next_free(client, rack["id"], height=2) is None
+
+
+async def test_next_free_u_full_rack_returns_null(client: AsyncClient):
+    rack = await _rack(client, height_u=2)
+    await _dev(client, rack["id"], u_position=1, face="both")
+    await _dev(client, rack["id"], name="b2", u_position=2, face="both")
+    assert await _next_free(client, rack["id"], height=1, face="front") is None
+
+
+async def test_next_free_u_validation(client: AsyncClient):
+    rack = await _rack(client, height_u=4)
+    for params in (
+        {"height": 0},
+        {"height": 5},  # exceeds rack height
+        {"height": 1, "face": "side"},
+        {"height": 1, "side": "middle"},
+        {},  # height is required
+    ):
+        r = await client.get(
+            f"/api/v1/racks/{rack['id']}/next-free-u", params=params
+        )
+        assert r.status_code == 422, params
+    r = await client.get("/api/v1/racks/999/next-free-u", params={"height": 1})
+    assert r.status_code == 404
+
+
+async def test_next_free_u_viewer_can_read(
+    client: AsyncClient, session: AsyncSession, auth_on
+):
+    rack = Rack(name="VR", height_u=6, width=19)
+    session.add(rack)
+    session.add(
+        User(
+            username="v",
+            password_hash=hash_password(PASSWORD),
+            role=UserRole.VIEWER,
+        )
+    )
+    await session.commit()
+    r = await client.post(
+        "/api/v1/auth/login", json={"username": "v", "password": PASSWORD}
+    )
+    assert r.status_code == 200
+
+    r = await client.get(
+        f"/api/v1/racks/{rack.id}/next-free-u", params={"height": 1}
+    )
+    assert r.status_code == 200 and r.json()["u_position"] == 1
+
+
+# ------------------------------------------------------------ device ↔ IP
+
+
+async def test_detail_returns_linked_ip_health(
+    client: AsyncClient, session: AsyncSession
+):
+    vrf_id = next(
+        v["id"]
+        for v in (await client.get("/api/v1/vrfs")).json()
+        if v["name"] == "Global"
+    )
+    r = await client.post(
+        "/api/v1/prefixes", json={"prefix": "10.99.0.0/24", "vrf_id": vrf_id}
+    )
+    assert r.status_code == 201, r.text
+    seen = datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
+    ip = IPAddress(
+        address="10.99.0.5",
+        address_int=int(ipaddress.ip_address("10.99.0.5")),
+        prefix_id=r.json()["id"],
+        vrf_id=vrf_id,
+        status=IPStatus.DISCOVERED,
+        last_seen=seen,
+    )
+    session.add(ip)
+    await session.commit()
+
+    rack = await _rack(client)
+    await _dev(client, rack["id"], name="with-ip", u_position=1, ip_address_id=ip.id)
+    await _dev(client, rack["id"], name="no-ip", u_position=2)
+
+    detail = (await client.get(f"/api/v1/racks/{rack['id']}")).json()
+    by_name = {d["name"]: d for d in detail["devices"]}
+    linked = by_name["with-ip"]
+    assert linked["ip"]["id"] == ip.id
+    assert linked["ip_status"] == "discovered"
+    got = datetime.fromisoformat(linked["ip_last_seen"].replace("Z", "+00:00"))
+    assert got == seen
+    unlinked = by_name["no-ip"]
+    assert unlinked["ip"] is None
+    assert unlinked["ip_status"] is None and unlinked["ip_last_seen"] is None
 
 
 # ------------------------------------------------------------------- import
