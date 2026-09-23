@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session as SyncSession
 from app.core.security import get_actor
 from app.models.app_setting import AppSetting
 from app.models.asset import Asset
+from app.models.cabling import Cable, DeviceInterface
 from app.models.certificate import Certificate
 from app.models.change_log import ChangeLog
 from app.models.circuit import Circuit
@@ -56,6 +57,8 @@ AUDITED_MODELS: tuple = (
     Rack,
     RackGroup,
     Device,
+    DeviceInterface,
+    Cable,
 )
 # churn-only columns that produce noise, never signal — sort_order/pinned/
 # group_position change on every drag/drop and would spam the audit log

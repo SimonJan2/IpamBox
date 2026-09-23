@@ -291,6 +291,12 @@ export default function RackDetailPage({ id }: { id: string }) {
                       slot {(selected.slot ?? 0) + 1}
                     </p>
                   )}
+                  {selected.interface_count > 0 && (
+                    <p className="text-muted-foreground" dir="ltr">
+                      Ports: {selected.cabled_count}/{selected.interface_count}{" "}
+                      cabled
+                    </p>
+                  )}
                   {(selected.manufacturer || selected.model) && (
                     <p dir="auto" className="text-muted-foreground">
                       {[selected.manufacturer, selected.model].filter(Boolean).join(" ")}

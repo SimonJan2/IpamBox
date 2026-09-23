@@ -72,8 +72,8 @@ async def session(engine, sf):
                 "sites, users, change_log, tag_assignments, tags, vlans, "
                 "vlan_groups, app_settings, import_batches, circuits, "
                 "certificates, assets, services, color_rules, "
-                "custom_list_rows, custom_lists, devices, racks, "
-                "rack_groups RESTART IDENTITY CASCADE"
+                "custom_list_rows, custom_lists, cables, device_interfaces, "
+                "devices, racks, rack_groups RESTART IDENTITY CASCADE"
             )
         )
         await conn.execute(

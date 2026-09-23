@@ -105,6 +105,14 @@ class Device(Base):
     ips: Mapped[list["IPAddress"]] = relationship(
         back_populates="device", lazy="selectin", order_by="IPAddress.id"
     )
+    # Interfaces die with their device (ORM-level delete-orphan so each port
+    # gets a changelog delete; attached cables follow via DB CASCADE).
+    interfaces: Mapped[list["DeviceInterface"]] = relationship(  # noqa: F821
+        back_populates="device",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+        order_by="DeviceInterface.position, DeviceInterface.name",
+    )
 
     __table_args__ = (
         Index("ix_devices_rack_u", "rack_id", "u_position"),

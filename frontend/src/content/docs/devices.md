@@ -37,6 +37,10 @@ filter button scopes the table to devices with no rack placement.
   addresses — hostname, vendor and address all match) and unlink with the
   broken-link icon. Linking an address that's on another device moves it —
   one IP belongs to at most one device.
+- **Interfaces** — the device's port grid: generate a whole set in one
+  click (`Gi1/0/` × 48, or a patch panel's front+back via a pair prefix),
+  cable ports to other devices, and trace the L1 path. See
+  [Cabling](/docs/cabling).
 - **Notes** — inline-editable.
 - **History** — every create/update/delete, including placement moves
   (rack → unrack → rack changes are audited as updates).

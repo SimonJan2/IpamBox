@@ -231,6 +231,9 @@ class RackDeviceOut(BaseModel):
     # unmonitored. ip/ip_last_seen describe the IP driving that status.
     ip_status: IPStatus | None = None
     ip_last_seen: datetime | None = None
+    # L1 coverage for the elevation panel — cabled ports / total ports.
+    interface_count: int = 0
+    cabled_count: int = 0
 
 
 class RackDetail(RackOut):

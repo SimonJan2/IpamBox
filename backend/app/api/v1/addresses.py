@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
 from app.core.deps import DATA_DELETE, DATA_WRITE, has_perm, require_perm
+from app.models.cabling import DeviceInterface
 from app.models.device import Device
 from app.models.ip_address import IPAddress, IPRole, IPStatus
 from app.models.user import User
@@ -20,12 +21,27 @@ from app.schemas.ip_address import (
     _norm_mac,
 )
 from app.services import prefix_math
+from app.services.cabling import stamp_connected_interfaces
 from app.services.colors import stamp_colors
 from app.services.csv_export import csv_response, parse_csv
 from app.services.devices import stamp_device_names
 from app.services.ipam import IPAMError, get_or_404
 
 router = APIRouter(prefix="/addresses", tags=["addresses"])
+
+
+async def _check_interface_link(
+    session: AsyncSession, interface_id: int | None
+) -> None:
+    """connected_interface_id must point at a real interface. No device
+    equality check — it's the far-end port (usually a switch's), not the
+    address owner's."""
+    if interface_id is None:
+        return
+    try:
+        await get_or_404(session, DeviceInterface, interface_id)
+    except IPAMError as e:
+        raise HTTPException(e.status_code, str(e))
 
 ADDRESS_CSV_COLUMNS = [
     "address", "prefix_id", "vrf_id", "hostname", "mac_address",
@@ -381,6 +397,7 @@ async def list_addresses(
     )
     rows = await stamp_colors(session, "addresses", rows)
     await stamp_device_names(session, rows)
+    await stamp_connected_interfaces(session, rows)
     return rows
 
 
@@ -411,6 +428,7 @@ async def create_address(body: IPAddressCreate, session: AsyncSession = Depends(
             await get_or_404(session, Device, body.device_id)
         except IPAMError as e:
             raise HTTPException(e.status_code, str(e))
+    await _check_interface_link(session, body.connected_interface_id)
 
     row = IPAddress(
         address=str(ip),
@@ -424,6 +442,12 @@ async def create_address(body: IPAddressCreate, session: AsyncSession = Depends(
         role=body.role,
         nat_inside_id=body.nat_inside_id,
         device_id=body.device_id,
+        connected_interface_id=body.connected_interface_id,
+        serial_number=body.serial_number,
+        switch_name=body.switch_name,
+        switch_port=body.switch_port,
+        counter_location=body.counter_location,
+        custom_fields=body.custom_fields,
         notes=body.notes,
     )
     session.add(row)
@@ -435,6 +459,7 @@ async def create_address(body: IPAddressCreate, session: AsyncSession = Depends(
     await session.refresh(row)
     await stamp_colors(session, "addresses", [row])
     await stamp_device_names(session, [row])
+    await stamp_connected_interfaces(session, [row])
     return row
 
 
@@ -446,6 +471,7 @@ async def get_address(address_id: int, session: AsyncSession = Depends(get_sessi
         raise HTTPException(e.status_code, str(e))
     await stamp_colors(session, "addresses", [row])
     await stamp_device_names(session, [row])
+    await stamp_connected_interfaces(session, [row])
     return row
 
 
@@ -478,6 +504,7 @@ async def update_address(
             await get_or_404(session, Device, data["device_id"])
         except IPAMError as e:
             raise HTTPException(e.status_code, str(e))
+    await _check_interface_link(session, data.get("connected_interface_id"))
     for field, value in data.items():
         setattr(row, field, value)
     try:
@@ -488,6 +515,7 @@ async def update_address(
     await session.refresh(row)
     await stamp_colors(session, "addresses", [row])
     await stamp_device_names(session, [row])
+    await stamp_connected_interfaces(session, [row])
     return row
 
 

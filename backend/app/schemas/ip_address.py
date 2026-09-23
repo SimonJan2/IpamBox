@@ -29,6 +29,7 @@ class IPAddressCreate(BaseModel):
     role: IPRole | None = None
     nat_inside_id: int | None = None
     device_id: int | None = None
+    connected_interface_id: int | None = None
     serial_number: str | None = Field(default=None, max_length=128)
     switch_name: str | None = Field(default=None, max_length=255)
     switch_port: str | None = Field(default=None, max_length=64)
@@ -58,6 +59,7 @@ class IPAddressUpdate(BaseModel):
     role: IPRole | None = None
     nat_inside_id: int | None = None
     device_id: int | None = None
+    connected_interface_id: int | None = None
     serial_number: str | None = Field(default=None, max_length=128)
     switch_name: str | None = Field(default=None, max_length=255)
     switch_port: str | None = Field(default=None, max_length=64)
@@ -78,6 +80,16 @@ class IPAddressUpdate(BaseModel):
         return hex_color_or_none(v)
 
 
+class ConnectedInterfaceRef(BaseModel):
+    """Resolved connected_interface_id — the far-end port (typically a
+    switch port) this address is patched into."""
+
+    id: int
+    name: str
+    device_id: int
+    device_name: str
+
+
 class IPAddressOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -93,6 +105,7 @@ class IPAddressOut(BaseModel):
     role: IPRole | None
     nat_inside_id: int | None
     device_id: int | None
+    connected_interface_id: int | None
     open_ports: list[int] | None
     device_type: str | None
     missed_scans: int
@@ -108,6 +121,8 @@ class IPAddressOut(BaseModel):
     display_color: str | None = None
     # Resolved device name — stamped by the API layer, not a column.
     device_name: str | None = None
+    # Resolved far-end port — stamped by the API layer, not a column.
+    connected_interface: ConnectedInterfaceRef | None = None
     created_at: datetime
     updated_at: datetime
 

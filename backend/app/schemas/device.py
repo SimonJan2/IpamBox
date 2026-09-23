@@ -137,6 +137,9 @@ class DeviceOut(BaseModel):
     # Worst-of across linked IPs; None = unmonitored.
     health: IPStatus | None = None
     ip_count: int = 0
+    # L1 coverage — how many ports the device has and how many are cabled.
+    interface_count: int = 0
+    cabled_count: int = 0
 
 
 class DeviceDetail(DeviceOut):

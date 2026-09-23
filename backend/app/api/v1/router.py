@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api.v1 import (
     addresses,
     backup,
+    cables,
     changelog,
     color_rules,
     dashboard,
@@ -53,3 +54,5 @@ api_router.include_router(lists.router)
 api_router.include_router(racks.router)
 api_router.include_router(rack_groups.router)
 api_router.include_router(devices.router)
+api_router.include_router(cables.router)
+api_router.include_router(cables.interfaces_router)
