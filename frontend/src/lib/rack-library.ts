@@ -4,7 +4,7 @@
  * stable lowercase-dash identifiers. `face_default` preselects the mounting
  * face; everything prefills the form and stays editable.
  */
-import type { RackFace } from "@/types";
+import type { RackFace, SlotLayout } from "@/types";
 
 export interface LibraryDevice {
   slug: string;
@@ -15,6 +15,8 @@ export interface LibraryDevice {
   face_default: RackFace;
   colour: string;
   category: string;
+  /** Set = this entry is a carrier tray other gear mounts into. */
+  slot_layout?: SlotLayout;
 }
 
 export const RACK_LIBRARY: LibraryDevice[] = [
@@ -32,6 +34,9 @@ export const RACK_LIBRARY: LibraryDevice[] = [
   { slug: "blank-1u", name: "Blank Panel", manufacturer: "Generic", model: "1U Blank", u_height: 1, face_default: "front", colour: "#64748b", category: "blank" },
   { slug: "brush-1u", name: "Brush Panel", manufacturer: "Generic", model: "1U Brush Strip", u_height: 1, face_default: "front", colour: "#94a3b8", category: "cable-management" },
   { slug: "shelf-1u", name: "Rack Shelf", manufacturer: "Generic", model: "1U Cantilever Shelf", u_height: 1, face_default: "front", colour: "#cbd5e1", category: "shelf" },
+  { slug: "carrier-dual", name: "1U dual shelf", manufacturer: "Generic", model: "1U Half-Width Dual Shelf", u_height: 1, face_default: "front", colour: "#cbd5e1", category: "carrier", slot_layout: "halves" },
+  { slug: "carrier-quad", name: "1U quad bracket", manufacturer: "Generic", model: "1U Quad Bracket", u_height: 1, face_default: "front", colour: "#cbd5e1", category: "carrier", slot_layout: "quarters" },
+  { slug: "carrier-shelf", name: "Rack shelf", manufacturer: "Generic", model: "1U Carrier Tray", u_height: 1, face_default: "front", colour: "#cbd5e1", category: "carrier", slot_layout: "shelf" },
   { slug: "kvm-console", name: "KVM Console", manufacturer: "Generic", model: "1U LCD Console", u_height: 1, face_default: "front", colour: "#e2e8f0", category: "kvm" },
   { slug: "dell-r650", name: "Dell PowerEdge R650", manufacturer: "Dell", model: "PowerEdge R650", u_height: 1, face_default: "front", colour: "#38bdf8", category: "server" },
   { slug: "dell-r750", name: "Dell PowerEdge R750", manufacturer: "Dell", model: "PowerEdge R750", u_height: 2, face_default: "front", colour: "#0ea5e9", category: "server" },

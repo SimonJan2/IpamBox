@@ -116,7 +116,9 @@ BACKUP_TABLES: tuple[BackupTable, ...] = (
     BackupTable("services", Service),
     # racks -> sites; rack_devices -> racks + assets + ip_addresses
     BackupTable("racks", Rack),
-    BackupTable("rack_devices", RackDevice),
+    # carrier_id is a self-FK — deferred so children restore before/after
+    # their carrier regardless of row order.
+    BackupTable("rack_devices", RackDevice, deferred_fks=("carrier_id",)),
     BackupTable("custom_lists", CustomList),
     BackupTable("custom_list_rows", CustomListRow),
     BackupTable("tags", Tag),

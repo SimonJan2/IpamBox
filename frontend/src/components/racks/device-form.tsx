@@ -6,8 +6,16 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { useAsyncData } from "@/lib/use-async-data";
 import { RACK_LIBRARY, type LibraryDevice } from "@/lib/rack-library";
+import { slotCount, slotLabel } from "@/lib/rack-collision";
 import { foldHebrew } from "@/lib/utils";
-import type { Asset, IpAddress, Page, RackDevice, RackFace } from "@/types";
+import type {
+  Asset,
+  IpAddress,
+  Page,
+  RackDevice,
+  RackFace,
+  SlotLayout,
+} from "@/types";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -44,6 +52,9 @@ const EMPTY = {
   model: "",
   asset_id: "none",
   ip_address_id: "none",
+  carrier_id: "none",
+  slot: "0",
+  slot_layout: "none",
   notes: "",
 };
 
@@ -52,6 +63,7 @@ export function DeviceFormDialog({
   onOpenChange,
   rackId,
   heightU,
+  devices,
   editing,
   prefill,
   onSaved,
@@ -60,6 +72,9 @@ export function DeviceFormDialog({
   onOpenChange: (o: boolean) => void;
   rackId: number;
   heightU: number;
+  /** This rack's devices — feeds the "Mounted in" carrier picker and slot
+   *  occupancy marks. */
+  devices: RackDevice[];
   editing: RackDevice | null;
   /** Starting values for a NEW device (edit ignores it) — the rack
    *  editor's click-empty-slot flow passes the clicked U + view face. */
@@ -99,6 +114,11 @@ export function DeviceFormDialog({
             ip_address_id: editing.ip_address_id
               ? String(editing.ip_address_id)
               : "none",
+            carrier_id: editing.carrier_id
+              ? String(editing.carrier_id)
+              : "none",
+            slot: String(editing.slot ?? 0),
+            slot_layout: editing.slot_layout ?? "none",
             notes: editing.notes ?? "",
           }
         : {
@@ -108,6 +128,18 @@ export function DeviceFormDialog({
           }
     );
   }, [open, editing, prefill]);
+
+  /** Carriers in this rack (excludes the device being edited). */
+  const carriers = useMemo(
+    () =>
+      devices.filter((d) => d.slot_layout != null && d.id !== editing?.id),
+    [devices, editing]
+  );
+  const carrier =
+    form.carrier_id === "none"
+      ? null
+      : (carriers.find((c) => String(c.id) === form.carrier_id) ?? null);
+  const mounted = carrier !== null;
 
   const libMatches = useMemo(() => {
     const needle = foldHebrew(libFilter.toLowerCase());
@@ -130,6 +162,7 @@ export function DeviceFormDialog({
       category: d.category,
       manufacturer: d.manufacturer ?? "",
       model: d.model ?? "",
+      slot_layout: d.slot_layout ?? "none",
     }));
 
   const submit = async () => {
@@ -138,9 +171,11 @@ export function DeviceFormDialog({
       const body = {
         name: form.name,
         device_type: form.device_type || null,
-        u_position: Number(form.u_position),
+        // u_position/face are inherited from the carrier when mounted —
+        // the server re-derives them regardless of what we send.
+        u_position: carrier ? carrier.u_position : Number(form.u_position),
         u_height: Number(form.u_height),
-        face: form.face,
+        face: carrier ? carrier.face : form.face,
         colour: form.colour || null,
         category: form.category || null,
         manufacturer: form.manufacturer || null,
@@ -148,6 +183,12 @@ export function DeviceFormDialog({
         asset_id: form.asset_id === "none" ? null : Number(form.asset_id),
         ip_address_id:
           form.ip_address_id === "none" ? null : Number(form.ip_address_id),
+        carrier_id: carrier ? carrier.id : null,
+        slot: carrier ? Number(form.slot) : null,
+        slot_layout:
+          form.slot_layout === "none"
+            ? null
+            : (form.slot_layout as SlotLayout),
         notes: form.notes || null,
       };
       if (editing) {
@@ -242,41 +283,114 @@ export function DeviceFormDialog({
             <Input id={`${uid}-name`} dir="auto" value={form.name} onChange={set("name")} />
           </div>
           <div className="grid gap-1.5">
-            <Label htmlFor={`${uid}-upos`}>U position (bottom)</Label>
-            <div className="flex gap-1">
-              <Input
-                id={`${uid}-upos`}
-                dir="ltr"
-                type="number"
-                min={1}
-                max={heightU}
-                value={form.u_position}
-                onChange={set("u_position")}
-                className="min-w-0"
-              />
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="shrink-0"
-                    title="Find the lowest or highest contiguous free span"
-                  >
-                    Find free U
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => findFreeU("bottom")}>
-                    Lowest free U
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => findFreeU("top")}>
-                    Highest free U
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+            <Label htmlFor={`${uid}-carrier`}>Mounted in</Label>
+            <Select
+              value={form.carrier_id}
+              onValueChange={(v) => setForm({ ...form, carrier_id: v })}
+            >
+              <SelectTrigger id={`${uid}-carrier`}>
+                <SelectValue placeholder="Rack — no carrier" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Rack — no carrier</SelectItem>
+                {carriers.map((c) => (
+                  <SelectItem key={c.id} value={String(c.id)}>
+                    <span dir="auto">
+                      {c.name} — U{c.u_position} ({c.slot_layout})
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
+          {mounted ? (
+            <div className="grid gap-1.5">
+              <Label htmlFor={`${uid}-slot`}>Slot</Label>
+              <Select
+                value={form.slot}
+                onValueChange={(v) => setForm({ ...form, slot: v })}
+              >
+                <SelectTrigger id={`${uid}-slot`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from(
+                    { length: slotCount(carrier.slot_layout) },
+                    (_, s) => {
+                      const taken = devices.some(
+                        (d) =>
+                          d.id !== editing?.id &&
+                          d.carrier_id === carrier.id &&
+                          d.slot === s
+                      );
+                      return (
+                        <SelectItem key={s} value={String(s)} disabled={taken}>
+                          {slotLabel(carrier.slot_layout, s)}
+                          {taken ? " — occupied" : ""}
+                        </SelectItem>
+                      );
+                    }
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : (
+            <div className="grid gap-1.5">
+              <Label htmlFor={`${uid}-layout`}>Carrier layout</Label>
+              <Select
+                value={form.slot_layout}
+                onValueChange={(v) => setForm({ ...form, slot_layout: v })}
+              >
+                <SelectTrigger id={`${uid}-layout`}>
+                  <SelectValue placeholder="Not a carrier" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Not a carrier</SelectItem>
+                  <SelectItem value="halves">Halves — 2 side-by-side</SelectItem>
+                  <SelectItem value="quarters">Quarters — 4 slots</SelectItem>
+                  <SelectItem value="shelf">Shelf — 1 tray</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {!mounted && (
+            <div className="grid gap-1.5">
+              <Label htmlFor={`${uid}-upos`}>U position (bottom)</Label>
+              <div className="flex gap-1">
+                <Input
+                  id={`${uid}-upos`}
+                  dir="ltr"
+                  type="number"
+                  min={1}
+                  max={heightU}
+                  value={form.u_position}
+                  onChange={set("u_position")}
+                  className="min-w-0"
+                />
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0"
+                      title="Find the lowest or highest contiguous free span"
+                    >
+                      Find free U
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => findFreeU("bottom")}>
+                      Lowest free U
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => findFreeU("top")}>
+                      Highest free U
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </div>
+          )}
           <div className="grid gap-1.5">
             <Label htmlFor={`${uid}-uheight`}>Height (U)</Label>
             <Input
@@ -284,27 +398,29 @@ export function DeviceFormDialog({
               dir="ltr"
               type="number"
               min={1}
-              max={heightU}
+              max={carrier?.u_height ?? heightU}
               value={form.u_height}
               onChange={set("u_height")}
             />
           </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor={`${uid}-face`}>Face</Label>
-            <Select
-              value={form.face}
-              onValueChange={(v) => setForm({ ...form, face: v as RackFace })}
-            >
-              <SelectTrigger id={`${uid}-face`}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="front">Front</SelectItem>
-                <SelectItem value="rear">Rear</SelectItem>
-                <SelectItem value="both">Both</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          {!mounted && (
+            <div className="grid gap-1.5">
+              <Label htmlFor={`${uid}-face`}>Face</Label>
+              <Select
+                value={form.face}
+                onValueChange={(v) => setForm({ ...form, face: v as RackFace })}
+              >
+                <SelectTrigger id={`${uid}-face`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="front">Front</SelectItem>
+                  <SelectItem value="rear">Rear</SelectItem>
+                  <SelectItem value="both">Both</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="grid gap-1.5">
             <Label htmlFor={`${uid}-colour`}>Colour</Label>
             <Input

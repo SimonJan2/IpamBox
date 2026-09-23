@@ -1,9 +1,15 @@
 """Rack device placement: U-range bounds + face-aware collision rules.
 
 Occupied span of a device is [u_position, u_position + u_height) in integer
-U slots. Two devices conflict iff their spans overlap AND their faces
-collide: `both` collides with everything, same faces collide, front/rear
-never collide (opposite faces share U space legally).
+U slots. Two rack-level devices conflict iff their spans overlap AND their
+faces collide: `both` collides with everything, same faces collide,
+front/rear never collide (opposite faces share U space legally).
+
+Carriers: a rack-level device with `slot_layout` set is a tray whose
+children mount into `slot` indices (halves=2, quarters=4, shelf=1).
+Children (`carrier_id` set) never touch rack-level collision space — the
+carrier already reserved its whole span — they only conflict with siblings
+occupying the same slot.
 """
 from collections.abc import Iterable
 from typing import Literal
@@ -16,8 +22,22 @@ class PlacementBoundsError(IPAMError):
     status_code = 422
 
 
+class CarrierError(IPAMError):
+    status_code = 422
+
+
+SLOT_LAYOUTS = {"halves": 2, "quarters": 4, "shelf": 1}
+
+
 def _faces_collide(a: RackFace, b: RackFace) -> bool:
     return RackFace.BOTH in (a, b) or a == b
+
+
+def resolve_carrier(
+    devices: Iterable[RackDevice], carrier_id: int
+) -> RackDevice | None:
+    """The carrier row within this rack's devices, else None."""
+    return next((d for d in devices if d.id == carrier_id), None)
 
 
 def placement_conflicts(
@@ -25,16 +45,63 @@ def placement_conflicts(
     candidate: RackDevice,
     exclude_id: int | None = None,
 ) -> list[RackDevice]:
-    """Existing devices that collide with `candidate` (by span + face)."""
-    lo, hi = candidate.u_position, candidate.u_position + candidate.u_height
+    """Existing devices that collide with `candidate`.
+
+    Children collide only with siblings in the same (carrier_id, slot);
+    rack-level candidates collide only with rack-level devices (the carrier
+    counts as its whole U span + face, its children are invisible here).
+    """
     out = []
+    if candidate.carrier_id is not None:
+        for d in devices:
+            if exclude_id is not None and d.id == exclude_id:
+                continue
+            if d.carrier_id == candidate.carrier_id and d.slot == candidate.slot:
+                out.append(d)
+        return out
+    lo, hi = candidate.u_position, candidate.u_position + candidate.u_height
     for d in devices:
         if exclude_id is not None and d.id == exclude_id:
+            continue
+        if d.carrier_id is not None:
             continue
         if lo < d.u_position + d.u_height and d.u_position < hi:
             if _faces_collide(d.face, candidate.face):
                 out.append(d)
     return out
+
+
+def _check_carrier_mount(
+    devices: Iterable[RackDevice],
+    candidate: RackDevice,
+    exclude_id: int | None,
+) -> None:
+    """422s on every way a carrier mount can be malformed (single level,
+    slot in range, child no taller than its carrier)."""
+    if exclude_id is not None and candidate.carrier_id == exclude_id:
+        raise CarrierError("a device can't be its own carrier")
+    if candidate.slot_layout is not None:
+        raise CarrierError("a carrier can't mount inside another carrier")
+    carrier = resolve_carrier(devices, candidate.carrier_id)
+    if carrier is None:
+        raise CarrierError(
+            f"carrier {candidate.carrier_id} not found in this rack"
+        )
+    if carrier.carrier_id is not None:
+        raise CarrierError("carriers can't nest — pick a rack-level carrier")
+    count = SLOT_LAYOUTS.get(carrier.slot_layout or "")
+    if count is None:
+        raise CarrierError(
+            f"{carrier.name or f'#{carrier.id}'} is not a carrier"
+        )
+    if candidate.slot is None or not 0 <= candidate.slot < count:
+        raise CarrierError(
+            f"slot must be 0–{count - 1} for a {carrier.slot_layout} carrier"
+        )
+    if candidate.u_height > carrier.u_height:
+        raise CarrierError(
+            f"child is taller than its carrier ({carrier.u_height}U)"
+        )
 
 
 def check_placement(
@@ -43,12 +110,19 @@ def check_placement(
     candidate: RackDevice,
     exclude_id: int | None = None,
 ) -> None:
-    """Raise 422 on out-of-bounds placement, 409 on a face collision."""
-    top = candidate.u_position + candidate.u_height - 1
-    if candidate.u_position < 1 or top > rack.height_u:
-        raise PlacementBoundsError(
-            f"U{candidate.u_position}–U{top} exceeds rack height {rack.height_u}U"
-        )
+    """Raise 422 on out-of-bounds/malformed placement, 409 on a collision."""
+    devices = list(devices)  # carrier lookup + conflict pass both iterate
+    if candidate.carrier_id is not None:
+        # The carrier already passed rack-bounds; children inherit its span.
+        _check_carrier_mount(devices, candidate, exclude_id)
+    else:
+        if candidate.slot is not None:
+            raise CarrierError("slot requires carrier_id")
+        top = candidate.u_position + candidate.u_height - 1
+        if candidate.u_position < 1 or top > rack.height_u:
+            raise PlacementBoundsError(
+                f"U{candidate.u_position}–U{top} exceeds rack height {rack.height_u}U"
+            )
     conflicts = placement_conflicts(devices, candidate, exclude_id)
     if conflicts:
         names = ", ".join(d.name or f"#{d.id}" for d in conflicts[:5])
@@ -56,7 +130,10 @@ def check_placement(
 
 
 def used_u(devices: Iterable[RackDevice]) -> int:
-    """Distinct U slots occupied on either face (front+rear pair counts once)."""
+    """Distinct U slots occupied on either face (front+rear pair counts once).
+
+    Children share their carrier's span, so they never add a slot.
+    """
     slots: set[int] = set()
     for d in devices:
         slots.update(range(d.u_position, d.u_position + d.u_height))

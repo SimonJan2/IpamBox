@@ -103,6 +103,13 @@ export default function RackDetailPage({ id }: { id: string }) {
   );
   // Derive the card's device from the live list so editor moves stay fresh.
   const selected = devices.find((d) => d.id === selectedId) ?? null;
+  const deviceById = useMemo(
+    () => new Map(devices.map((d) => [d.id, d])),
+    [devices]
+  );
+  const deletingChildren = deleting
+    ? devices.filter((d) => d.carrier_id === deleting.id).length
+    : 0;
   const refresh = () => {
     setSelectedId(null);
     void rackQ.reload();
@@ -241,6 +248,23 @@ export default function RackDetailPage({ id }: { id: string }) {
                     · {selected.u_height}U
                     {selected.device_type ? ` · ${selected.device_type}` : ""}
                   </p>
+                  {selected.slot_layout && (
+                    <p className="text-muted-foreground">
+                      Carrier tray — {selected.slot_layout} ·{" "}
+                      {
+                        devices.filter((d) => d.carrier_id === selected.id)
+                          .length
+                      }{" "}
+                      mounted
+                    </p>
+                  )}
+                  {selected.carrier_id != null && (
+                    <p className="text-muted-foreground" dir="auto">
+                      Mounted in{" "}
+                      {deviceById.get(selected.carrier_id)?.name ?? "carrier"},
+                      slot {(selected.slot ?? 0) + 1}
+                    </p>
+                  )}
                   {(selected.manufacturer || selected.model) && (
                     <p dir="auto" className="text-muted-foreground">
                       {[selected.manufacturer, selected.model].filter(Boolean).join(" ")}
@@ -335,6 +359,19 @@ export default function RackDetailPage({ id }: { id: string }) {
                       </TableCell>
                       <TableCell>
                         <span dir="auto" className="font-medium">{d.name}</span>
+                        {d.slot_layout && (
+                          <Badge variant="outline" className="ml-1.5 text-muted-foreground">
+                            {d.slot_layout} carrier
+                          </Badge>
+                        )}
+                        {d.carrier_id != null && (
+                          <span
+                            dir="auto"
+                            className="ml-1.5 text-xs text-muted-foreground"
+                          >
+                            ↳ {deviceById.get(d.carrier_id)?.name ?? "carrier"}
+                          </span>
+                        )}
                         {d.source === "rackula" && (
                           <Badge variant="outline" className="ml-1.5 text-muted-foreground">
                             rackula
@@ -428,6 +465,7 @@ export default function RackDetailPage({ id }: { id: string }) {
             }}
             rackId={rack.id}
             heightU={rack.height_u}
+            devices={devices}
             editing={editing}
             prefill={prefill}
             onSaved={refresh}
@@ -460,6 +498,8 @@ export default function RackDetailPage({ id }: { id: string }) {
               {deleting?.name}
             </span>{" "}
             from U{deleting?.u_position}?
+            {deletingChildren > 0 &&
+              ` Its ${deletingChildren} mounted device${deletingChildren === 1 ? "" : "s"} will be removed too.`}
           </p>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setDeleting(null)}>

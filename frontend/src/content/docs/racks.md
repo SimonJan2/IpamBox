@@ -29,6 +29,38 @@ elevation into an editor:
   slots), **F**/**B** sets the face, **Enter** commits, **Esc** cancels.
 - **Click an empty slot** to open the add-device form prefilled with that U
   and the view's face.
+- **Carrier slots**: dropping a device on a carrier's slot mounts it there
+  (slot outlines appear while dragging); dragging a mounted child onto a
+  plain U row un-mounts it. Carrier children don't take the arrow keys —
+  their slots aren't a linear range.
+
+### Carriers (shelves & trays)
+
+Real racks hold gear that isn't a whole-U full-width box — half-width
+switches, RPi trays, quad brackets. A **carrier** is an ordinary rack
+device flagged with a *slot layout*; other devices mount into its slots:
+
+| Layout | Slots | Renders as |
+|---|---|---|
+| `halves` | 2 | vertical split — left / right |
+| `quarters` | 4 | 2×2 grid |
+| `shelf` | 1 | one full-width tray (useful for grouping) |
+
+- The carrier occupies its whole U span and face like any device; children
+  inherit its U position and face (those fields hide in the device form).
+- One child per slot; a child never conflicts with rack-level devices — the
+  carrier already reserved that space. Children only collide with a sibling
+  in the same slot.
+- Single level only: a carrier can't mount inside another carrier, and a
+  child can't be taller than its carrier.
+- Deleting a carrier removes its mounted children too (the delete dialog
+  says how many).
+- The device library includes **1U dual shelf**, **1U quad bracket**, and
+  **Rack shelf** starters; any device can become a carrier via the *Carrier
+  layout* field.
+
+To mount a device: pick it in the form's **Mounted in** select and choose a
+**Slot**, or drag it onto a carrier's slot in the editor.
 
 ### Health overlay
 
@@ -65,6 +97,9 @@ opposite rear gear in the same U.
   same U is rejected with a conflict error. A `both`-face device conflicts
   with anything overlapping its span.
 - Devices can't extend above `height_u`.
+- Carrier children skip the rack-level checks entirely — their carrier
+  already occupies that U and face. They only conflict with a sibling
+  sharing the same slot.
 - A device may link to an [asset](/docs/inventory) and an IP address.
 
 ## Rackula round-trip
@@ -80,10 +115,12 @@ a drag-and-drop editor:
   it in Rackula's UI the same way).
 - **Import from Rackula** — paste a Rackula share URL or upload a
   `.Rackula.zip`; a preview shows which devices will be added, which conflict
-  with existing placements, and which are skipped (carrier-mounted or sub-U
-  gear has no IpamBox equivalent). Choose **merge** (keep existing, skip
-  conflicts) or **replace** (wipe current devices first). Imported devices
-  carry a `rackula` source badge.
+  with existing placements, and which are skipped (sub-U gear has no
+  IpamBox equivalent). Rackula carriers import as carrier trays and their
+  container children mount into slots — Rackula's auto-created trays arrive
+  as a "shelf"-layout carrier named **Shelf**. Choose **merge** (keep
+  existing, skip conflicts) or **replace** (wipe current devices first).
+  Imported devices carry a `rackula` source badge.
 
 ## Printing and labels
 
@@ -107,6 +144,7 @@ a drag-and-drop editor:
 | **Description / Notes** | Free text |
 
 Devices: name, device type (free text or library slug), U position, height,
-face, colour, category, manufacturer/model, linked asset/IP, notes. The
-**device library** in the add dialog pre-fills common gear (servers,
-switches, PDUs, blanks).
+face, colour, category, manufacturer/model, linked asset/IP, notes — plus
+**Mounted in**/**Slot** for carrier children and **Carrier layout** to make
+the device itself a carrier. The **device library** in the add dialog
+pre-fills common gear (servers, switches, PDUs, blanks, carrier trays).
