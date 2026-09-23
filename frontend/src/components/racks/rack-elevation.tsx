@@ -1,11 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { cn } from "@/lib/utils";
-import type { RackDevice, RackFace } from "@/types";
+import { STATUS_TOKENS } from "@/lib/status-tokens";
+import type { IpStatus, RackDevice, RackFace } from "@/types";
 
 const FACE_BADGE: Record<RackFace, string> = { front: "F", rear: "R", both: "F+R" };
+
+/** Saved UI pref for the health overlay — same `ipambox:` key namespace as
+ *  the tree-expansion state. */
+const HEALTH_KEY = "ipambox:rack-health";
 
 /** Readable label color over a device's fill colour. */
 function textOn(hex: string | null): string {
@@ -29,6 +34,11 @@ export function usedUSlots(devices: Pick<RackDevice, "u_position" | "u_height">[
  * Read-only SVG rack elevation. U1 is at the bottom; devices render as
  * colour blocks with centered name labels and a face badge. The front/rear
  * toggle filters which face's gear is drawn — no editing here by design.
+ *
+ * The Health toggle (persisted) overlays the linked IP's scan status as a
+ * dot on each block, using the same STATUS_TOKENS palette as the addresses
+ * table. `forceView` pins a face and swaps the title — the print view uses
+ * it to render front and rear side by side.
  */
 export function RackElevation({
   name,
@@ -36,17 +46,34 @@ export function RackElevation({
   devices,
   selectedId = null,
   onSelect,
+  forceView,
 }: {
   name: string;
   heightU: number;
   devices: RackDevice[];
   selectedId?: number | null;
   onSelect?: (d: RackDevice | null) => void;
+  forceView?: "front" | "rear";
 }) {
   const [view, setView] = useState<"front" | "rear">("front");
+  const effView = forceView ?? view;
+  const [health, setHealth] = useState(true);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(HEALTH_KEY) === "0") setHealth(false);
+    } catch {}
+  }, []);
+  const toggleHealth = () =>
+    setHealth((h) => {
+      const next = !h;
+      try {
+        localStorage.setItem(HEALTH_KEY, next ? "1" : "0");
+      } catch {}
+      return next;
+    });
   const visible = useMemo(
-    () => devices.filter((d) => d.face === "both" || d.face === view),
-    [devices, view]
+    () => devices.filter((d) => d.face === "both" || d.face === effView),
+    [devices, effView]
   );
   const usedU = usedUSlots(devices);
 
@@ -59,27 +86,47 @@ export function RackElevation({
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
-          <span dir="auto" className="font-medium">{name}</span>
+          <span dir="auto" className="font-medium">
+            {forceView ? `${forceView} face` : name}
+          </span>
           <span className="ml-2 text-sm text-muted-foreground">
             {usedU}/{heightU}U used
           </span>
         </div>
-        <div role="group" aria-label="Rack face" className="flex rounded-lg border p-0.5">
-          {(["front", "rear"] as const).map((v) => (
-            <button
-              key={v}
-              type="button"
-              onClick={() => setView(v)}
-              className={cn(
-                "rounded-md px-3 py-1 text-sm capitalize transition-colors",
-                view === v
-                  ? "bg-emerald-500/15 text-emerald-400"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              {v}
-            </button>
-          ))}
+        <div className="flex items-center gap-2 print:hidden">
+          <button
+            type="button"
+            aria-pressed={health}
+            onClick={toggleHealth}
+            title="Overlay linked-IP scan health"
+            className={cn(
+              "rounded-lg border px-3 py-1 text-sm transition-colors",
+              health
+                ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-400"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            Health
+          </button>
+          {!forceView && (
+            <div role="group" aria-label="Rack face" className="flex rounded-lg border p-0.5">
+              {(["front", "rear"] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setView(v)}
+                  className={cn(
+                    "rounded-md px-3 py-1 text-sm capitalize transition-colors",
+                    view === v
+                      ? "bg-emerald-500/15 text-emerald-400"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {v}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -87,7 +134,7 @@ export function RackElevation({
         viewBox={`0 0 ${W} ${H}`}
         className="w-full max-w-sm rounded-lg border bg-card"
         role="img"
-        aria-label={`${view} elevation of ${name}`}
+        aria-label={`${effView} elevation of ${name}`}
       >
         {/* U grid + numbers, bottom-up */}
         {Array.from({ length: heightU }, (_, i) => {
@@ -156,6 +203,19 @@ export function RackElevation({
                 )}
                 strokeWidth={selected ? 2 : 0.5}
               />
+              {health && (
+                <circle
+                  cx={NUM_W + 9}
+                  cy={y + Math.min(9, h / 2)}
+                  r={3}
+                  className={cn(
+                    "pointer-events-none",
+                    d.ip_status
+                      ? STATUS_TOKENS[d.ip_status].dotFill
+                      : "fill-muted-foreground/40"
+                  )}
+                />
+              )}
               <text
                 x={NUM_W + 2 + (W - NUM_W - 8) / 2}
                 y={y + h / 2}
@@ -183,6 +243,21 @@ export function RackElevation({
           );
         })}
       </svg>
+
+      {health && (
+        <div className="flex max-w-sm flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          {(Object.keys(STATUS_TOKENS) as IpStatus[]).map((s) => (
+            <span key={s} className="inline-flex items-center gap-1">
+              <span className={cn("h-2 w-2 rounded-full", STATUS_TOKENS[s].dot)} />
+              {s}
+            </span>
+          ))}
+          <span className="inline-flex items-center gap-1">
+            <span className="h-2 w-2 rounded-full bg-muted-foreground/40" />
+            unmonitored
+          </span>
+        </div>
+      )}
     </div>
   );
 }

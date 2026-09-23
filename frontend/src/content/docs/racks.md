@@ -15,9 +15,33 @@ U1 at the bottom, devices as colour blocks. The **Front / Rear** toggle picks
 which face is drawn — front and rear devices legitimately share U slots, so
 each view shows only its own face (plus `both`-face gear like shelves).
 
+### Health overlay
+
+The **Health** toggle (on by default, remembered per browser) draws a status
+dot on every device block — the live scan status of its linked IP address,
+using the same colors as the address table:
+
+| Dot | Meaning |
+|---|---|
+| green | `active` |
+| amber | `reserved` |
+| cyan | `dhcp` |
+| violet | `discovered` |
+| zinc | `offline` |
+| grey | unmonitored — no linked IP |
+
 Click a device block (or a table row) for a detail card: name, U range, face,
-linked [asset](/docs/inventory) and IP address. The device table below lists
-every placement top-down.
+linked [asset](/docs/inventory) and IP address — with the IP's status badge
+and relative *last seen* ("2h ago"). The device table below lists every
+placement top-down, including a Status column for the linked IP.
+
+### Finding free space
+
+The header shows a **next free U** hint for a 1U front device. In the
+add/edit device dialog, **Find free U** next to the U position field asks the
+API for the *lowest* or *highest* contiguous span that fits the entered
+height on the chosen face — face-aware, so a front device may legally sit
+opposite rear gear in the same U.
 
 ## Placement rules
 
@@ -45,6 +69,17 @@ a drag-and-drop editor:
   gear has no IpamBox equivalent). Choose **merge** (keep existing, skip
   conflicts) or **replace** (wipe current devices first). Imported devices
   carry a `rackula` source badge.
+
+## Printing and labels
+
+- **Print** opens `/racks/[id]/print`: a paper-friendly report with rack
+  metadata, the **front and rear elevations side by side**, and a full device
+  table (U range, face, type, linked asset and IP + status). Save as PDF via
+  the browser's print dialog.
+- **QR** opens a dialog with a QR code pointing at the rack's live elevation
+  URL. **Print label** opens a minimal sticker card (QR + name + URL) sized
+  for a physical label — stick it on the rack and scan to open the live view.
+  The same QR appears in the print report footer.
 
 ## Fields
 

@@ -3,6 +3,9 @@ import subprocess
 
 # Tests run without auth by default; test_auth flips it back on per-test.
 os.environ["IPAMBOX_ALLOW_INSECURE"] = "true"
+# httpx won't send a Secure cookie over http://test — force it off so
+# login-based tests pass regardless of the host/container env.
+os.environ["IPAMBOX_COOKIE_SECURE"] = "false"
 
 import asyncpg
 import pytest_asyncio

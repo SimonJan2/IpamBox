@@ -16,6 +16,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -155,6 +161,22 @@ export function DeviceFormDialog({
   const set = (k: keyof typeof EMPTY) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm({ ...form, [k]: e.target.value });
 
+  const findFreeU = async (side: "bottom" | "top") => {
+    const h = Number(form.u_height) || 1;
+    try {
+      const out = await api.get<{ u_position: number | null }>(
+        `/api/v1/racks/${rackId}/next-free-u?height=${h}&face=${form.face}&side=${side}`
+      );
+      if (out.u_position === null) {
+        toast.error(`No contiguous ${h}U space`);
+      } else {
+        setForm((f) => ({ ...f, u_position: String(out.u_position) }));
+      }
+    } catch (e) {
+      toast.error("Free-U lookup failed", { description: String(e) });
+    }
+  };
+
   const assetLabel = (a: Asset) =>
     [a.vendor, a.model, a.serial_number].filter(Boolean).join(" ") ||
     `Asset ${a.id}`;
@@ -213,15 +235,39 @@ export function DeviceFormDialog({
           </div>
           <div className="grid gap-1.5">
             <Label htmlFor={`${uid}-upos`}>U position (bottom)</Label>
-            <Input
-              id={`${uid}-upos`}
-              dir="ltr"
-              type="number"
-              min={1}
-              max={heightU}
-              value={form.u_position}
-              onChange={set("u_position")}
-            />
+            <div className="flex gap-1">
+              <Input
+                id={`${uid}-upos`}
+                dir="ltr"
+                type="number"
+                min={1}
+                max={heightU}
+                value={form.u_position}
+                onChange={set("u_position")}
+                className="min-w-0"
+              />
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    title="Find the lowest or highest contiguous free span"
+                  >
+                    Find free U
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => findFreeU("bottom")}>
+                    Lowest free U
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => findFreeU("top")}>
+                    Highest free U
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
           <div className="grid gap-1.5">
             <Label htmlFor={`${uid}-uheight`}>Height (U)</Label>

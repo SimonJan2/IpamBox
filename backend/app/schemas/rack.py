@@ -3,6 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.models.ip_address import IPStatus
 from app.models.rack import RackFace
 from app.schemas.common import hex_color_or_none
 
@@ -148,10 +149,17 @@ class RackDeviceOut(BaseModel):
     updated_at: datetime
     asset: LinkedRef | None = None
     ip: IpRef | None = None
+    # Live scan health of the linked IP — nulls when ip_address_id is null.
+    ip_status: IPStatus | None = None
+    ip_last_seen: datetime | None = None
 
 
 class RackDetail(RackOut):
     devices: list[RackDeviceOut] = []
+
+
+class NextFreeUOut(BaseModel):
+    u_position: int | None
 
 
 class RackDeviceImport(BaseModel):

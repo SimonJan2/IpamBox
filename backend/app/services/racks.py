@@ -6,6 +6,7 @@ collide: `both` collides with everything, same faces collide, front/rear
 never collide (opposite faces share U space legally).
 """
 from collections.abc import Iterable
+from typing import Literal
 
 from app.models.rack import Rack, RackDevice, RackFace
 from app.services.ipam import ConflictError, IPAMError
@@ -60,3 +61,32 @@ def used_u(devices: Iterable[RackDevice]) -> int:
     for d in devices:
         slots.update(range(d.u_position, d.u_position + d.u_height))
     return len(slots)
+
+
+def find_free_u(
+    rack: Rack,
+    devices: Iterable[RackDevice],
+    height: int,
+    face: RackFace,
+    side: Literal["bottom", "top"] = "bottom",
+) -> int | None:
+    """Start U where a `height`-U `face` device fits, else None.
+
+    side=bottom scans upward from U1, side=top scans down from the highest
+    legal start. Face-aware via placement_conflicts: a front request may
+    overlap rear-face devices.
+    """
+    if height < 1 or height > rack.height_u:
+        raise PlacementBoundsError(
+            f"height {height}U outside rack height {rack.height_u}U"
+        )
+    existing = list(devices)  # scanned once per candidate — no generator reuse
+    last = rack.height_u - height + 1
+    starts = range(1, last + 1) if side == "bottom" else range(last, 0, -1)
+    for u in starts:
+        candidate = RackDevice(
+            rack_id=rack.id, name="", u_position=u, u_height=height, face=face
+        )
+        if not placement_conflicts(existing, candidate):
+            return u
+    return None

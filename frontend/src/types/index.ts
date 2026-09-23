@@ -682,6 +682,9 @@ export interface RackDevice {
   ip_address_id: number | null;
   asset: LinkedRef | null;
   ip: IpRef | null;
+  /** Live scan health of the linked IP — null when unlinked. */
+  ip_status: IpStatus | null;
+  ip_last_seen: string | null;
   source: string;
   notes: string | null;
   created_at: string;

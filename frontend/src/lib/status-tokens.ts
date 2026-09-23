@@ -6,6 +6,8 @@ type StatusBadgeVariant = "default" | "amber" | "violet" | "cyan" | "zinc";
 export interface StatusTokenSet {
   /** Small round dot (filter panel, result lists). */
   dot: string;
+  /** Same dot color as an SVG `fill-*` class (rack elevation health dots). */
+  dotFill: string;
   /**
    * Subnet-grid cell surface for a used address. These are the `.ipcell-*`
    * classes defined in globals.css — theme-aware via
@@ -29,30 +31,35 @@ export interface StatusTokenSet {
 export const STATUS_TOKENS: Record<IpStatus, StatusTokenSet> = {
   active: {
     dot: "bg-emerald-500/70",
+    dotFill: "fill-emerald-500/70",
     cell: "ipcell-active",
     badge: "default",
     glyph: "●",
   },
   reserved: {
     dot: "bg-amber-500/70",
+    dotFill: "fill-amber-500/70",
     cell: "ipcell-reserved",
     badge: "amber",
     glyph: "◆",
   },
   dhcp: {
     dot: "bg-cyan-500/70",
+    dotFill: "fill-cyan-500/70",
     cell: "ipcell-dhcp",
     badge: "cyan",
     glyph: "≈",
   },
   discovered: {
     dot: "bg-violet-500/70",
+    dotFill: "fill-violet-500/70",
     cell: "ipcell-discovered",
     badge: "violet",
     glyph: "✦",
   },
   offline: {
     dot: "bg-zinc-500/70",
+    dotFill: "fill-zinc-500/70",
     cell: "ipcell-offline",
     badge: "zinc",
     glyph: "✕",

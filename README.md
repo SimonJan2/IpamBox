@@ -52,9 +52,11 @@ Scapy raw-socket scanning · Next.js 15 dark-mode UI
   search, RBAC, backup and changelog coverage.
 - **Rack elevations**: racks with per-U device placement on front/rear
   faces, a read-only SVG elevation view, and collision validation
-  (front+rear share a U; same-face overlaps are rejected). Round-trips
-  with a self-hosted [Rackula](https://github.com/RackulaLives/Rackula)
-  instance via share URLs and `.Rackula.zip` archives for heavy editing.
+  (front+rear share a U; same-face overlaps are rejected). Live scan-health
+  dots for IP-linked devices, a next-free-U finder, a printable report and
+  QR labels. Round-trips with a self-hosted
+  [Rackula](https://github.com/RackulaLives/Rackula) instance via share URLs
+  and `.Rackula.zip` archives for heavy editing.
 - **Hebrew data support**: final-letter folding in search (type
   `רשת`, match `רשתו`), `dir="auto"` on free-text cells so RTL text
   renders correctly, LTR-pinned IP/MAC columns, Hebrew-safe site slugs.
@@ -215,7 +217,7 @@ apply without a restart, and can be reset back to the env value per key.
 | `/prefixes/[id]` | Address map (grid/list views), ranges, bulk ops, CSV |
 | `/circuits` `/certificates` | WAN circuits, certificate expiry (30d countdown) |
 | `/inventory` `/services` | SW/HW + serial inventory, service catalog |
-| `/racks` `/racks/[id]` | Rack list + read-only elevation, Rackula round-trip |
+| `/racks` `/racks/[id]` `/racks/[id]/print` | Rack list + live elevation, print report + QR labels, Rackula round-trip |
 | `/import` | Workbook import wizard — upload, detection, preview, commit |
 | `/vlans` `/tags` | VLAN groups + VLANs, tag management |
 | `/scans` | Trigger/schedule/cancel scans, live progress |
