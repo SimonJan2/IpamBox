@@ -140,6 +140,11 @@ export interface IpAddress {
   serial_number: string | null;
   switch_name: string | null;
   switch_port: string | null;
+  /** Structured sibling of switch_name/switch_port — the far-end interface
+   *  (usually a switch port) this address is patched into. */
+  connected_interface_id: number | null;
+  /** Resolved far-end port — stamped by the API, not a column. */
+  connected_interface: ConnectedInterfaceRef | null;
   counter_location: string | null;
   custom_fields: Record<string, unknown> | null;
   import_batch_id: number | null;
@@ -149,6 +154,14 @@ export interface IpAddress {
   display_color: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/** Resolved `connected_interface_id` — device name + port name. */
+export interface ConnectedInterfaceRef {
+  id: number;
+  name: string;
+  device_id: number;
+  device_name: string;
 }
 
 export interface AddressPage {
@@ -731,6 +744,9 @@ export interface RackDevice {
   /** Live scan health of the linked IP — null when unlinked. */
   ip_status: IpStatus | null;
   ip_last_seen: string | null;
+  /** L1 coverage for the elevation panel — cabled ports / total ports. */
+  interface_count: number;
+  cabled_count: number;
   source: string;
   notes: string | null;
   created_at: string;
@@ -821,6 +837,9 @@ export interface Device {
   /** Worst-of across linked IPs; null = unmonitored. */
   health: IpStatus | null;
   ip_count: number;
+  /** L1 coverage — how many ports the device has and how many are cabled. */
+  interface_count: number;
+  cabled_count: number;
 }
 
 /** One of a device's IPs — link id/label plus scan status for the table. */
@@ -838,4 +857,110 @@ export interface DeviceDetail extends Device {
   site: LinkedRef | null;
   rack: LinkedRef | null;
   carrier: LinkedRef | null;
+}
+
+// --- Cabling (V4A): device interfaces + cables -----------------------------
+
+export type InterfaceKind =
+  | "rj45"
+  | "sfp"
+  | "sfp28"
+  | "qsfp"
+  | "console"
+  | "patch"
+  | "power"
+  | "other";
+
+export type CableKind =
+  | "cat5e"
+  | "cat6"
+  | "cat6a"
+  | "dac"
+  | "fiber_sm"
+  | "fiber_mm"
+  | "power"
+  | "console"
+  | "other";
+
+/** The far end of an interface's cable — enough to label and link it. */
+export interface InterfacePeer {
+  cable_id: number;
+  cable_kind: CableKind;
+  cable_label: string | null;
+  interface_id: number;
+  interface_name: string;
+  device_id: number;
+  device_name: string;
+}
+
+/** Resolved `connected_ip_id` — the IP this port serves. */
+export interface ConnectedIpRef {
+  id: number;
+  label: string;
+  prefix_id: number;
+}
+
+/** One named port/NIC on a device. `pair_interface_id` links a patch
+ *  position's front and back ports on the same (panel) device. */
+export interface DeviceInterface {
+  id: number;
+  device_id: number;
+  name: string;
+  kind: InterfaceKind;
+  speed_mbps: number | null;
+  mac_address: string | null;
+  position: number;
+  connected_ip_id: number | null;
+  pair_interface_id: number | null;
+  created_at: string;
+  updated_at: string;
+  // Resolved by the API — not columns.
+  peer: InterfacePeer | null;
+  connected_ip: ConnectedIpRef | null;
+}
+
+/** One cable termination resolved for display. */
+export interface CableEnd {
+  interface_id: number;
+  interface_name: string;
+  device_id: number;
+  device_name: string;
+}
+
+export interface Cable {
+  id: number;
+  a_interface_id: number;
+  b_interface_id: number;
+  kind: CableKind;
+  color: string | null;
+  label: string | null;
+  length_m: number | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  a: CableEnd | null;
+  b: CableEnd | null;
+}
+
+/** One step of an L1 path. cable_* are null on the start hop and on
+ *  patch-panel front→back pair hops (the pass-through isn't a cable). */
+export interface CableTraceHop {
+  device_id: number;
+  device_name: string;
+  interface_id: number;
+  interface_name: string;
+  cable_id: number | null;
+  cable_kind: CableKind | null;
+  cable_label: string | null;
+}
+
+/** Report of the legacy switch_name/switch_port → connected_interface_id
+ *  matcher (POST /interfaces/match-free-text). */
+export interface MatchFreeTextReport {
+  matched: number;
+  ambiguous: number;
+  unmatched: number;
+  matched_ids: number[];
+  ambiguous_ids: number[];
+  unmatched_ids: number[];
 }

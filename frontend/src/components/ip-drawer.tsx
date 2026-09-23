@@ -9,7 +9,15 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
 import { fmtTs } from "@/lib/prefs";
-import type { Device, IpAddress, IpRole, IpStatus, Page, Tag } from "@/types";
+import type {
+  Device,
+  DeviceInterface,
+  IpAddress,
+  IpRole,
+  IpStatus,
+  Page,
+  Tag,
+} from "@/types";
 import { HistoryPanel } from "@/components/history-panel";
 import { IpStatusBadge } from "@/components/status-badge";
 import { TagChip, TagPicker } from "@/components/tag-picker";
@@ -78,6 +86,15 @@ export function IpDrawer({
   const [devOptions, setDevOptions] = useState<Device[]>([]);
   const devTouched = useRef(false);
   const devTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Connected interface — the far-end port (usually a switch's) this
+  // address is patched into. Independent of the device link above.
+  const [ifDevId, setIfDevId] = useState<number | null>(null);
+  const [ifDevText, setIfDevText] = useState("");
+  const [ifDevOptions, setIfDevOptions] = useState<Device[]>([]);
+  const [ifaces, setIfaces] = useState<DeviceInterface[]>([]);
+  const [ifId, setIfId] = useState("");
+  const ifDevTouched = useRef(false);
+  const ifDevTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchDevs = useCallback(async (q: string) => {
     try {
@@ -94,6 +111,33 @@ export function IpDrawer({
     if (devTimer.current) clearTimeout(devTimer.current);
     devTimer.current = setTimeout(() => void fetchDevs(q), 250);
   };
+
+  const fetchIfDevs = useCallback(async (q: string) => {
+    try {
+      const p = await api.get<Page<Device>>(
+        `/api/v1/devices?limit=25${q ? `&q=${encodeURIComponent(q)}` : ""}`
+      );
+      setIfDevOptions(p.items);
+    } catch {
+      setIfDevOptions([]);
+    }
+  }, []);
+
+  const scheduleIfDevs = (q: string) => {
+    if (ifDevTimer.current) clearTimeout(ifDevTimer.current);
+    ifDevTimer.current = setTimeout(() => void fetchIfDevs(q), 250);
+  };
+
+  useEffect(() => {
+    if (ifDevId == null) {
+      setIfaces([]);
+      return;
+    }
+    api
+      .get<DeviceInterface[]>(`/api/v1/devices/${ifDevId}/interfaces`)
+      .then(setIfaces)
+      .catch(() => setIfaces([]));
+  }, [ifDevId]);
 
   const createFromIp = async () => {
     if (!addr && !ip) return;
@@ -152,6 +196,13 @@ export function IpDrawer({
     setDevText(addr?.device_name ?? "");
     setDevOptions([]);
     devTouched.current = false;
+    setIfDevId(addr?.connected_interface?.device_id ?? null);
+    setIfDevText(addr?.connected_interface?.device_name ?? "");
+    setIfId(
+      addr?.connected_interface_id ? String(addr.connected_interface_id) : ""
+    );
+    setIfDevOptions([]);
+    ifDevTouched.current = false;
     if (addr?.nat_inside_id) {
       api
         .get<IpAddress>(`/api/v1/addresses/${addr.nat_inside_id}`)
@@ -204,6 +255,7 @@ export function IpDrawer({
         role: form.role === "none" ? null : form.role,
         nat_inside_id: natId,
         device_id: devId,
+        connected_interface_id: ifId ? Number(ifId) : null,
         notes: form.notes || null,
       };
       if (addr) {
@@ -467,6 +519,73 @@ export function IpDrawer({
             {devText && !devId && (
               <p className="text-xs text-muted-foreground">
                 No device selected — the link is cleared on save.
+              </p>
+            )}
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor={`${uid}-connif`}>Connected interface</Label>
+            <Input
+              id={`${uid}-connif`}
+              dir="auto"
+              value={ifDevText}
+              onChange={(e) => {
+                setIfDevText(e.target.value);
+                setIfDevId(
+                  ifDevOptions.find((d) => d.name === e.target.value)?.id ??
+                    null
+                );
+                if (e.target.value === "") setIfId("");
+                scheduleIfDevs(e.target.value);
+              }}
+              onFocus={() => {
+                if (!ifDevTouched.current) {
+                  ifDevTouched.current = true;
+                  void fetchIfDevs(ifDevText);
+                }
+              }}
+              placeholder="switch / patch-panel device"
+              list="connif-devices"
+              disabled={!canWrite}
+            />
+            <datalist id="connif-devices">
+              {ifDevOptions.map((d) => (
+                <option key={d.id} value={d.name} />
+              ))}
+            </datalist>
+            {ifDevId != null && (
+              <Select value={ifId} onValueChange={setIfId} disabled={!canWrite}>
+                <SelectTrigger aria-label="Interface on the picked device">
+                  <SelectValue
+                    placeholder={
+                      ifaces.length
+                        ? "pick the port"
+                        : "no interfaces on this device"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {ifaces.map((i) => (
+                    <SelectItem key={i.id} value={String(i.id)}>
+                      {i.name}
+                      {i.kind !== "rj45" ? ` · ${i.kind}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {/* The structured link replaces the free-text pair as the source
+                of truth; legacy text stays visible as the import record. */}
+            {addr?.connected_interface && !ifId && (
+              <p className="text-xs text-muted-foreground">
+                Was linked to {addr.connected_interface.device_name} ·{" "}
+                {addr.connected_interface.name} — clearing on save.
+              </p>
+            )}
+            {!ifId && (addr?.switch_name || addr?.switch_port) && (
+              <p className="text-xs text-muted-foreground" dir="auto">
+                legacy text: {[addr.switch_name, addr.switch_port]
+                  .filter(Boolean)
+                  .join(" · ")}
               </p>
             )}
           </div>

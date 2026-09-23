@@ -44,6 +44,7 @@ from app.core.config import get_settings
 from app.models.app_setting import AppSetting
 from app.models.asset import Asset
 from app.models.base import Base
+from app.models.cabling import Cable, DeviceInterface
 from app.models.certificate import Certificate
 from app.models.change_log import ChangeLog
 from app.models.circuit import Circuit
@@ -120,7 +121,17 @@ BACKUP_TABLES: tuple[BackupTable, ...] = (
     # carrier_id is a self-FK — deferred so children restore before/after
     # their carrier regardless of row order.
     BackupTable("devices", Device, deferred_fks=("carrier_id",)),
-    # ip_addresses -> prefixes + vrfs + devices — must follow devices.
+    # device_interfaces -> devices. connected_ip_id points forward at
+    # ip_addresses (restored below) and pair_interface_id is a self-FK —
+    # both deferred to pass 2, breaking the interface↔ip FK cycle.
+    BackupTable(
+        "device_interfaces",
+        DeviceInterface,
+        deferred_fks=("connected_ip_id", "pair_interface_id"),
+    ),
+    BackupTable("cables", Cable),
+    # ip_addresses -> prefixes + vrfs + devices + device_interfaces — must
+    # follow all of them (connected_interface_id restores directly).
     BackupTable("ip_addresses", IPAddress, deferred_fks=("nat_inside_id",)),
     BackupTable("custom_lists", CustomList),
     BackupTable("custom_list_rows", CustomListRow),

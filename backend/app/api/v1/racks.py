@@ -40,6 +40,7 @@ from app.schemas.rack import (
     RackUpdate,
     SkippedDevice,
 )
+from app.services.cabling import interface_stats
 from app.services.colors import stamp_colors
 from app.services.devices import health_ip, ips_by_device
 from app.services.ipam import IPAMError, get_or_404
@@ -85,7 +86,10 @@ _RACK_DEVICE_COLS = (
 
 
 async def _device_out(
-    session: AsyncSession, d: Device, ips: list[IPAddress] | None = None
+    session: AsyncSession,
+    d: Device,
+    ips: list[IPAddress] | None = None,
+    istats: dict[int, tuple[int, int]] | None = None,
 ) -> RackDeviceOut:
     """Device -> the v1 rack-device payload.
 
@@ -113,6 +117,9 @@ async def _device_out(
         out.ip_address_id = ip.id
         out.ip_status = ip.status
         out.ip_last_seen = ip.last_seen
+    if istats is None:
+        istats = await interface_stats(session, [d.id])
+    out.interface_count, out.cabled_count = istats[d.id]
     return out
 
 
@@ -245,11 +252,15 @@ async def get_rack(rack_id: int, session: AsyncSession = Depends(get_session)):
     devices = await _devices(session, rack.id)
     # One grouped IP query for the health rollup — no per-device N+1.
     ips = await ips_by_device(session, [d.id for d in devices])
+    istats = await interface_stats(session, [d.id for d in devices])
     await stamp_rack_stats(session, [rack])
     await stamp_colors(session, "racks", [rack])
-    out = RackDetail.model_validate(rack)
+    # Scalar fields only — devices are stamped below; validating the ORM
+    # relationship would feed Device.asset/ip into LinkedRef and crash.
+    out = RackDetail(**RackOut.model_validate(rack).model_dump())
     out.devices = [
-        await _device_out(session, d, ips.get(d.id, [])) for d in devices
+        await _device_out(session, d, ips.get(d.id, []), istats)
+        for d in devices
     ]
     return out
 

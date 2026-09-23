@@ -16,9 +16,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.deps import DATA_DELETE, DATA_WRITE, require_perm
 from app.models.asset import Asset
+from app.models.cabling import DeviceInterface
 from app.models.device import Device
+from app.models.ip_address import IPAddress
 from app.models.rack import Rack, RackFace
 from app.models.site import Site
+from app.schemas.cabling import (
+    DeviceInterfaceCreate,
+    DeviceInterfaceOut,
+    DeviceInterfaceUpdate,
+    InterfaceGenerateBody,
+)
 from app.schemas.common import Page, ReorderBody, ip_display
 from app.schemas.device import (
     DeviceCreate,
@@ -28,6 +36,13 @@ from app.schemas.device import (
     DeviceUpdate,
 )
 from app.schemas.rack import LinkedRef
+from app.services.cabling import (
+    cable_for,
+    interface_stats,
+    pair_of,
+    peers_for,
+    stamp_connected_ips,
+)
 from app.services.colors import stamp_colors
 from app.services.devices import device_health, ips_by_device
 from app.services.ipam import IPAMError, get_or_404
@@ -82,6 +97,9 @@ async def _detail(session: AsyncSession, device: Device) -> DeviceDetail:
     ips = (await ips_by_device(session, [device.id]))[device.id]
     out.ip_count = len(ips)
     out.health = device_health(ips)
+    out.interface_count, out.cabled_count = (
+        await interface_stats(session, [device.id])
+    )[device.id]
     out.ips = [
         DeviceIpRef(
             id=i.id,
@@ -147,13 +165,15 @@ async def list_devices(
     )
     rows = (await session.execute(stmt.limit(limit).offset(offset))).scalars().all()
     await stamp_colors(session, "devices", rows)
-    # Health + counts in one grouped IP query — never per-row.
+    # Health + counts in grouped queries — never per-row.
     ips = await ips_by_device(session, [d.id for d in rows])
+    istats = await interface_stats(session, [d.id for d in rows])
     items = []
     for d in rows:
         out = DeviceOut.model_validate(d)
         out.health = device_health(ips[d.id])
         out.ip_count = len(ips[d.id])
+        out.interface_count, out.cabled_count = istats[d.id]
         items.append(out)
     return Page(items=items, total=total or 0, limit=limit, offset=offset)
 
@@ -272,4 +292,335 @@ async def delete_device(
         child.carrier_id = None
         child.slot = None
     await session.delete(device)
+    await session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Interfaces — the L1 layer. Ports live under their device; cables +
+# single-interface fetches live in api.v1.cables.
+# ---------------------------------------------------------------------------
+
+
+async def _get_iface(
+    session: AsyncSession, device_id: int, iface_id: int
+) -> DeviceInterface:
+    iface = await session.get(DeviceInterface, iface_id)
+    if iface is None or iface.device_id != device_id:
+        raise HTTPException(
+            404, f"Interface {iface_id} not found on this device"
+        )
+    return iface
+
+
+async def _iface_outs(
+    session: AsyncSession, ifaces: list[DeviceInterface]
+) -> list[DeviceInterfaceOut]:
+    """Interfaces -> DeviceInterfaceOut with resolved peer + connected IP."""
+    peers = await peers_for(session, ifaces)
+    outs = [DeviceInterfaceOut.model_validate(i) for i in ifaces]
+    for out in outs:
+        out.peer = peers.get(out.id)
+    await stamp_connected_ips(session, outs)
+    return outs
+
+
+async def _check_iface_refs(
+    session: AsyncSession,
+    device: Device,
+    data: dict,
+    iface_id: int | None = None,
+) -> None:
+    """Existence + compatibility checks for interface FK fields.
+
+    connected_ip_id must serve one of this device's own IPs (a port can't
+    bind another box's address); pair_interface_id must be an unpaired
+    interface on the same device (a panel position's two sides live on one
+    panel).
+    """
+    if data.get("connected_ip_id") is not None:
+        try:
+            ip = await get_or_404(
+                session, IPAddress, data["connected_ip_id"]
+            )
+        except IPAMError as e:
+            raise HTTPException(e.status_code, str(e))
+        if ip.device_id is not None and ip.device_id != device.id:
+            raise HTTPException(
+                422,
+                f"{ip_display(ip.address)} belongs to another device — a "
+                "port can only serve its own device's IPs",
+            )
+    if data.get("pair_interface_id") is not None:
+        pid = data["pair_interface_id"]
+        if pid == iface_id:
+            raise HTTPException(422, "an interface cannot be its own pair")
+        pair = await session.get(DeviceInterface, pid)
+        if pair is None:
+            raise HTTPException(404, f"Interface {pid} not found")
+        if pair.device_id != device.id:
+            raise HTTPException(
+                422, "a pair must be an interface on the same device"
+            )
+        if (
+            pair.pair_interface_id is not None
+            and pair.pair_interface_id != iface_id
+        ):
+            raise HTTPException(
+                409, f"interface '{pair.name}' is already paired"
+            )
+
+
+@router.get("/{device_id}/interfaces", response_model=list[DeviceInterfaceOut])
+async def list_interfaces(
+    device_id: int, session: AsyncSession = Depends(get_session)
+):
+    device = await _get_device(session, device_id)
+    ifaces = (
+        (
+            await session.execute(
+                select(DeviceInterface)
+                .where(DeviceInterface.device_id == device.id)
+                .order_by(
+                    DeviceInterface.position,
+                    DeviceInterface.name,
+                    DeviceInterface.id,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return await _iface_outs(session, list(ifaces))
+
+
+@router.post(
+    "/{device_id}/interfaces",
+    response_model=DeviceInterfaceOut,
+    status_code=201,
+    dependencies=[Depends(require_perm(DATA_WRITE))],
+)
+async def create_interface(
+    device_id: int,
+    body: DeviceInterfaceCreate,
+    session: AsyncSession = Depends(get_session),
+):
+    device = await _get_device(session, device_id)
+    data = body.model_dump()
+    await _check_iface_refs(session, device, data)
+    dup = await session.scalar(
+        select(DeviceInterface.id).where(
+            DeviceInterface.device_id == device.id,
+            DeviceInterface.name == data["name"],
+        )
+    )
+    if dup is not None:
+        raise HTTPException(
+            409, f"interface '{data['name']}' already exists on this device"
+        )
+    if data.get("position") is None:
+        data["position"] = (
+            await session.scalar(
+                select(
+                    func.coalesce(func.max(DeviceInterface.position), -1)
+                ).where(DeviceInterface.device_id == device.id)
+            )
+        ) + 1
+    iface = DeviceInterface(device_id=device.id, **data)
+    session.add(iface)
+    try:
+        await session.flush()
+        await _reciprocate_pair(session, iface)
+        await session.commit()
+    except IntegrityError as e:
+        await session.rollback()
+        raise HTTPException(
+            409, f"interface '{data['name']}' already exists on this device"
+        ) from e
+    await session.refresh(iface)
+    return (await _iface_outs(session, [iface]))[0]
+
+
+async def _reciprocate_pair(
+    session: AsyncSession, iface: DeviceInterface
+) -> None:
+    """When a pair target has no link back, complete it — one-sided links
+    resolve in the trace regardless, but bidirectional data stays honest.
+    Flush-level helper: callers own the commit."""
+    if iface.pair_interface_id is None:
+        return
+    pair = await session.get(DeviceInterface, iface.pair_interface_id)
+    if pair is not None and pair.pair_interface_id is None:
+        pair.pair_interface_id = iface.id
+        await session.flush()
+
+
+# Declared before /{device_id}/interfaces/{iface_id} so the literal path
+# can't be shadowed.
+@router.post(
+    "/{device_id}/interfaces/generate",
+    response_model=list[DeviceInterfaceOut],
+    status_code=201,
+    dependencies=[Depends(require_perm(DATA_WRITE))],
+)
+async def generate_interfaces(
+    device_id: int,
+    body: InterfaceGenerateBody,
+    session: AsyncSession = Depends(get_session),
+):
+    """One-click port factory: Gi1/0/1..48-style names in a single call.
+
+    With `pair_prefix` a second same-indexed row per port is created and
+    paired 1:1 — a patch panel's front+back sides in one shot.
+    """
+    device = await _get_device(session, device_id)
+    if body.pair_prefix is not None and body.pair_prefix == body.prefix:
+        raise HTTPException(422, "pair_prefix must differ from prefix")
+    indexes = range(body.start_index, body.start_index + body.count)
+    names = [f"{body.prefix}{i}" for i in indexes]
+    pair_names = (
+        [f"{body.pair_prefix}{i}" for i in indexes]
+        if body.pair_prefix is not None
+        else []
+    )
+    all_names = names + pair_names
+    if len(set(all_names)) != len(all_names):
+        raise HTTPException(422, "generated names contain duplicates")
+    conflicts = set(
+        (
+            await session.execute(
+                select(DeviceInterface.name).where(
+                    DeviceInterface.device_id == device.id,
+                    DeviceInterface.name.in_(all_names),
+                )
+            )
+        ).scalars()
+    )
+    if conflicts:
+        raise HTTPException(
+            409,
+            f"interface '{sorted(conflicts)[0]}' already exists on this "
+            f"device ({len(conflicts)} conflict(s))",
+        )
+    fronts = [
+        DeviceInterface(
+            device_id=device.id,
+            name=n,
+            kind=body.kind,
+            speed_mbps=body.speed_mbps,
+            position=i,
+        )
+        for i, n in zip(indexes, names)
+    ]
+    backs = [
+        DeviceInterface(
+            device_id=device.id,
+            name=n,
+            kind=body.kind,
+            speed_mbps=body.speed_mbps,
+            # Same position as the paired front — the port grid keeps a
+            # position's front/back ports adjacent.
+            position=i,
+        )
+        for i, n in zip(indexes, pair_names)
+    ]
+    session.add_all(fronts + backs)
+    try:
+        await session.flush()
+        for f, b in zip(fronts, backs):
+            f.pair_interface_id = b.id
+            b.pair_interface_id = f.id
+        await session.commit()
+    except IntegrityError as e:
+        await session.rollback()
+        raise HTTPException(
+            409, "generated name conflicts with an existing interface"
+        ) from e
+    # Re-select: commit expired the in-memory objects and lazy refresh
+    # can't run under pydantic's sync attribute access.
+    ids = [i.id for i in fronts + backs]
+    fresh = (
+        (
+            await session.execute(
+                select(DeviceInterface).where(DeviceInterface.id.in_(ids))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    by_id = {i.id: i for i in fresh}
+    return await _iface_outs(session, [by_id[i] for i in ids])
+
+
+@router.patch(
+    "/{device_id}/interfaces/{iface_id}",
+    response_model=DeviceInterfaceOut,
+    dependencies=[Depends(require_perm(DATA_WRITE))],
+)
+async def update_interface(
+    device_id: int,
+    iface_id: int,
+    body: DeviceInterfaceUpdate,
+    session: AsyncSession = Depends(get_session),
+):
+    device = await _get_device(session, device_id)
+    iface = await _get_iface(session, device.id, iface_id)
+    patch = body.model_dump(exclude_unset=True)
+    await _check_iface_refs(session, device, patch, iface_id=iface.id)
+    if patch.get("name") and patch["name"] != iface.name:
+        dup = await session.scalar(
+            select(DeviceInterface.id).where(
+                DeviceInterface.device_id == device.id,
+                DeviceInterface.name == patch["name"],
+                DeviceInterface.id != iface.id,
+            )
+        )
+        if dup is not None:
+            raise HTTPException(
+                409,
+                f"interface '{patch['name']}' already exists on this device",
+            )
+    # Re-pairing unlinks the old partner's side so links stay reciprocal.
+    if (
+        "pair_interface_id" in patch
+        and iface.pair_interface_id is not None
+        and iface.pair_interface_id != patch["pair_interface_id"]
+    ):
+        old = await session.get(DeviceInterface, iface.pair_interface_id)
+        if old is not None and old.pair_interface_id == iface.id:
+            old.pair_interface_id = None
+    for field, value in patch.items():
+        setattr(iface, field, value)
+    try:
+        await session.flush()
+        await _reciprocate_pair(session, iface)
+        await session.commit()
+    except IntegrityError as e:
+        await session.rollback()
+        raise HTTPException(409, "duplicate or invalid value") from e
+    await session.refresh(iface)
+    return (await _iface_outs(session, [iface]))[0]
+
+
+@router.delete(
+    "/{device_id}/interfaces/{iface_id}",
+    status_code=204,
+    dependencies=[Depends(require_perm(DATA_DELETE))],
+)
+async def delete_interface(
+    device_id: int,
+    iface_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """Delete a port. Its cable goes too (deleted at ORM level so the cable
+    gets a changelog row; the DB CASCADE is the backstop) and the panel
+    partner is unpaired first."""
+    device = await _get_device(session, device_id)
+    iface = await _get_iface(session, device.id, iface_id)
+    cable = await cable_for(session, iface.id)
+    if cable is not None:
+        await session.delete(cable)
+    pair = await pair_of(session, iface)
+    if pair is not None:
+        pair.pair_interface_id = None
+    await session.delete(iface)
     await session.commit()

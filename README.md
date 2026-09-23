@@ -54,6 +54,15 @@ Scapy raw-socket scanning · Next.js 15 dark-mode UI
   (mgmt + service + iLO), links an asset and a site, and optionally sits
   in a rack. Health is the worst status across its linked IPs; unracked
   devices are valid inventory.
+- **Cabling**: devices own **interfaces** (rj45/sfp/qsfp/console/patch/
+  power) with one-click port generation — including patch-panel front+back
+  pairs in a single call. **Cables** connect ports with one-cable-per-
+  interface enforcement, and an **L1 trace** walks the chain end to end —
+  `host → panel-front → panel-back → switch` — hopping panel pass-throughs.
+  IPs gain a structured `connected_interface` link alongside the legacy
+  `switch_name`/`switch_port` free text, with an exact-name matcher
+  endpoint to transition old data. Cable labels and port names resolve to
+  their devices in global search.
 - **Rack elevations**: racks with per-U device placement on front/rear
   faces, a read-only SVG elevation view, and collision validation
   (front+rear share a U; same-face overlaps are rejected). Live scan-health
@@ -226,7 +235,7 @@ apply without a restart, and can be reset back to the env value per key.
 | `/circuits` `/certificates` | WAN circuits, certificate expiry (30d countdown) |
 | `/inventory` `/services` | SW/HW + serial inventory, service catalog |
 | `/racks` `/racks/[id]` `/racks/groups/[id]` `/racks/[id]/print` | Rack list + groups, live elevation, bayed row view, print report + QR labels, Rackula round-trip |
-| `/devices` `/devices/[id]` | First-class device inventory — multi-IP links, worst-of health, optional rack placement |
+| `/devices` `/devices/[id]` | First-class device inventory — multi-IP links, worst-of health, optional rack placement, interfaces + cables + L1 trace |
 | `/import` | Workbook import wizard — upload, detection, preview, commit |
 | `/vlans` `/tags` | VLAN groups + VLANs, tag management |
 | `/scans` | Trigger/schedule/cancel scans, live progress |

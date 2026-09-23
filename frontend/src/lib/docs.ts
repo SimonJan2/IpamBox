@@ -174,6 +174,14 @@ export const DOC_ARTICLES: DocArticle[] = [
     keywords: ["device", "server", "host", "unracked", "ilo", "management", "multi-ip", "carrier"],
   },
   {
+    slug: "cabling",
+    title: "Cabling",
+    description: "Interfaces, cables, patch panels, and the L1 trace — what's patched into what.",
+    category: "inventory",
+    icon: Cable,
+    keywords: ["interface", "port", "cable", "patch panel", "trace", "l1", "switch port", "nic"],
+  },
+  {
     slug: "services",
     title: "Services",
     description: "The service catalog — beneficiaries, sites, and documentation links.",

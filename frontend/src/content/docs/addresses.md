@@ -29,7 +29,13 @@ hosts.
   camera / nas / phone / tv / iot / vm / server / workstation).
 - **NAT inside** — link an outside address to its inside translation.
 - **Serial, switch name/port, counter location, custom fields, notes** —
-  inventory-grade metadata per address.
+  inventory-grade metadata per address. The switch fields also have a
+  structured sibling — **connected interface** (below) — that points at a
+  real port; the free text stays as the import record.
+- **Connected interface** — the far-end port (usually a switch's) this
+  address is patched into, picked in the drawer as device → interface.
+  See [Cabling](/docs/cabling) for the full L1 model and the
+  `match-free-text` transition helper.
 - **Last seen** — the last scan that observed the host.
 - **`mac_mismatch` flag** — a scan saw a different MAC than documented; the
   live value wins but the address is flagged for review and counted on the
@@ -50,4 +56,7 @@ status, set role, assign tags, or delete — all at once, each change logged.
 ## The IP drawer
 
 Opening an address slides out a detail panel: every field, its tag chips,
-the NAT partner, and the object's own [changelog](/docs/changelog) history.
+the NAT partner, the owning [device](/docs/devices) link, the **connected
+interface** picker (far-end switch port — the structured sibling of the
+switch_name/switch_port free text, which still shows as fallback), and the
+object's own [changelog](/docs/changelog) history.

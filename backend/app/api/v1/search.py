@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.deps import DATA_READ, require_perm
 from app.models.asset import Asset
+from app.models.cabling import Cable, DeviceInterface
 from app.models.certificate import Certificate
 from app.models.circuit import Circuit
 from app.models.custom_list import CustomList, CustomListRow
@@ -208,9 +209,36 @@ async def search(
         .where(match(RackGroup.name, RackGroup.description))
         .order_by(RackGroup.name)
     )
+    # Device hits also surface via cabling: a matching interface name or
+    # cable label resolves to the owning device (either cable end).
     devices = await take(
         select(Device)
-        .where(match(Device.name, Device.model, Device.serial_number))
+        .where(
+            or_(
+                match(Device.name, Device.model, Device.serial_number),
+                Device.id.in_(
+                    select(DeviceInterface.device_id).where(
+                        match(DeviceInterface.name)
+                    )
+                ),
+                Device.id.in_(
+                    select(DeviceInterface.device_id).where(
+                        or_(
+                            DeviceInterface.id.in_(
+                                select(Cable.a_interface_id).where(
+                                    match(Cable.label)
+                                )
+                            ),
+                            DeviceInterface.id.in_(
+                                select(Cable.b_interface_id).where(
+                                    match(Cable.label)
+                                )
+                            ),
+                        )
+                    )
+                ),
+            )
+        )
         .order_by(Device.name)
     )
     # row search: jsonb::text match across all cells, joined to its list

@@ -80,6 +80,12 @@ class IPAddress(Base):
     device_id: Mapped[int | None] = mapped_column(
         ForeignKey("devices.id", ondelete="SET NULL"), index=True
     )
+    # Structured sibling of switch_name/switch_port: the far-end interface
+    # (usually a switch port) this address is patched into. The free-text
+    # columns stay as the import/fallback record.
+    connected_interface_id: Mapped[int | None] = mapped_column(
+        ForeignKey("device_interfaces.id", ondelete="SET NULL"), index=True
+    )
     # Overflow bag for imported values that have no typed column
     # (status_raw, mac_raw, other_ips, unmatched sheet columns, …).
     custom_fields: Mapped[dict | None] = mapped_column(JSONB, server_default="{}")
@@ -97,6 +103,9 @@ class IPAddress(Base):
     # Never lazy-loaded on hot paths — device_name on responses is stamped
     # via a grouped query (services/devices.py::stamp_device_names).
     device: Mapped["Device | None"] = relationship(back_populates="ips")  # noqa: F821
+    # connected_interface_id is resolved into `connected_interface` on
+    # responses by stamp_connected_interfaces — like device_name, an
+    # unmapped stamped attribute rather than a relationship.
 
     __table_args__ = (
         UniqueConstraint("vrf_id", "address", name="uq_ip_addresses_vrf_address"),

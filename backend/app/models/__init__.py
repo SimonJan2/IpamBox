@@ -1,6 +1,7 @@
 from app.models.app_setting import AppSetting
 from app.models.asset import Asset, AssetKind
 from app.models.base import Base
+from app.models.cabling import Cable, CableKind, DeviceInterface, InterfaceKind
 from app.models.certificate import Certificate
 from app.models.change_log import ChangeLog
 from app.models.circuit import Circuit
@@ -25,12 +26,15 @@ __all__ = [
     "AppSetting",
     "Asset",
     "AssetKind",
+    "Cable",
+    "CableKind",
     "Certificate",
     "Circuit",
     "ColorRule",
     "CustomList",
     "CustomListRow",
     "Device",
+    "DeviceInterface",
     "ImportBatch",
     "ImportBatchStatus",
     "Service",
@@ -55,4 +59,5 @@ __all__ = [
     "VLANStatus",
     "IPRange",
     "IPRangeRole",
+    "InterfaceKind",
 ]

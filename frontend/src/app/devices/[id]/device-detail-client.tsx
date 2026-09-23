@@ -27,6 +27,7 @@ import { AsyncPanel } from "@/components/async-panel";
 import { DocsLink } from "@/components/docs/docs-link";
 import { HistoryDialog, HistoryPanel } from "@/components/history-panel";
 import { InlineText } from "@/components/inline-edit";
+import { InterfacesPanel } from "@/components/interfaces-panel";
 import { IpStatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -262,6 +263,11 @@ export default function DeviceDetailClient({ id }: { id: string }) {
                     Carrier tray — {d.slot_layout}
                   </p>
                 )}
+                {d.interface_count > 0 && (
+                  <p className="text-muted-foreground" dir="ltr">
+                    Ports: {d.cabled_count}/{d.interface_count} cabled
+                  </p>
+                )}
               </div>
 
               {/* Identity card */}
@@ -451,6 +457,8 @@ export default function DeviceDetailClient({ id }: { id: string }) {
                   </div>
                 )}
               </div>
+
+              <InterfacesPanel device={d} />
 
               <div className="rounded-lg border p-3">
                 <div className="mb-2 text-xs font-medium text-muted-foreground">
