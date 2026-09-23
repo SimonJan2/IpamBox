@@ -32,6 +32,9 @@ class DashboardStats(BaseModel):
     certs_expiring_30d: int = 0
     assets_total: int = 0
     services_total: int = 0
+    racks_total: int = 0
+    rack_u_used: int = 0
+    rack_u_total: int = 0
     mac_mismatches: int = 0
     # Bounded samples for the dashboard attention zone — full lists live on
     # the entity pages; these ride along so the page needs no extra requests.

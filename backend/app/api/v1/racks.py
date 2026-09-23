@@ -15,7 +15,7 @@ from app.core.db import get_session
 from app.core.deps import DATA_DELETE, DATA_READ, DATA_WRITE, require_perm
 from app.models.asset import Asset
 from app.models.ip_address import IPAddress
-from app.models.rack import Rack, RackDevice, RackFace
+from app.models.rack import Rack, RackDevice, RackFace, RackGroup
 from app.schemas.common import Page, ReorderBody, ip_display
 from app.schemas.rack import (
     IpRef,
@@ -42,7 +42,7 @@ from app.services.racks import (
     check_placement,
     find_free_u,
     resolve_carrier,
-    used_u,
+    stamp_rack_stats,
 )
 from app.services.workbook.normalize import fold_hebrew
 
@@ -61,26 +61,15 @@ async def _devices(session: AsyncSession, rack_id: int) -> list[RackDevice]:
     )
 
 
-async def _stamp_usage(session: AsyncSession, racks: list[Rack]) -> None:
-    """Populate device_count/used_u on Rack rows (transient, not columns).
-
-    Explicit queries over `rack.devices` — a reused session can hold a stale
-    collection (deleted members linger until refresh with expire_on_commit
-    off), and tests share one session across requests.
-    """
-    ids = [r.id for r in racks]
-    by_rack: dict[int, list[RackDevice]] = {i: [] for i in ids}
-    if ids:
-        for d in (
-            await session.execute(
-                select(RackDevice).where(RackDevice.rack_id.in_(ids))
-            )
-        ).scalars().all():
-            by_rack[d.rack_id].append(d)
-    for r in racks:
-        devs = by_rack[r.id]
-        r.device_count = len(devs)
-        r.used_u = used_u(devs)
+async def _next_group_position(session: AsyncSession, group_id: int) -> int:
+    """Append slot at the row's right end for a rack joining without an
+    explicit group_position."""
+    top = await session.scalar(
+        select(func.coalesce(func.max(Rack.group_position), 0)).where(
+            Rack.group_id == group_id
+        )
+    )
+    return (top or 0) + 1
 
 
 def _device_out(d: RackDevice) -> RackDeviceOut:
@@ -130,6 +119,7 @@ def _inherit_carrier(
 async def list_racks(
     q: str = "",
     site_id: int | None = None,
+    group_id: int | None = None,
     limit: int | None = Query(default=None, ge=1, le=20000),
     offset: int = 0,
     session: AsyncSession = Depends(get_session),
@@ -137,6 +127,8 @@ async def list_racks(
     stmt = select(Rack)
     if site_id is not None:
         stmt = stmt.where(Rack.site_id == site_id)
+    if group_id is not None:
+        stmt = stmt.where(Rack.group_id == group_id)
     if q:
         like = f"%{fold_hebrew(q)}%"
         stmt = stmt.where(
@@ -150,7 +142,7 @@ async def list_racks(
         select(func.count()).select_from(stmt.order_by(None).subquery())
     )
     rows = (await session.execute(stmt.limit(limit).offset(offset))).scalars().all()
-    await _stamp_usage(session, rows)
+    await stamp_rack_stats(session, rows)
     return Page(
         items=await stamp_colors(session, "racks", rows),
         total=total or 0,
@@ -166,7 +158,17 @@ async def list_racks(
     dependencies=[Depends(require_perm(DATA_WRITE))],
 )
 async def create_rack(body: RackCreate, session: AsyncSession = Depends(get_session)):
-    rack = Rack(**body.model_dump())
+    data = body.model_dump()
+    if data["group_id"] is not None:
+        try:
+            await get_or_404(session, RackGroup, data["group_id"])
+        except IPAMError as e:
+            raise HTTPException(e.status_code, str(e))
+        if data["group_position"] is None:
+            data["group_position"] = await _next_group_position(
+                session, data["group_id"]
+            )
+    rack = Rack(**data)
     session.add(rack)
     try:
         await session.commit()
@@ -174,8 +176,7 @@ async def create_rack(body: RackCreate, session: AsyncSession = Depends(get_sess
         await session.rollback()
         raise HTTPException(409, "duplicate or invalid value") from e
     await session.refresh(rack)
-    rack.device_count = 0
-    rack.used_u = 0
+    await stamp_rack_stats(session, [rack])
     await stamp_colors(session, "racks", [rack])
     return rack
 
@@ -204,8 +205,7 @@ async def _get_rack(session: AsyncSession, rack_id: int) -> Rack:
 async def get_rack(rack_id: int, session: AsyncSession = Depends(get_session)):
     rack = await _get_rack(session, rack_id)
     devices = await _devices(session, rack.id)
-    rack.device_count = len(devices)
-    rack.used_u = used_u(devices)
+    await stamp_rack_stats(session, [rack])
     await stamp_colors(session, "racks", [rack])
     out = RackDetail.model_validate(rack)
     out.devices = [_device_out(d) for d in devices]
@@ -255,6 +255,22 @@ async def update_rack(
             raise HTTPException(
                 422, f"height {patch['height_u']}U strands devices: {names}"
             )
+    # Group moves are plain patches — no special endpoint. Joining without an
+    # explicit position appends at the row's right end; leaving the group
+    # clears the (now meaningless) position unless one was sent along.
+    if "group_id" in patch:
+        gid = patch["group_id"]
+        if gid is None:
+            patch.setdefault("group_position", None)
+        else:
+            try:
+                await get_or_404(session, RackGroup, gid)
+            except IPAMError as e:
+                raise HTTPException(e.status_code, str(e))
+            if patch.get("group_position") is None:
+                patch["group_position"] = await _next_group_position(
+                    session, gid
+                )
     for field, value in patch.items():
         setattr(rack, field, value)
     try:
@@ -263,7 +279,7 @@ async def update_rack(
         await session.rollback()
         raise HTTPException(409, "duplicate or invalid value") from e
     await session.refresh(rack)
-    await _stamp_usage(session, [rack])
+    await stamp_rack_stats(session, [rack])
     await stamp_colors(session, "racks", [rack])
     return rack
 
@@ -336,20 +352,40 @@ async def update_device(
     rack, device = await _get_device(session, rack_id, device_id)
     await _check_refs(session, body)
     patch = body.model_dump(exclude_unset=True)
+    if patch.get("rack_id") is None:
+        patch.pop("rack_id", None)  # a device always belongs to a rack
     devices = await _devices(session, rack.id)
+
+    # Cross-rack move: rack_id re-homes the device (a device leaving its rack
+    # leaves its carrier behind too, unless the patch re-seats it onto a
+    # carrier in the target rack). Placement validates against the target.
+    target_rack = rack
+    target_devices = devices
+    if patch.get("rack_id") is not None and patch["rack_id"] != rack_id:
+        try:
+            target_rack = await get_or_404(session, Rack, patch["rack_id"])
+        except IPAMError as e:
+            raise HTTPException(e.status_code, str(e))
+        target_devices = await _devices(session, target_rack.id)
+        if "carrier_id" not in patch:
+            patch["carrier_id"] = None
+
     # Unmounting (explicit carrier_id: null) clears the slot too, unless the
     # client re-seated it in the same patch.
     if patch.get("carrier_id", "unset") is None and "slot" not in patch:
         patch["slot"] = None
     merged = {**_device_fields(device), **patch}
+    merged.pop("rack_id", None)  # carried by target_rack, not the candidate
     if merged["u_position"] is None and merged["carrier_id"] is None:
         raise HTTPException(
             422, "u_position is required unless the device mounts into a carrier"
         )
-    carrier = _inherit_carrier(devices, merged)
-    candidate = RackDevice(rack_id=rack_id, **merged)
+    carrier = _inherit_carrier(target_devices, merged)
+    candidate = RackDevice(rack_id=target_rack.id, **merged)
     try:
-        check_placement(rack, devices, candidate, exclude_id=device.id)
+        check_placement(
+            target_rack, target_devices, candidate, exclude_id=device.id
+        )
         _check_layout_change(devices, device, patch)
     except IPAMError as e:
         raise HTTPException(e.status_code, str(e))
@@ -360,14 +396,18 @@ async def update_device(
         # carrier-derived values the candidate was validated with.
         device.u_position = carrier.u_position
         device.face = carrier.face
+    moved_racks = device.rack_id != rack_id
     if device.slot_layout is not None and (
-        "u_position" in patch or "face" in patch
+        "u_position" in patch or "face" in patch or moved_racks
     ):
-        # Carrier moved — children mirror its span + face for simple queries.
+        # Carrier moved — children mirror its span + face (and follow it
+        # across racks: the tray physically carries them).
         for c in devices:
             if c.carrier_id == device.id:
                 c.u_position = device.u_position
                 c.face = device.face
+                if moved_racks:
+                    c.rack_id = device.rack_id
     try:
         await session.commit()
     except IntegrityError as e:

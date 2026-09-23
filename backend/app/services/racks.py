@@ -14,7 +14,10 @@ occupying the same slot.
 from collections.abc import Iterable
 from typing import Literal
 
-from app.models.rack import Rack, RackDevice, RackFace
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.rack import Rack, RackDevice, RackFace, RackGroup
 from app.services.ipam import ConflictError, IPAMError
 
 
@@ -138,6 +141,54 @@ def used_u(devices: Iterable[RackDevice]) -> int:
     for d in devices:
         slots.update(range(d.u_position, d.u_position + d.u_height))
     return len(slots)
+
+
+async def stamp_rack_stats(
+    session: AsyncSession, racks: Iterable[Rack]
+) -> list[Rack]:
+    """Set the transient aggregates RackOut serializes: device_count, used_u,
+    power_w, weight_kg and group_name.
+
+    power_w/weight_kg stay None when no device supplies a value — the UI
+    hides the totals rather than showing a misleading zero. Devices are
+    re-queried rather than trusting the ORM collection because tests share a
+    session with expire_on_commit=False.
+    """
+    racks = list(racks)
+    ids = [r.id for r in racks]
+    by_rack: dict[int, list[RackDevice]] = {i: [] for i in ids}
+    if ids:
+        rows = (
+            await session.execute(
+                select(RackDevice).where(RackDevice.rack_id.in_(ids))
+            )
+        ).scalars().all()
+        for d in rows:
+            by_rack[d.rack_id].append(d)
+    group_ids = {r.group_id for r in racks if r.group_id is not None}
+    groups = {}
+    if group_ids:
+        groups = {
+            g.id: g
+            for g in (
+                await session.execute(
+                    select(RackGroup).where(RackGroup.id.in_(group_ids))
+                )
+            )
+            .scalars()
+            .all()
+        }
+    for r in racks:
+        devs = by_rack[r.id]
+        r.device_count = len(devs)
+        r.used_u = used_u(devs)
+        watts = [d.watts for d in devs if d.watts is not None]
+        r.power_w = sum(watts) if watts else None
+        weights = [d.weight_kg for d in devs if d.weight_kg is not None]
+        r.weight_kg = float(sum(weights)) if weights else None
+        group = groups.get(r.group_id) if r.group_id is not None else None
+        r.group_name = group.name if group is not None else None
+    return racks
 
 
 def find_free_u(

@@ -53,7 +53,7 @@ from app.models.import_batch import ImportBatch
 from app.models.ip_address import IPAddress
 from app.models.ip_range import IPRange
 from app.models.prefix import Prefix
-from app.models.rack import Rack, RackDevice
+from app.models.rack import Rack, RackDevice, RackGroup
 from app.models.scan_job import ScanJob
 from app.models.service import Service
 from app.models.site import Site
@@ -114,7 +114,8 @@ BACKUP_TABLES: tuple[BackupTable, ...] = (
     BackupTable("certificates", Certificate),
     BackupTable("assets", Asset),
     BackupTable("services", Service),
-    # racks -> sites; rack_devices -> racks + assets + ip_addresses
+    # racks -> sites + rack_groups; rack_devices -> racks + assets + ip_addresses
+    BackupTable("rack_groups", RackGroup),
     BackupTable("racks", Rack),
     # carrier_id is a self-FK — deferred so children restore before/after
     # their carrier regardless of row order.

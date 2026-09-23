@@ -54,7 +54,10 @@ Scapy raw-socket scanning · Next.js 15 dark-mode UI
   faces, a read-only SVG elevation view, and collision validation
   (front+rear share a U; same-face overlaps are rejected). Live scan-health
   dots for IP-linked devices, a next-free-U finder, a printable report and
-  QR labels. Round-trips with a self-hosted
+  QR labels. **Rack groups** render bayed rows — ordered racks side by side
+  with per-rack and per-row U/power/weight rollups, and an edit mode for
+  dragging devices across racks. A dashboard card charts fleet capacity.
+  Round-trips with a self-hosted
   [Rackula](https://github.com/RackulaLives/Rackula) instance via share URLs
   and `.Rackula.zip` archives for heavy editing.
 - **Hebrew data support**: final-letter folding in search (type
@@ -217,7 +220,7 @@ apply without a restart, and can be reset back to the env value per key.
 | `/prefixes/[id]` | Address map (grid/list views), ranges, bulk ops, CSV |
 | `/circuits` `/certificates` | WAN circuits, certificate expiry (30d countdown) |
 | `/inventory` `/services` | SW/HW + serial inventory, service catalog |
-| `/racks` `/racks/[id]` `/racks/[id]/print` | Rack list + live elevation, print report + QR labels, Rackula round-trip |
+| `/racks` `/racks/[id]` `/racks/groups/[id]` `/racks/[id]/print` | Rack list + groups, live elevation, bayed row view, print report + QR labels, Rackula round-trip |
 | `/import` | Workbook import wizard — upload, detection, preview, commit |
 | `/vlans` `/tags` | VLAN groups + VLANs, tag management |
 | `/scans` | Trigger/schedule/cancel scans, live progress |

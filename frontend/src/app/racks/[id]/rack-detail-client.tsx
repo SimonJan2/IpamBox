@@ -1,9 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
+  Boxes,
   Download,
   ExternalLink,
   History,
@@ -21,6 +23,7 @@ import { useAsyncData } from "@/lib/use-async-data";
 import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
 import { useSetting } from "@/lib/features";
+import { deviceSums, formatKg, formatWatts } from "@/lib/rack-capacity";
 import { encodeShareUrl, exportZip } from "@/lib/rackula";
 import { cn, timeAgo } from "@/lib/utils";
 import type { RackDetail, RackDevice, RackFace, Site, Page } from "@/types";
@@ -91,6 +94,14 @@ export default function RackDetailPage({ id }: { id: string }) {
   const [importOpen, setImportOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  // Deep-link: /racks/5?device=12 (the group row view jumps here) selects the
+  // device card once — the param stays cosmetic, edits don't rewrite it.
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    const d = Number(searchParams.get("device"));
+    if (Number.isInteger(d) && d > 0) setSelectedId(d);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- read once on mount
+  }, []);
   const [prefill, setPrefill] = useState<{
     u_position: number;
     face: RackFace;
@@ -118,6 +129,9 @@ export default function RackDetailPage({ id }: { id: string }) {
   const siteName = rack?.site_id
     ? (sitesQ.data ?? []).find((s) => s.id === rack.site_id)?.name
     : null;
+
+  // Live from the device list so editor moves update the totals instantly.
+  const sums = deviceSums(devices);
 
   const shareUrl = rack && rackulaBase ? encodeShareUrl(rackulaBase, rack, devices) : null;
 
@@ -162,7 +176,19 @@ export default function RackDetailPage({ id }: { id: string }) {
               {rack.height_u}U{siteName ? ` · ${siteName}` : ""}
               {rack.room ? ` · ${rack.room}` : ""}
               {nextFreeQ.data ? ` · next free U${nextFreeQ.data}` : ""}
+              {sums.watts != null && ` · Σ ${formatWatts(sums.watts)}`}
+              {sums.kg != null && ` · ${formatKg(sums.kg)}`}
             </span>
+          )}
+          {rack?.group_id && (
+            <Link
+              href={`/racks/groups/${rack.group_id}`}
+              className="text-sm font-normal text-emerald-400 hover:underline"
+              dir="auto"
+            >
+              <Boxes className="mr-0.5 inline h-3.5 w-3.5" />
+              {rack.group_name ?? `group #${rack.group_id}`}
+            </Link>
           )}
           <DocsLink slug="racks" />
         </h1>

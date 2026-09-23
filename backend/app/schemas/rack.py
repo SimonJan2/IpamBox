@@ -20,9 +20,48 @@ def _rail_width(v: int | None) -> int | None:
     return v
 
 
+class RackGroupCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    site_id: int | None = None
+    description: str | None = None
+
+
+class RackGroupUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    site_id: int | None = None
+    description: str | None = None
+    pinned: bool | None = None
+    sort_order: int | None = None
+    row_color: str | None = None
+
+    @field_validator("row_color")
+    @classmethod
+    def _row_color(cls, v: str | None) -> str | None:
+        return hex_color_or_none(v)
+
+
+class RackGroupOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    site_id: int | None
+    name: str
+    description: str | None
+    pinned: bool
+    sort_order: int | None
+    row_color: str | None
+    display_color: str | None = None
+    created_at: datetime
+    # Member count populated by the API layer — not a column.
+    rack_count: int = 0
+
+
 class RackCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     site_id: int | None = None
+    group_id: int | None = None
+    # Left-to-right position inside the group; NULL appends at the row's end.
+    group_position: int | None = Field(default=None, ge=0)
     description: str | None = None
     room: str | None = Field(default=None, max_length=255)
     height_u: int = Field(default=42, ge=1, le=100)
@@ -38,6 +77,8 @@ class RackCreate(BaseModel):
 class RackUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     site_id: int | None = None
+    group_id: int | None = None
+    group_position: int | None = Field(default=None, ge=0)
     description: str | None = None
     room: str | None = Field(default=None, max_length=255)
     height_u: int | None = Field(default=None, ge=1, le=100)
@@ -63,6 +104,8 @@ class RackOut(BaseModel):
 
     id: int
     site_id: int | None
+    group_id: int | None
+    group_position: int | None
     name: str
     description: str | None
     room: str | None
@@ -74,9 +117,14 @@ class RackOut(BaseModel):
     row_color: str | None
     display_color: str | None = None
     created_at: datetime
-    # Aggregates populated by the API layer — not columns.
+    # Aggregates populated by the API layer — not columns. power_w/weight_kg
+    # stay null when no device in the rack supplies a value (so the UI can
+    # hide them instead of showing a misleading zero).
+    group_name: str | None = None
     device_count: int = 0
     used_u: int = 0
+    power_w: int | None = None
+    weight_kg: float | None = None
 
 
 class RackDeviceCreate(BaseModel):
@@ -94,6 +142,9 @@ class RackDeviceCreate(BaseModel):
     asset_id: int | None = None
     ip_address_id: int | None = None
     source: Literal["manual", "rackula"] = "manual"
+    # Nameplate draw / installed weight — feed rack + group capacity rollups.
+    watts: int | None = Field(default=None, ge=0)
+    weight_kg: float | None = Field(default=None, ge=0, le=99999)
     notes: str | None = None
     # Carrier mounting: carrier_id + slot mount the device into a carrier's
     # slot (u_position/face derive from the carrier server-side); slot_layout
@@ -109,6 +160,9 @@ class RackDeviceCreate(BaseModel):
 
 
 class RackDeviceUpdate(BaseModel):
+    # rack_id moves the device to another rack (validated against the target
+    # rack's occupancy; carrier children follow their carrier across racks).
+    rack_id: int | None = Field(default=None, ge=1)
     name: str | None = Field(default=None, min_length=1, max_length=255)
     device_type: str | None = Field(default=None, max_length=255)
     u_position: int | None = Field(default=None, ge=1)
@@ -120,6 +174,8 @@ class RackDeviceUpdate(BaseModel):
     model: str | None = Field(default=None, max_length=255)
     asset_id: int | None = None
     ip_address_id: int | None = None
+    watts: int | None = Field(default=None, ge=0)
+    weight_kg: float | None = Field(default=None, ge=0, le=99999)
     notes: str | None = None
     carrier_id: int | None = None
     slot: int | None = Field(default=None, ge=0)
@@ -162,6 +218,8 @@ class RackDeviceOut(BaseModel):
     carrier_id: int | None
     slot: int | None
     slot_layout: str | None
+    watts: int | None
+    weight_kg: float | None
     notes: str | None
     created_at: datetime
     updated_at: datetime
@@ -174,6 +232,13 @@ class RackDeviceOut(BaseModel):
 
 class RackDetail(RackOut):
     devices: list[RackDeviceOut] = []
+
+
+class RackGroupDetail(RackGroupOut):
+    """The row view payload: member racks ordered by group_position, each
+    carrying its devices + occupancy/capacity aggregates."""
+
+    racks: list[RackDetail] = []
 
 
 class NextFreeUOut(BaseModel):

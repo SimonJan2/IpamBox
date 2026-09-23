@@ -201,6 +201,9 @@ export interface DashboardStats {
   certs_expiring_30d: number;
   assets_total: number;
   services_total: number;
+  racks_total: number;
+  rack_u_used: number;
+  rack_u_total: number;
   mac_mismatches: number;
   certs_expiring: Certificate[];
   mac_mismatch_items: MacMismatchItem[];
@@ -645,6 +648,9 @@ export type SlotLayout = "halves" | "quarters" | "shelf";
 export interface Rack {
   id: number;
   site_id: number | null;
+  /** Bayed-row membership — group + left-to-right position inside it. */
+  group_id: number | null;
+  group_position: number | null;
   name: string;
   description: string | null;
   room: string | null;
@@ -658,6 +664,30 @@ export interface Rack {
   created_at: string;
   device_count: number;
   used_u: number;
+  /** Transient aggregates — null when no device supplies a value (the UI
+   *  hides them rather than showing a misleading zero). */
+  group_name: string | null;
+  power_w: number | null;
+  weight_kg: number | null;
+}
+
+export interface RackGroup {
+  id: number;
+  site_id: number | null;
+  name: string;
+  description: string | null;
+  pinned: boolean;
+  sort_order: number | null;
+  row_color: string | null;
+  display_color: string | null;
+  created_at: string;
+  rack_count: number;
+}
+
+/** GET /rack-groups/{id} — the row view payload: member racks in
+ *  group_position order, each with devices + aggregates. */
+export interface RackGroupDetail extends RackGroup {
+  racks: RackDetail[];
 }
 
 /** Resolved FK summary on a rack device — id for the link, label to show. */
@@ -690,6 +720,9 @@ export interface RackDevice {
   slot: number | null;
   /** Non-null flags this device as a carrier tray. */
   slot_layout: SlotLayout | null;
+  /** Nameplate draw / installed weight — feed rack + group capacity rollups. */
+  watts: number | null;
+  weight_kg: number | null;
   asset: LinkedRef | null;
   ip: IpRef | null;
   /** Live scan health of the linked IP — null when unlinked. */
@@ -719,6 +752,8 @@ export interface RackDeviceCreate {
   model?: string | null;
   asset_id?: number | null;
   ip_address_id?: number | null;
+  watts?: number | null;
+  weight_kg?: number | null;
   source?: "manual" | "rackula";
   notes?: string | null;
   carrier_id?: number | null;

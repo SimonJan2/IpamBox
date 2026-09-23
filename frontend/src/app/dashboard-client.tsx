@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   Activity,
   AlertTriangle,
+  Boxes,
   Cable,
   Globe,
   HardDrive,
@@ -30,8 +31,9 @@ import { api } from "@/lib/api";
 import { useAsyncData } from "@/lib/use-async-data";
 import { useChartTheme } from "@/lib/use-chart-theme";
 import { usePolling } from "@/lib/use-polling";
+import { formatKg, formatWatts } from "@/lib/rack-capacity";
 import { timeAgo } from "@/lib/utils";
-import type { ChangeLogEntry, DashboardStats, Page, Prefix, ScanJob } from "@/types";
+import type { ChangeLogEntry, DashboardStats, Page, Prefix, Rack, ScanJob } from "@/types";
 import { AsyncPanel } from "@/components/async-panel";
 import { DocsLink } from "@/components/docs/docs-link";
 import { ExpiryBadge } from "@/components/expiry-badge";
@@ -87,6 +89,11 @@ export default function DashboardPage() {
   const scansQ = useAsyncData(() =>
     api.get<ScanJob[]>("/api/v1/scans?limit=6")
   );
+  // Per-rack rows feed the capacity card's "fullest racks" bars; the fleet
+  // totals come from stats.
+  const racksQ = useAsyncData(() =>
+    api.get<Page<Rack>>("/api/v1/racks").then((p) => p.items)
+  );
   const activityQ = useAsyncData(() =>
     api.get<Page<ChangeLogEntry>>("/api/v1/changelog?limit=6").then((p) => p.items)
   );
@@ -96,10 +103,11 @@ export default function DashboardPage() {
       statsQ.reload(),
       prefixesQ.reload(),
       scansQ.reload(),
+      racksQ.reload(),
       activityQ.reload(),
     ]);
     return JSON.stringify(r);
-  }, [statsQ.reload, prefixesQ.reload, scansQ.reload, activityQ.reload]);
+  }, [statsQ.reload, prefixesQ.reload, scansQ.reload, racksQ.reload, activityQ.reload]);
 
   usePolling(refresh, { interval: 8000 });
 
@@ -113,7 +121,14 @@ export default function DashboardPage() {
   const stats = statsQ.data;
   const prefixes = prefixesQ.data ?? [];
   const scans = scansQ.data ?? [];
+  const racks = racksQ.data ?? [];
   const activity = activityQ.data ?? [];
+
+  // Fullest racks by occupied U share — the capacity card's watchlist.
+  const fullest = [...racks]
+    .filter((r) => r.height_u > 0)
+    .sort((a, b) => b.used_u / b.height_u - a.used_u / a.height_u)
+    .slice(0, 5);
 
   const chartData = [...prefixes]
     // IPv6 prefixes report no utilization — nothing to chart
@@ -198,7 +213,87 @@ export default function DashboardPage() {
       </div>
       </AsyncPanel>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Boxes className="h-4 w-4 text-emerald-400" />
+              Rack capacity
+            </CardTitle>
+            <Link
+              href="/racks"
+              className="text-xs text-muted-foreground hover:underline"
+            >
+              {stats ? `${stats.racks_total} racks · view all` : "view all"}
+            </Link>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <AsyncPanel
+              loading={racksQ.loading}
+              error={racksQ.error}
+              onRetry={racksQ.reload}
+              empty={racks.length === 0}
+              emptyMessage="No racks yet."
+            >
+              {stats && stats.rack_u_total > 0 && (
+                <div className="flex items-center gap-2 pb-1">
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full bg-emerald-500/70"
+                      style={{
+                        width: `${Math.min(100, Math.round((stats.rack_u_used / stats.rack_u_total) * 100))}%`,
+                      }}
+                    />
+                  </div>
+                  <span
+                    dir="ltr"
+                    className="whitespace-nowrap text-xs text-muted-foreground"
+                  >
+                    {stats.rack_u_used}/{stats.rack_u_total}U
+                  </span>
+                </div>
+              )}
+              {fullest.map((r) => {
+                const pct = r.height_u
+                  ? Math.round((r.used_u / r.height_u) * 100)
+                  : 0;
+                return (
+                  <Link
+                    key={r.id}
+                    href={`/racks/${r.id}`}
+                    className="flex items-center gap-3 rounded-md border p-2.5 transition-colors hover:bg-accent"
+                  >
+                    <span className="min-w-0">
+                      <span dir="auto" className="block truncate text-sm font-medium">
+                        {r.name}
+                      </span>
+                      <span dir="auto" className="block truncate text-xs text-muted-foreground">
+                        {[
+                          r.group_name,
+                          r.power_w != null ? formatWatts(r.power_w) : null,
+                          r.weight_kg != null ? formatKg(r.weight_kg) : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ") || `${r.height_u}U rack`}
+                      </span>
+                    </span>
+                    <span className="ml-auto flex w-28 shrink-0 items-center gap-2">
+                      <Progress
+                        value={pct}
+                        className="h-1.5"
+                        aria-label={`${r.name} occupancy`}
+                      />
+                      <span dir="ltr" className="whitespace-nowrap text-xs text-muted-foreground">
+                        {pct}%
+                      </span>
+                    </span>
+                  </Link>
+                );
+              })}
+            </AsyncPanel>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0">
             <CardTitle className="flex items-center gap-2 text-base">
