@@ -23,8 +23,8 @@ import { PERM } from "@/lib/permissions";
 import { useSetting } from "@/lib/features";
 import { encodeShareUrl, exportZip } from "@/lib/rackula";
 import { cn, timeAgo } from "@/lib/utils";
-import type { RackDetail, RackDevice, Site, Page } from "@/types";
-import { RackElevation, usedUSlots } from "@/components/racks/rack-elevation";
+import type { RackDetail, RackDevice, RackFace, Site, Page } from "@/types";
+import { RackEditor } from "@/components/racks/rack-editor";
 import { DeviceFormDialog } from "@/components/racks/device-form";
 import { RackulaImportDialog } from "@/components/racks/rackula-import";
 import { RackQrDialog } from "@/components/racks/rack-qr";
@@ -90,15 +90,21 @@ export default function RackDetailPage({ id }: { id: string }) {
   const [historyFor, setHistoryFor] = useState<RackDevice | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
-  const [selected, setSelected] = useState<RackDevice | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [prefill, setPrefill] = useState<{
+    u_position: number;
+    face: RackFace;
+  } | null>(null);
 
   const rack = rackQ.data;
   const devices = useMemo(
     () => [...(rack?.devices ?? [])].sort((a, b) => b.u_position - a.u_position),
     [rack]
   );
+  // Derive the card's device from the live list so editor moves stay fresh.
+  const selected = devices.find((d) => d.id === selectedId) ?? null;
   const refresh = () => {
-    setSelected(null);
+    setSelectedId(null);
     void rackQ.reload();
   };
 
@@ -182,6 +188,7 @@ export default function RackDetailPage({ id }: { id: string }) {
               size="sm"
               onClick={() => {
                 setEditing(null);
+                setPrefill(null);
                 setDeviceOpen(true);
               }}
             >
@@ -201,12 +208,24 @@ export default function RackDetailPage({ id }: { id: string }) {
         {rack && (
           <div className="grid gap-4 lg:grid-cols-[auto_1fr]">
             <div className="space-y-3">
-              <RackElevation
+              <RackEditor
+                rackId={rack.id}
                 name={rack.name}
                 heightU={rack.height_u}
                 devices={devices}
-                selectedId={selected?.id ?? null}
-                onSelect={setSelected}
+                setDevices={(fn) =>
+                  rackQ.setData((cur) =>
+                    cur ? { ...cur, devices: fn(cur.devices) } : cur
+                  )
+                }
+                selectedId={selectedId}
+                onSelect={(d) => setSelectedId(d?.id ?? null)}
+                canWrite={canWrite}
+                onAddAt={(u, face) => {
+                  setEditing(null);
+                  setPrefill({ u_position: u, face });
+                  setDeviceOpen(true);
+                }}
               />
               {selected && (
                 <div className="max-w-sm space-y-1.5 rounded-lg border bg-card p-3 text-sm">
@@ -302,10 +321,12 @@ export default function RackDetailPage({ id }: { id: string }) {
                   {devices.map((d) => (
                     <TableRow
                       key={d.id}
-                      onClick={() => setSelected(d.id === selected?.id ? null : d)}
+                      onClick={() =>
+                        setSelectedId(d.id === selectedId ? null : d.id)
+                      }
                       className={cn(
                         "cursor-pointer",
-                        d.id === selected?.id && "bg-muted/40"
+                        d.id === selectedId && "bg-muted/40"
                       )}
                     >
                       <TableCell dir="ltr" className="whitespace-nowrap">
@@ -401,10 +422,14 @@ export default function RackDetailPage({ id }: { id: string }) {
         <>
           <DeviceFormDialog
             open={deviceOpen}
-            onOpenChange={setDeviceOpen}
+            onOpenChange={(o) => {
+              setDeviceOpen(o);
+              if (!o) setPrefill(null);
+            }}
             rackId={rack.id}
             heightU={rack.height_u}
             editing={editing}
+            prefill={prefill}
             onSaved={refresh}
           />
           <RackulaImportDialog
