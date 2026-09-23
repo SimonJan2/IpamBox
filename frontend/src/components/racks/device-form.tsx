@@ -53,6 +53,7 @@ export function DeviceFormDialog({
   rackId,
   heightU,
   editing,
+  prefill,
   onSaved,
 }: {
   open: boolean;
@@ -60,6 +61,9 @@ export function DeviceFormDialog({
   rackId: number;
   heightU: number;
   editing: RackDevice | null;
+  /** Starting values for a NEW device (edit ignores it) — the rack
+   *  editor's click-empty-slot flow passes the clicked U + view face. */
+  prefill?: { u_position?: number; face?: RackFace } | null;
   onSaved: () => void;
 }) {
   const [form, setForm] = useState(EMPTY);
@@ -97,9 +101,13 @@ export function DeviceFormDialog({
               : "none",
             notes: editing.notes ?? "",
           }
-        : EMPTY
+        : {
+            ...EMPTY,
+            u_position: String(prefill?.u_position ?? EMPTY.u_position),
+            face: prefill?.face ?? EMPTY.face,
+          }
     );
-  }, [open, editing]);
+  }, [open, editing, prefill]);
 
   const libMatches = useMemo(() => {
     const needle = foldHebrew(libFilter.toLowerCase());

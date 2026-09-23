@@ -218,6 +218,54 @@ async def test_shrinking_rack_below_devices_rejected(client: AsyncClient):
     assert r.status_code == 422
 
 
+async def test_patch_move_into_opposite_face_slot(client: AsyncClient):
+    """check_placement runs on update too: a rear device may share a U with
+    front gear, but flipping it to front (or moving front gear onto it)
+    collides — the editor's drag/undo relies on this."""
+    rack = await _rack(client)
+    await _dev(client, rack["id"], name="front-srv", u_position=5, face="front")
+    rear = await _dev(client, rack["id"], name="rear-pdu", u_position=2, face="rear")
+
+    # rear legally moves into the front device's U (opposite faces share)
+    r = await client.patch(
+        f"/api/v1/racks/{rack['id']}/devices/{rear['id']}",
+        json={"u_position": 5},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["u_position"] == 5
+
+    # flipping that shared device to front at the same U collides
+    r = await client.patch(
+        f"/api/v1/racks/{rack['id']}/devices/{rear['id']}",
+        json={"face": "front"},
+    )
+    assert r.status_code == 409
+    assert "front-srv" in r.json()["detail"]
+
+    # another front device can't move onto the same U either
+    other = await _dev(client, rack["id"], name="sw", u_position=8, face="front")
+    r = await client.patch(
+        f"/api/v1/racks/{rack['id']}/devices/{other['id']}",
+        json={"u_position": 5},
+    )
+    assert r.status_code == 409
+    assert "front-srv" in r.json()["detail"]
+
+
+async def test_patch_out_of_bounds_rejected(client: AsyncClient):
+    rack = await _rack(client, height_u=6)
+    d = await _dev(client, rack["id"], u_position=2, u_height=2)  # U2-3
+    for body in (
+        {"u_position": 0},  # below the schema floor
+        {"u_position": 6},  # U6-7 exceeds a 6U rack
+        {"u_position": 5, "u_height": 3},  # U5-7 exceeds a 6U rack
+    ):
+        r = await client.patch(
+            f"/api/v1/racks/{rack['id']}/devices/{d['id']}", json=body
+        )
+        assert r.status_code == 422, body
+
+
 # ------------------------------------------------------------- next-free-u
 
 

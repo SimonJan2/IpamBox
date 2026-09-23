@@ -10,10 +10,25 @@ used-U bar (`used_u / height_u` — front and rear gear sharing a U counts once)
 
 ## Rack detail
 
-Open a rack to see its **elevation**: a read-only SVG drawing of the rack,
-U1 at the bottom, devices as colour blocks. The **Front / Rear** toggle picks
-which face is drawn — front and rear devices legitimately share U slots, so
-each view shows only its own face (plus `both`-face gear like shelves).
+Open a rack to see its **elevation**: an SVG drawing of the rack, U1 at the
+bottom, devices as colour blocks. The **Front / Rear** toggle picks which
+face is drawn — front and rear devices legitimately share U slots, so each
+view shows only its own face (plus `both`-face gear like shelves).
+
+### Editing the elevation
+
+With write access, the **Edit** toggle (remembered per browser) turns the
+elevation into an editor:
+
+- **Drag** a device onto another U slot. Valid start slots tint green,
+  conflicting or out-of-range ones red. Dropping on the **rear** view places
+  the device on the rear face (front view → front) unless it's `both`.
+  Moves are validated by the API — a conflict reverts the move and explains
+  which device blocks it. The success toast offers a one-step **Undo**.
+- **Keyboard**: focus a device block, then ↑/↓ moves it (skipping blocked
+  slots), **F**/**B** sets the face, **Enter** commits, **Esc** cancels.
+- **Click an empty slot** to open the add-device form prefilled with that U
+  and the view's face.
 
 ### Health overlay
 

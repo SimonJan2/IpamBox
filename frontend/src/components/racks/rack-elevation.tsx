@@ -1,19 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ComponentProps } from "react";
 
 import { cn } from "@/lib/utils";
 import { STATUS_TOKENS } from "@/lib/status-tokens";
 import type { IpStatus, RackDevice, RackFace } from "@/types";
 
-const FACE_BADGE: Record<RackFace, string> = { front: "F", rear: "R", both: "F+R" };
+export const FACE_BADGE: Record<RackFace, string> = { front: "F", rear: "R", both: "F+R" };
 
 /** Saved UI pref for the health overlay — same `ipambox:` key namespace as
  *  the tree-expansion state. */
-const HEALTH_KEY = "ipambox:rack-health";
+export const HEALTH_KEY = "ipambox:rack-health";
 
 /** Readable label color over a device's fill colour. */
-function textOn(hex: string | null): string {
+export function textOn(hex: string | null): string {
   const m = /^#([0-9a-f]{6})$/i.exec(hex ?? "");
   if (!m) return "#f8fafc";
   const v = parseInt(m[1], 16);
@@ -28,6 +28,160 @@ export function usedUSlots(devices: Pick<RackDevice, "u_position" | "u_height">[
     for (let u = d.u_position; u < d.u_position + d.u_height; u++) slots.add(u);
   }
   return slots.size;
+}
+
+/** Elevation geometry shared by the read-only view and the editor. U1 sits
+ *  at the bottom; every row is `U` px tall inside a `W x H` viewBox. */
+export function rackGeom(heightU: number) {
+  const U = Math.min(24, Math.max(10, Math.floor(880 / Math.max(heightU, 1))));
+  const NUM_W = 30;
+  const W = NUM_W + 240;
+  const H = heightU * U + 8;
+  /** SVG y of the TOP edge of row `u`. */
+  const uTop = (u: number) => H - 4 - u * U;
+  /** SVG y of a device block whose span starts at `pos` and is `h` U tall. */
+  const blockY = (pos: number, h: number) => uTop(pos + h) + 1;
+  return { U, NUM_W, W, H, uTop, blockY };
+}
+export type RackGeom = ReturnType<typeof rackGeom>;
+
+/** U-number column + row grid lines, bottom-up. */
+export function RackUGrid({ heightU, geom }: { heightU: number; geom: RackGeom }) {
+  return (
+    <>
+      {Array.from({ length: heightU }, (_, i) => {
+        const u = i + 1;
+        const y = geom.uTop(u);
+        return (
+          <g key={u}>
+            <line
+              x1={geom.NUM_W}
+              x2={geom.W - 4}
+              y1={y}
+              y2={y}
+              className="stroke-border"
+              strokeWidth={0.5}
+            />
+            <text
+              x={geom.NUM_W - 4}
+              y={y + geom.U / 2}
+              textAnchor="end"
+              dominantBaseline="central"
+              className="fill-muted-foreground"
+              fontSize={Math.min(10, geom.U * 0.55)}
+            >
+              {u}
+            </text>
+          </g>
+        );
+      })}
+      <line
+        x1={geom.NUM_W}
+        x2={geom.W - 4}
+        y1={geom.H - 4}
+        y2={geom.H - 4}
+        className="stroke-border"
+        strokeWidth={0.5}
+      />
+    </>
+  );
+}
+
+/** One placed device: colour block + health dot + name + face badge.
+ *  `u`/`face` overrides preview a pending move; `ghost` restyles the block
+ *  (dimmed drag source, dashed valid/invalid outline) without changing its
+ *  span. Extra props land on the <g> so callers can wire dnd/click/keyboard. */
+export function DeviceBlockSvg({
+  d,
+  geom,
+  health,
+  selected = false,
+  u,
+  face,
+  ghost = null,
+  focused = false,
+  ...gProps
+}: {
+  d: RackDevice;
+  geom: RackGeom;
+  health: boolean;
+  selected?: boolean;
+  /** Preview position — defaults to the device's real u_position. */
+  u?: number;
+  /** Preview face — defaults to the device's real face. */
+  face?: RackFace;
+  /** "drag" = dimmed source during a pointer drag; "ok"/"bad" = dashed
+   *  validity outline for a pending/ghosted placement. */
+  ghost?: "drag" | "ok" | "bad" | null;
+  /** Keyboard focus ring (edit mode). */
+  focused?: boolean;
+} & Omit<ComponentProps<"g">, "d">) {
+  const pos = u ?? d.u_position;
+  const f = face ?? d.face;
+  const y = geom.blockY(pos, d.u_height);
+  const h = d.u_height * geom.U - 2;
+  const fill = d.colour ?? "#334155";
+  const fg = textOn(d.colour);
+  const label = d.name.length > 30 ? `${d.name.slice(0, 29)}…` : d.name;
+  const stroke = ghost === "bad"
+    ? "stroke-rose-400"
+    : ghost === "ok" || selected
+      ? "stroke-emerald-400"
+      : focused
+        ? "stroke-sky-400"
+        : "stroke-border";
+  return (
+    <g {...gProps}>
+      <rect
+        x={geom.NUM_W + 2}
+        y={y}
+        width={geom.W - geom.NUM_W - 8}
+        height={h}
+        rx={2}
+        fill={fill}
+        fillOpacity={ghost === "drag" ? 0.35 : f === "both" ? 1 : 0.85}
+        className={cn("transition-all", stroke)}
+        strokeWidth={ghost || selected ? 2 : focused ? 1.5 : 0.5}
+        strokeDasharray={ghost === "ok" || ghost === "bad" ? "4 2" : undefined}
+      />
+      {health && (
+        <circle
+          cx={geom.NUM_W + 9}
+          cy={y + Math.min(9, h / 2)}
+          r={3}
+          className={cn(
+            "pointer-events-none",
+            d.ip_status
+              ? STATUS_TOKENS[d.ip_status].dotFill
+              : "fill-muted-foreground/40"
+          )}
+        />
+      )}
+      <text
+        x={geom.NUM_W + 2 + (geom.W - geom.NUM_W - 8) / 2}
+        y={y + h / 2}
+        textAnchor="middle"
+        dominantBaseline="central"
+        fill={fg}
+        fontSize={Math.min(11, Math.max(8, geom.U * 0.5))}
+        className="pointer-events-none select-none"
+      >
+        {label}
+      </text>
+      <text
+        x={geom.W - 12}
+        y={y + Math.min(9, h / 2)}
+        textAnchor="end"
+        dominantBaseline="central"
+        fill={fg}
+        fillOpacity={0.75}
+        fontSize={8}
+        className="pointer-events-none select-none"
+      >
+        {FACE_BADGE[f]}
+      </text>
+    </g>
+  );
 }
 
 /**
@@ -76,11 +230,7 @@ export function RackElevation({
     [devices, effView]
   );
   const usedU = usedUSlots(devices);
-
-  const U = Math.min(24, Math.max(10, Math.floor(880 / Math.max(heightU, 1))));
-  const NUM_W = 30;
-  const W = NUM_W + 240;
-  const H = heightU * U + 8;
+  const geom = rackGeom(heightU);
 
   return (
     <div className="space-y-2">
@@ -131,115 +281,28 @@ export function RackElevation({
       </div>
 
       <svg
-        viewBox={`0 0 ${W} ${H}`}
+        viewBox={`0 0 ${geom.W} ${geom.H}`}
         className="w-full max-w-sm rounded-lg border bg-card"
         role="img"
         aria-label={`${effView} elevation of ${name}`}
       >
-        {/* U grid + numbers, bottom-up */}
-        {Array.from({ length: heightU }, (_, i) => {
-          const u = i + 1;
-          const y = H - 4 - u * U;
-          return (
-            <g key={u}>
-              <line
-                x1={NUM_W}
-                x2={W - 4}
-                y1={y}
-                y2={y}
-                className="stroke-border"
-                strokeWidth={0.5}
-              />
-              <text
-                x={NUM_W - 4}
-                y={y + U / 2}
-                textAnchor="end"
-                dominantBaseline="central"
-                className="fill-muted-foreground"
-                fontSize={Math.min(10, U * 0.55)}
-              >
-                {u}
-              </text>
-            </g>
-          );
-        })}
-        <line
-          x1={NUM_W}
-          x2={W - 4}
-          y1={H - 4}
-          y2={H - 4}
-          className="stroke-border"
-          strokeWidth={0.5}
-        />
+        <RackUGrid heightU={heightU} geom={geom} />
 
         {visible.map((d) => {
-          const top = d.u_position + d.u_height - 1;
-          const y = H - 4 - (top + 1) * U + 1;
-          const h = d.u_height * U - 2;
-          const fill = d.colour ?? "#334155";
-          const fg = textOn(d.colour);
           const selected = d.id === selectedId;
-          const label =
-            d.name.length > 30 ? `${d.name.slice(0, 29)}…` : d.name;
+          const top = d.u_position + d.u_height - 1;
           return (
-            <g
+            <DeviceBlockSvg
               key={d.id}
+              d={d}
+              geom={geom}
+              health={health}
+              selected={selected}
               onClick={() => onSelect?.(selected ? null : d)}
               className={onSelect ? "cursor-pointer" : undefined}
               role={onSelect ? "button" : undefined}
               aria-label={`${d.name} — U${d.u_position}${d.u_height > 1 ? `–${top}` : ""}, ${d.face}`}
-            >
-              <rect
-                x={NUM_W + 2}
-                y={y}
-                width={W - NUM_W - 8}
-                height={h}
-                rx={2}
-                fill={fill}
-                fillOpacity={d.face === "both" ? 1 : 0.85}
-                className={cn(
-                  "stroke-border transition-all",
-                  selected && "stroke-emerald-400"
-                )}
-                strokeWidth={selected ? 2 : 0.5}
-              />
-              {health && (
-                <circle
-                  cx={NUM_W + 9}
-                  cy={y + Math.min(9, h / 2)}
-                  r={3}
-                  className={cn(
-                    "pointer-events-none",
-                    d.ip_status
-                      ? STATUS_TOKENS[d.ip_status].dotFill
-                      : "fill-muted-foreground/40"
-                  )}
-                />
-              )}
-              <text
-                x={NUM_W + 2 + (W - NUM_W - 8) / 2}
-                y={y + h / 2}
-                textAnchor="middle"
-                dominantBaseline="central"
-                fill={fg}
-                fontSize={Math.min(11, Math.max(8, U * 0.5))}
-                className="pointer-events-none select-none"
-              >
-                {label}
-              </text>
-              <text
-                x={W - 12}
-                y={y + Math.min(9, h / 2)}
-                textAnchor="end"
-                dominantBaseline="central"
-                fill={fg}
-                fillOpacity={0.75}
-                fontSize={8}
-                className="pointer-events-none select-none"
-              >
-                {FACE_BADGE[d.face]}
-              </text>
-            </g>
+            />
           );
         })}
       </svg>
