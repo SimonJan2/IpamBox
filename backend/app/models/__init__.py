@@ -6,11 +6,12 @@ from app.models.change_log import ChangeLog
 from app.models.circuit import Circuit
 from app.models.color_rule import ColorRule
 from app.models.custom_list import CustomList, CustomListRow
+from app.models.device import Device
 from app.models.import_batch import ImportBatch, ImportBatchStatus
 from app.models.ip_address import IPAddress, IPRole, IPStatus
 from app.models.ip_range import IPRange, IPRangeRole
 from app.models.prefix import Prefix, PrefixStatus
-from app.models.rack import Rack, RackDevice, RackFace, RackGroup
+from app.models.rack import Rack, RackFace, RackGroup
 from app.models.scan_job import ScanJob, ScanStatus
 from app.models.service import Service
 from app.models.site import Site
@@ -29,6 +30,7 @@ __all__ = [
     "ColorRule",
     "CustomList",
     "CustomListRow",
+    "Device",
     "ImportBatch",
     "ImportBatchStatus",
     "Service",
@@ -37,7 +39,6 @@ __all__ = [
     "Prefix",
     "PrefixStatus",
     "Rack",
-    "RackDevice",
     "RackFace",
     "RackGroup",
     "IPAddress",

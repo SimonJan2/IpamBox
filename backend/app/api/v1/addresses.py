@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
 from app.core.deps import DATA_DELETE, DATA_WRITE, has_perm, require_perm
+from app.models.device import Device
 from app.models.ip_address import IPAddress, IPRole, IPStatus
 from app.models.user import User
 from app.models.prefix import Prefix
@@ -21,6 +22,7 @@ from app.schemas.ip_address import (
 from app.services import prefix_math
 from app.services.colors import stamp_colors
 from app.services.csv_export import csv_response, parse_csv
+from app.services.devices import stamp_device_names
 from app.services.ipam import IPAMError, get_or_404
 
 router = APIRouter(prefix="/addresses", tags=["addresses"])
@@ -377,7 +379,9 @@ async def list_addresses(
     rows = (
         (await session.execute(stmt.limit(limit).offset(offset))).scalars().all()
     )
-    return await stamp_colors(session, "addresses", rows)
+    rows = await stamp_colors(session, "addresses", rows)
+    await stamp_device_names(session, rows)
+    return rows
 
 
 @router.post(
@@ -402,6 +406,11 @@ async def create_address(body: IPAddressCreate, session: AsyncSession = Depends(
             await get_or_404(session, IPAddress, body.nat_inside_id)
         except IPAMError as e:
             raise HTTPException(e.status_code, str(e))
+    if body.device_id is not None:
+        try:
+            await get_or_404(session, Device, body.device_id)
+        except IPAMError as e:
+            raise HTTPException(e.status_code, str(e))
 
     row = IPAddress(
         address=str(ip),
@@ -414,6 +423,7 @@ async def create_address(body: IPAddressCreate, session: AsyncSession = Depends(
         status=body.status,
         role=body.role,
         nat_inside_id=body.nat_inside_id,
+        device_id=body.device_id,
         notes=body.notes,
     )
     session.add(row)
@@ -424,6 +434,7 @@ async def create_address(body: IPAddressCreate, session: AsyncSession = Depends(
         raise HTTPException(409, f"{ip} already exists in this VRF")
     await session.refresh(row)
     await stamp_colors(session, "addresses", [row])
+    await stamp_device_names(session, [row])
     return row
 
 
@@ -434,6 +445,7 @@ async def get_address(address_id: int, session: AsyncSession = Depends(get_sessi
     except IPAMError as e:
         raise HTTPException(e.status_code, str(e))
     await stamp_colors(session, "addresses", [row])
+    await stamp_device_names(session, [row])
     return row
 
 
@@ -461,6 +473,11 @@ async def update_address(
         row.vrf_id = new_prefix.vrf_id
     if "nat_inside_id" in data and data["nat_inside_id"] == address_id:
         raise HTTPException(422, "address cannot be its own NAT inside peer")
+    if data.get("device_id") is not None:
+        try:
+            await get_or_404(session, Device, data["device_id"])
+        except IPAMError as e:
+            raise HTTPException(e.status_code, str(e))
     for field, value in data.items():
         setattr(row, field, value)
     try:
@@ -470,6 +487,7 @@ async def update_address(
         raise HTTPException(409, "address already exists in this VRF")
     await session.refresh(row)
     await stamp_colors(session, "addresses", [row])
+    await stamp_device_names(session, [row])
     return row
 
 

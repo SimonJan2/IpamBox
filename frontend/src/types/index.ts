@@ -131,6 +131,9 @@ export interface IpAddress {
   status: IpStatus;
   role: IpRole | null;
   nat_inside_id: number | null;
+  device_id: number | null;
+  /** Resolved device name — stamped by the API, not a column. */
+  device_name: string | null;
   open_ports: number[] | null;
   device_type: string | null;
   missed_scans: number;
@@ -776,4 +779,63 @@ export interface SkippedDevice {
 export interface RackImportResult {
   created: number;
   skipped: SkippedDevice[];
+}
+
+// --- Devices (first-class hosts — rack_devices grown up) -------------------
+
+/** A host that may hold a rack placement and owns any number of IPs.
+ *  rack_id null = unracked inventory. */
+export interface Device {
+  id: number;
+  name: string;
+  device_type: string | null;
+  serial_number: string | null;
+  site_id: number | null;
+  asset_id: number | null;
+  mac_address: string | null;
+  // Placement — all null when unracked.
+  rack_id: number | null;
+  u_position: number | null;
+  u_height: number | null;
+  face: RackFace | null;
+  carrier_id: number | null;
+  slot: number | null;
+  slot_layout: SlotLayout | null;
+  colour: string | null;
+  category: string | null;
+  manufacturer: string | null;
+  model: string | null;
+  watts: number | null;
+  weight_kg: number | null;
+  custom_fields: Record<string, unknown> | null;
+  source: string;
+  notes: string | null;
+  row_color: string | null;
+  sort_order: number | null;
+  pinned: boolean;
+  import_batch_id: number | null;
+  created_at: string;
+  updated_at: string;
+  // API-stamped transients — not columns.
+  display_color: string | null;
+  /** Worst-of across linked IPs; null = unmonitored. */
+  health: IpStatus | null;
+  ip_count: number;
+}
+
+/** One of a device's IPs — link id/label plus scan status for the table. */
+export interface DeviceIpRef extends LinkedRef {
+  address: string;
+  hostname: string | null;
+  status: IpStatus;
+  last_seen: string | null;
+  prefix_id: number;
+}
+
+export interface DeviceDetail extends Device {
+  ips: DeviceIpRef[];
+  asset: LinkedRef | null;
+  site: LinkedRef | null;
+  rack: LinkedRef | null;
+  carrier: LinkedRef | null;
 }

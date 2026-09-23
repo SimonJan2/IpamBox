@@ -34,6 +34,7 @@ const GROUPS: Group[] = [
       ["g i", "Discovery inbox"],
       ["g c", "Changelog"],
       ["g r", "Racks"],
+      ["g e", "Devices"],
       ["g h", "Docs"],
     ],
   },

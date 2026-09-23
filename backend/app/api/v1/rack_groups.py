@@ -14,6 +14,7 @@ from app.core.db import get_session
 from app.core.deps import DATA_DELETE, DATA_WRITE, require_perm
 from app.models.rack import Rack, RackGroup
 from app.models.site import Site
+from app.services.devices import ips_by_device
 from app.schemas.common import ReorderBody
 from app.schemas.rack import (
     RackDetail,
@@ -53,10 +54,14 @@ def _ordered_racks(stmt):
     )
 
 
-def _rack_detail(rack: Rack) -> RackDetail:
-    """Rack -> RackDetail with its (selectin-loaded) devices serialized."""
+async def _rack_detail(session: AsyncSession, rack: Rack) -> RackDetail:
+    """Rack -> RackDetail with its (selectin-loaded) devices serialized,
+    each carrying the device-wide IP health rollup."""
     out = RackDetail.model_validate(rack)
-    out.devices = [_device_out(d) for d in rack.devices]
+    ips = await ips_by_device(session, [d.id for d in rack.devices])
+    out.devices = [
+        await _device_out(session, d, ips.get(d.id, [])) for d in rack.devices
+    ]
     return out
 
 
@@ -133,7 +138,7 @@ async def get_rack_group(
     await stamp_colors(session, "rack_groups", [g])
     g.rack_count = len(racks)
     out = RackGroupDetail.model_validate(g)
-    out.racks = [_rack_detail(r) for r in racks]
+    out.racks = [await _rack_detail(session, r) for r in racks]
     return out
 
 

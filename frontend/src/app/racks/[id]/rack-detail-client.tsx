@@ -153,11 +153,11 @@ export default function RackDetailPage({ id }: { id: string }) {
     if (!deleting || !rack) return;
     try {
       await api.del(`/api/v1/racks/${rack.id}/devices/${deleting.id}`);
-      toast.success("Device removed");
+      toast.success("Device unracked");
       setDeleting(null);
       refresh();
     } catch (e) {
-      toast.error("Delete failed", { description: String(e) });
+      toast.error("Unrack failed", { description: String(e) });
     }
   };
 
@@ -330,6 +330,11 @@ export default function RackDetailPage({ id }: { id: string }) {
                     <p dir="auto" className="text-muted-foreground">{selected.notes}</p>
                   )}
                   <div className="flex gap-1 pt-1">
+                    <Button variant="ghost" size="sm" asChild>
+                      <Link href={`/devices/${selected.id}`}>
+                        <ExternalLink className="h-3.5 w-3.5" /> Device
+                      </Link>
+                    </Button>
                     {canWrite && (
                       <Button
                         variant="ghost"
@@ -447,11 +452,11 @@ export default function RackDetailPage({ id }: { id: string }) {
                               <Pencil className="h-4 w-4" />
                             </Button>
                           )}
-                          {canDelete && (
+                          {canWrite && (
                             <Button
                               variant="ghost"
                               size="icon"
-                              aria-label={`Delete ${d.name}`}
+                              aria-label={`Unrack ${d.name}`}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setDeleting(d);
@@ -516,23 +521,24 @@ export default function RackDetailPage({ id }: { id: string }) {
       <Dialog open={deleting !== null} onOpenChange={() => setDeleting(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Remove device</DialogTitle>
+            <DialogTitle>Unrack device</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
             Remove{" "}
             <span dir="auto" className="font-medium text-foreground">
               {deleting?.name}
             </span>{" "}
-            from U{deleting?.u_position}?
+            from U{deleting?.u_position}? The device stays in inventory as
+            unracked — real deletion lives on its device page.
             {deletingChildren > 0 &&
-              ` Its ${deletingChildren} mounted device${deletingChildren === 1 ? "" : "s"} will be removed too.`}
+              ` Its ${deletingChildren} mounted device${deletingChildren === 1 ? "" : "s"} leave the rack with it.`}
           </p>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setDeleting(null)}>
               Cancel
             </Button>
             <Button variant="destructive" onClick={doDeleteDevice}>
-              Delete
+              Unrack
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -541,7 +547,7 @@ export default function RackDetailPage({ id }: { id: string }) {
       <HistoryDialog
         open={historyFor !== null}
         onOpenChange={() => setHistoryFor(null)}
-        objectType="RackDevice"
+        objectType="Device"
         objectId={historyFor?.id ?? null}
         title={historyFor?.name}
       />

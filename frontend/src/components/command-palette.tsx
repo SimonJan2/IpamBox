@@ -8,6 +8,7 @@ import {
   Building2,
   Cable,
   Container,
+  Cpu,
   Crosshair,
   Globe,
   HardDrive,
@@ -96,6 +97,13 @@ interface SearchOut {
     id: number;
     name: string;
     site_id: number | null;
+  }[];
+  devices: {
+    id: number;
+    name: string;
+    model: string | null;
+    serial_number: string | null;
+    rack_id: number | null;
   }[];
   jump: {
     address: string;
@@ -231,6 +239,14 @@ function itemsFor(res: SearchOut, q: string): Item[] {
       label: g.name,
       sub: "rack group",
       href: `/racks/groups/${g.id}`,
+    });
+  for (const d of res.devices ?? [])
+    items.push({
+      group: "Devices",
+      icon: Cpu,
+      label: d.name,
+      sub: [d.model, d.serial_number].filter(Boolean).join(" · ") || undefined,
+      href: `/devices/${d.id}`,
     });
   return items;
 }

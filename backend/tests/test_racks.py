@@ -108,11 +108,15 @@ async def test_device_edit_and_delete(client: AsyncClient):
     )
     assert r.status_code == 200
 
+    # the rack-device DELETE unracks — the device row survives (V3: real
+    # deletion lives on /devices/{id}, not here)
     assert (
         await client.delete(f"/api/v1/racks/{rack['id']}/devices/{d['id']}")
     ).status_code == 204
     detail = (await client.get(f"/api/v1/racks/{rack['id']}")).json()
     assert detail["devices"] == []
+    got = (await client.get(f"/api/v1/devices/{d['id']}")).json()
+    assert got["rack_id"] is None and got["u_position"] is None
 
 
 async def test_viewer_cannot_write_racks(
@@ -671,11 +675,13 @@ async def test_carrier_layout_shrink_strands_children(client: AsyncClient):
     assert r.status_code == 200 and r.json()["slot_layout"] == "quarters"
 
 
-async def test_delete_carrier_cascades_children(client: AsyncClient):
+async def test_delete_carrier_unracks_with_children(client: AsyncClient):
+    """Unracking a carrier lifts the whole tray out: children leave the
+    rack but stay mounted to it — the tray still physically holds them."""
     rack = await _rack(client)
     tray = await _carrier(client, rack["id"], u_position=4)
-    await _mount(client, rack["id"], tray["id"], 0, name="a")
-    await _mount(client, rack["id"], tray["id"], 1, name="b")
+    a = await _mount(client, rack["id"], tray["id"], 0, name="a")
+    b = await _mount(client, rack["id"], tray["id"], 1, name="b")
 
     assert (
         await client.delete(
@@ -684,6 +690,13 @@ async def test_delete_carrier_cascades_children(client: AsyncClient):
     ).status_code == 204
     detail = (await client.get(f"/api/v1/racks/{rack['id']}")).json()
     assert detail["devices"] == []
+
+    got = (await client.get(f"/api/v1/devices/{tray['id']}")).json()
+    assert got["rack_id"] is None and got["slot_layout"] == "halves"
+    for kid in (a, b):
+        got = (await client.get(f"/api/v1/devices/{kid['id']}")).json()
+        assert got["rack_id"] is None
+        assert got["carrier_id"] == tray["id"] and got["slot"] is not None
 
 
 async def test_import_creates_carriers_and_children(client: AsyncClient):
@@ -796,7 +809,7 @@ def test_alembic_rack_carriers_roundtrip():
         try:
             cols = await conn.fetch(
                 "SELECT column_name FROM information_schema.columns "
-                "WHERE table_name='rack_devices'"
+                "WHERE table_name='devices'"
             )
             names = {r["column_name"] for r in cols}
             assert {"carrier_id", "slot", "slot_layout"} <= names
@@ -828,26 +841,31 @@ async def test_rack_and_device_changes_are_audited(client: AsyncClient):
     assert [e["action"] for e in rack_log] == ["delete", "create"]
     assert rack_log[1]["object_repr"] == "Audited"
 
+    # New rows audit as "Device" (old 'rack_device' history stays untouched
+    # by the migration — it isn't rewritten, it's just not produced anymore).
     dev_log = (
-        await client.get("/api/v1/changelog", params={"object_type": "RackDevice"})
+        await client.get("/api/v1/changelog", params={"object_type": "Device"})
     ).json()["items"]
     actions = sorted(e["action"] for e in dev_log)
-    assert actions == ["create", "delete", "update"]
-    assert dev_log[0]["object_repr"] == "srv@U2"
+    # create + placement update + unrack update (rack delete SET NULL)
+    assert actions == ["create", "update", "update"]
+    assert dev_log[0]["object_repr"] == "srv"
 
 
 def test_backup_registry_covers_rack_tables():
     names = {spec.name for spec in BACKUP_TABLES}
-    assert "racks" in names and "rack_devices" in names
+    assert "racks" in names and "devices" in names
     assert "rack_groups" in names
-    # rack_devices restores after racks + its SET NULL parents
     order = [spec.name for spec in BACKUP_TABLES]
     assert order.index("racks") > order.index("sites")
     # racks restore after rack_groups (racks.group_id -> rack_groups.id)
     assert order.index("sites") < order.index("rack_groups")
     assert order.index("rack_groups") < order.index("racks")
-    for parent in ("racks", "assets", "ip_addresses"):
-        assert order.index("rack_devices") > order.index(parent)
+    # devices restore after every table they reference
+    for parent in ("racks", "assets", "sites", "import_batches"):
+        assert order.index("devices") > order.index(parent)
+    # ip_addresses.device_id -> devices: ip_addresses must follow devices
+    assert order.index("ip_addresses") > order.index("devices")
 
 
 async def test_search_finds_rack_by_name_room_and_device(client: AsyncClient):
@@ -1297,8 +1315,9 @@ def test_alembic_rack_groups_roundtrip():
             r["column_name"] for r in cols
         }
 
-        # downgrade restores the pre-0021 schema
-        alembic("downgrade", "-1")
+        # downgrade restores the pre-0021 schema (head is now 0022, so the
+        # two-step drop also exercises 0022's devices->rack_devices rebuild)
+        alembic("downgrade", "0020_rack_carriers")
         rows = await fetch(
             "SELECT table_name FROM information_schema.tables "
             "WHERE table_name='rack_groups'"
@@ -1315,7 +1334,7 @@ def test_alembic_rack_groups_roundtrip():
         )
         assert "watts" not in {r["column_name"] for r in cols}
 
-        # and upgrades again cleanly
+        # and upgrades again cleanly — watts/weight_kg now live on devices
         alembic("upgrade", "head")
         rows = await fetch(
             "SELECT table_name FROM information_schema.tables "
@@ -1324,7 +1343,7 @@ def test_alembic_rack_groups_roundtrip():
         assert len(rows) == 1
         cols = await fetch(
             "SELECT column_name, data_type, numeric_precision, numeric_scale "
-            "FROM information_schema.columns WHERE table_name='rack_devices' "
+            "FROM information_schema.columns WHERE table_name='devices' "
             "AND column_name IN ('watts','weight_kg')"
         )
         types = {r["column_name"]: r["data_type"] for r in cols}

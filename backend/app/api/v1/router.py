@@ -6,6 +6,7 @@ from app.api.v1 import (
     changelog,
     color_rules,
     dashboard,
+    devices,
     discovery,
     entities,
     imports,
@@ -51,3 +52,4 @@ api_router.include_router(entities.services_router)
 api_router.include_router(lists.router)
 api_router.include_router(racks.router)
 api_router.include_router(rack_groups.router)
+api_router.include_router(devices.router)

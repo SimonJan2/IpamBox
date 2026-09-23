@@ -29,13 +29,13 @@ import ipaddress
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Callable
 
 from alembic.script import ScriptDirectory
-from sqlalchemy import DateTime, Enum, Numeric, inspect, select, text, update
+from sqlalchemy import Date, DateTime, Enum, Numeric, inspect, select, text, update
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,10 +50,11 @@ from app.models.circuit import Circuit
 from app.models.color_rule import ColorRule
 from app.models.custom_list import CustomList, CustomListRow
 from app.models.import_batch import ImportBatch
+from app.models.device import Device
 from app.models.ip_address import IPAddress
 from app.models.ip_range import IPRange
 from app.models.prefix import Prefix
-from app.models.rack import Rack, RackDevice, RackGroup
+from app.models.rack import Rack, RackGroup
 from app.models.scan_job import ScanJob
 from app.models.service import Service
 from app.models.site import Site
@@ -109,17 +110,18 @@ BACKUP_TABLES: tuple[BackupTable, ...] = (
     BackupTable("prefixes", Prefix),
     BackupTable("ip_ranges", IPRange),
     BackupTable("import_batches", ImportBatch),
-    BackupTable("ip_addresses", IPAddress, deferred_fks=("nat_inside_id",)),
     BackupTable("circuits", Circuit),
     BackupTable("certificates", Certificate),
     BackupTable("assets", Asset),
     BackupTable("services", Service),
-    # racks -> sites + rack_groups; rack_devices -> racks + assets + ip_addresses
+    # racks -> sites + rack_groups; devices -> racks + sites + assets.
     BackupTable("rack_groups", RackGroup),
     BackupTable("racks", Rack),
     # carrier_id is a self-FK — deferred so children restore before/after
     # their carrier regardless of row order.
-    BackupTable("rack_devices", RackDevice, deferred_fks=("carrier_id",)),
+    BackupTable("devices", Device, deferred_fks=("carrier_id",)),
+    # ip_addresses -> prefixes + vrfs + devices — must follow devices.
+    BackupTable("ip_addresses", IPAddress, deferred_fks=("nat_inside_id",)),
     BackupTable("custom_lists", CustomList),
     BackupTable("custom_list_rows", CustomListRow),
     BackupTable("tags", Tag),
@@ -169,6 +171,8 @@ def _from_json(col, v: Any) -> Any:
             dt = datetime.fromisoformat(str(v))
             # pre-timestamptz backups carry offset-less UTC stamps
             return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        if isinstance(t, Date):
+            return date.fromisoformat(str(v))
         if isinstance(t, Numeric):
             return Decimal(str(v))
         if isinstance(t, Enum) and t.enum_class is not None:

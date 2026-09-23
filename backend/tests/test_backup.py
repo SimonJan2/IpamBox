@@ -80,7 +80,39 @@ async def _seed(client) -> dict:
         f"/api/v1/tags/{tag['id']}/assignments",
         json={"object_type": "IPAddress", "object_id": a2["id"]},
     )
-    return {"site": site, "vlan": vlan, "prefix": prefix, "a1": a1, "a2": a2, "tag": tag}
+    # a racked device owning both addresses — the V3 link under test
+    rack = (
+        await client.post("/api/v1/racks", json={"name": "B-01", "height_u": 24})
+    ).json()
+    device = (
+        await client.post(
+            "/api/v1/devices",
+            json={
+                "name": "core-sw",
+                "rack_id": rack["id"],
+                "u_position": 10,
+                "u_height": 1,
+                "serial_number": "SN-BKP-1",
+            },
+        )
+    ).json()
+    for a in (a1, a2):
+        r = await client.patch(
+            f"/api/v1/addresses/{a['id']}", json={"device_id": device["id"]}
+        )
+        assert r.status_code == 200, r.text
+    # a plain Date column — certificates.expires_on exercises the
+    # non-DateTime date decode path in restore
+    cert = (
+        await client.post(
+            "/api/v1/certificates",
+            json={"cert_name": "edge-lb", "expires_on": "2030-06-30"},
+        )
+    ).json()
+    return {
+        "site": site, "vlan": vlan, "prefix": prefix, "a1": a1, "a2": a2,
+        "tag": tag, "rack": rack, "device": device, "cert": cert,
+    }
 
 
 async def _wipe(session):
@@ -88,7 +120,7 @@ async def _wipe(session):
         text(
             "TRUNCATE scan_jobs, ip_addresses, ip_ranges, prefixes, vrfs, "
             "sites, users, change_log, tag_assignments, tags, vlans, "
-            "vlan_groups RESTART IDENTITY CASCADE"
+            "vlan_groups, devices, racks, rack_groups RESTART IDENTITY CASCADE"
         )
     )
     await session.commit()
@@ -180,6 +212,21 @@ async def test_backup_roundtrip(client, session):
     # changelog history was backed up and restored
     log = (await client.get("/api/v1/changelog")).json()["items"]
     assert any(e["object_type"] == "Site" for e in log)
+
+    # device + rack + device↔IP links survived the wipe (V3: devices restore
+    # before ip_addresses, original ids preserved so links stay valid)
+    assert report["restored"]["devices"] == 1
+    assert report["restored"]["racks"] == 1
+    dev = (await client.get(f"/api/v1/devices/{ids['device']['id']}")).json()
+    assert dev["name"] == "core-sw"
+    assert dev["rack_id"] == ids["rack"]["id"]
+    assert dev["u_position"] == 10 and dev["serial_number"] == "SN-BKP-1"
+    assert {i["id"] for i in dev["ips"]} == {ids["a1"]["id"], ids["a2"]["id"]}
+    assert {a["device_id"] for a in addrs} == {ids["device"]["id"]}
+
+    # plain-Date columns round-trip (certificates.expires_on regressed once)
+    certs = (await client.get("/api/v1/certificates")).json()["items"]
+    assert certs[0]["expires_on"] == "2030-06-30"
 
 
 async def test_restore_preserves_users(client, session):

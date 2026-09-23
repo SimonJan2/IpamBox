@@ -3,6 +3,7 @@ import {
   Building2,
   Cable,
   Container,
+  Cpu,
   FolderTree,
   Globe,
   HardDrive,
@@ -163,6 +164,14 @@ export const DOC_ARTICLES: DocArticle[] = [
     category: "inventory",
     icon: Container,
     keywords: ["rack", "elevation", "rackula", "cabinet", "u position", "datacenter", "group", "row", "power", "watts", "weight", "capacity"],
+  },
+  {
+    slug: "devices",
+    title: "Devices",
+    description: "First-class hosts — rack placement, multi-IP ownership, health rollup.",
+    category: "inventory",
+    icon: Cpu,
+    keywords: ["device", "server", "host", "unracked", "ilo", "management", "multi-ip", "carrier"],
   },
   {
     slug: "services",

@@ -27,6 +27,7 @@ from app.models.certificate import Certificate
 from app.models.circuit import Circuit
 from app.models.color_rule import ColorRule
 from app.models.custom_list import CustomListRow
+from app.models.device import Device
 from app.models.ip_address import IPAddress
 from app.models.rack import Rack, RackGroup
 from app.models.service import Service
@@ -50,6 +51,7 @@ COLORABLE: dict[str, type[Base]] = {
     "custom_list_rows": CustomListRow,
     "racks": Rack,
     "rack_groups": RackGroup,
+    "devices": Device,
 }
 
 OPERATORS = ("eq", "neq", "contains", "lt", "gt", "within_days")
