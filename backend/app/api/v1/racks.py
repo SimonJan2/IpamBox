@@ -3,6 +3,12 @@
 Not a `_crud_router` — device collision validation, resolved asset/ip
 summaries on the detail response, and the transactional import endpoint
 don't fit the factory.
+
+Devices are first-class entities now: these routes keep the v1 shape (the
+rack UI barely notices) but manipulate `devices` rows' placement columns.
+A rack-device DELETE *unracks* (placement NULL) — real deletion lives on
+/devices/{id}; a rack delete leaves its devices behind as unracked
+inventory instead of cascading them away.
 """
 from typing import Literal
 
@@ -14,8 +20,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.deps import DATA_DELETE, DATA_READ, DATA_WRITE, require_perm
 from app.models.asset import Asset
+from app.models.device import Device
 from app.models.ip_address import IPAddress
-from app.models.rack import Rack, RackDevice, RackFace, RackGroup
+from app.models.rack import Rack, RackFace, RackGroup
 from app.schemas.common import Page, ReorderBody, ip_display
 from app.schemas.rack import (
     IpRef,
@@ -34,13 +41,15 @@ from app.schemas.rack import (
     SkippedDevice,
 )
 from app.services.colors import stamp_colors
+from app.services.devices import health_ip, ips_by_device
 from app.services.ipam import IPAMError, get_or_404
 from app.services.ordering import ordered, reorder
 from app.services.racks import (
-    SLOT_LAYOUTS,
-    CarrierError,
+    apply_device_patch,
     check_placement,
     find_free_u,
+    inherit_carrier,
+    rack_devices,
     resolve_carrier,
     stamp_rack_stats,
 )
@@ -49,16 +58,8 @@ from app.services.workbook.normalize import fold_hebrew
 router = APIRouter(prefix="/racks", tags=["racks"])
 
 
-async def _devices(session: AsyncSession, rack_id: int) -> list[RackDevice]:
-    return list(
-        (
-            await session.execute(
-                select(RackDevice)
-                .where(RackDevice.rack_id == rack_id)
-                .order_by(RackDevice.u_position, RackDevice.id)
-            )
-        ).scalars().all()
-    )
+async def _devices(session: AsyncSession, rack_id: int) -> list[Device]:
+    return await rack_devices(session, rack_id)
 
 
 async def _next_group_position(session: AsyncSession, group_id: int) -> int:
@@ -72,18 +73,44 @@ async def _next_group_position(session: AsyncSession, group_id: int) -> int:
     return (top or 0) + 1
 
 
-def _device_out(d: RackDevice) -> RackDeviceOut:
-    out = RackDeviceOut.model_validate(d)
-    if d.asset is not None:
-        a = d.asset
-        label = " ".join(p for p in (a.vendor, a.model) if p) or a.serial_number or f"asset#{a.id}"
-        out.asset = LinkedRef(id=a.id, label=label)
-    if d.ip_address is not None:
-        ip = d.ip_address
+# Scalar columns only — the relation-backed fields (asset/ip) and derived
+# transients (ip_address_id/ip_status/ip_last_seen) are stamped below; a
+# blanket model_validate would read Device.asset into LinkedRef and crash.
+_RACK_DEVICE_COLS = (
+    "id", "rack_id", "name", "device_type", "u_position", "u_height",
+    "face", "colour", "category", "manufacturer", "model", "asset_id",
+    "source", "carrier_id", "slot", "slot_layout", "watts", "weight_kg",
+    "notes", "created_at", "updated_at",
+)
+
+
+async def _device_out(
+    session: AsyncSession, d: Device, ips: list[IPAddress] | None = None
+) -> RackDeviceOut:
+    """Device -> the v1 rack-device payload.
+
+    The single-IP fields now describe the device's *health IP* — the
+    worst-status address across ip_addresses.device_id (offline >
+    discovered > dhcp > reserved > active). ip_status is the whole box's
+    health rollup; None = unmonitored.
+    """
+    out = RackDeviceOut.model_validate(
+        {f: getattr(d, f) for f in _RACK_DEVICE_COLS}
+    )
+    if d.asset_id is not None:
+        # session.get, not d.asset: identity-map hits skip selectin loaders
+        # and a lazy relationship load here would raise MissingGreenlet.
+        a = await session.get(Asset, d.asset_id)
+        if a is not None:
+            label = " ".join(p for p in (a.vendor, a.model) if p) or a.serial_number or f"asset#{a.id}"
+            out.asset = LinkedRef(id=a.id, label=label)
+    ip = health_ip(ips or [])
+    if ip is not None:
         label = ip_display(ip.address) or ""
         if ip.hostname:
             label = f"{label} ({ip.hostname})"
         out.ip = IpRef(id=ip.id, label=label, prefix_id=ip.prefix_id)
+        out.ip_address_id = ip.id
         out.ip_status = ip.status
         out.ip_last_seen = ip.last_seen
     return out
@@ -99,20 +126,31 @@ async def _check_refs(session: AsyncSession, body: RackDeviceCreate | RackDevice
         raise HTTPException(e.status_code, str(e))
 
 
-def _inherit_carrier(
-    devices: list[RackDevice], fields: dict
-) -> RackDevice | None:
-    """When `carrier_id` is set, derive u_position/face from the carrier —
-    a child's own values are display-only and never trusted off the wire.
-    Returns the carrier row (check_placement re-validates it) or None."""
-    carrier_id = fields.get("carrier_id")
-    if carrier_id is None:
-        return None
-    carrier = resolve_carrier(devices, carrier_id)
-    if carrier is not None:
-        fields["u_position"] = carrier.u_position
-        fields["face"] = carrier.face
-    return carrier
+_UNSET = object()
+
+
+async def _link_single_ip(
+    session: AsyncSession, device: Device, ip_id: int | None
+) -> None:
+    """`ip_address_id` write semantics: replace the device's IP set.
+
+    The rack form's single "Linked IP" field behaves like the old scalar —
+    patching it makes {ip_id} the device's whole set (null clears all).
+    Multi-IP management lives on /devices detail + PATCH /addresses
+    device_id, which is additive per-IP.
+    """
+    current = (
+        await session.execute(
+            select(IPAddress).where(IPAddress.device_id == device.id)
+        )
+    ).scalars().all()
+    for ip in current:
+        if ip.id != ip_id:
+            ip.device_id = None
+    if ip_id is not None:
+        ip = await session.get(IPAddress, ip_id)
+        if ip is not None:
+            ip.device_id = device.id
 
 
 @router.get("", response_model=Page[RackOut])
@@ -205,10 +243,14 @@ async def _get_rack(session: AsyncSession, rack_id: int) -> Rack:
 async def get_rack(rack_id: int, session: AsyncSession = Depends(get_session)):
     rack = await _get_rack(session, rack_id)
     devices = await _devices(session, rack.id)
+    # One grouped IP query for the health rollup — no per-device N+1.
+    ips = await ips_by_device(session, [d.id for d in devices])
     await stamp_rack_stats(session, [rack])
     await stamp_colors(session, "racks", [rack])
     out = RackDetail.model_validate(rack)
-    out.devices = [_device_out(d) for d in devices]
+    out.devices = [
+        await _device_out(session, d, ips.get(d.id, [])) for d in devices
+    ]
     return out
 
 
@@ -248,7 +290,8 @@ async def update_rack(
         over = [
             d
             for d in await _devices(session, rack.id)
-            if d.u_position + d.u_height - 1 > patch["height_u"]
+            if d.u_position is not None
+            and d.u_position + (d.u_height or 1) - 1 > patch["height_u"]
         ]
         if over:
             names = ", ".join(d.name or f"#{d.id}" for d in over[:5])
@@ -290,18 +333,29 @@ async def update_rack(
     dependencies=[Depends(require_perm(DATA_DELETE))],
 )
 async def delete_rack(rack_id: int, session: AsyncSession = Depends(get_session)):
+    """Devices survive: they're unracked, not deleted.
+
+    Done at ORM level (not just the FK's SET NULL) so u_position clears too
+    and every device gets a changelog update. Carrier children stay mounted
+    to their tray — it still physically holds them, just outside any rack.
+    """
     rack = await _get_rack(session, rack_id)
+    for d in await _devices(session, rack.id):
+        d.rack_id = None
+        d.u_position = None
+        if d.carrier_id is None:
+            d.slot = None
     await session.delete(rack)
     await session.commit()
 
 
 async def _get_device(
     session: AsyncSession, rack_id: int, device_id: int
-) -> tuple[Rack, RackDevice]:
+) -> tuple[Rack, Device]:
     rack = await _get_rack(session, rack_id)
-    device = await session.get(RackDevice, device_id)
+    device = await session.get(Device, device_id)
     if device is None or device.rack_id != rack_id:
-        raise HTTPException(404, f"RackDevice {device_id} not found")
+        raise HTTPException(404, f"Device {device_id} not found")
     return rack, device
 
 
@@ -318,24 +372,29 @@ async def create_device(
     await _check_refs(session, body)
     devices = await _devices(session, rack.id)
     fields = body.model_dump()
+    ip_link = fields.pop("ip_address_id", None)
     if fields["u_position"] is None and fields["carrier_id"] is None:
         raise HTTPException(
             422, "u_position is required unless the device mounts into a carrier"
         )
-    _inherit_carrier(devices, fields)
-    device = RackDevice(rack_id=rack.id, **fields)
+    inherit_carrier(devices, fields)
+    device = Device(rack_id=rack.id, **fields)
     try:
         check_placement(rack, devices, device)
     except IPAMError as e:
         raise HTTPException(e.status_code, str(e))
     session.add(device)
     try:
+        await session.flush()
+        if ip_link is not None:
+            await _link_single_ip(session, device, ip_link)
         await session.commit()
     except IntegrityError as e:
         await session.rollback()
         raise HTTPException(409, "duplicate or invalid value") from e
-    await session.refresh(device, ["created_at", "updated_at", "asset", "ip_address"])
-    return _device_out(device)
+    await session.refresh(device)
+    ips = await ips_by_device(session, [device.id])
+    return await _device_out(session, device, ips[device.id])
 
 
 @router.patch(
@@ -349,107 +408,26 @@ async def update_device(
     body: RackDeviceUpdate,
     session: AsyncSession = Depends(get_session),
 ):
-    rack, device = await _get_device(session, rack_id, device_id)
+    _, device = await _get_device(session, rack_id, device_id)
     await _check_refs(session, body)
     patch = body.model_dump(exclude_unset=True)
-    if patch.get("rack_id") is None:
-        patch.pop("rack_id", None)  # a device always belongs to a rack
-    devices = await _devices(session, rack.id)
-
-    # Cross-rack move: rack_id re-homes the device (a device leaving its rack
-    # leaves its carrier behind too, unless the patch re-seats it onto a
-    # carrier in the target rack). Placement validates against the target.
-    target_rack = rack
-    target_devices = devices
-    if patch.get("rack_id") is not None and patch["rack_id"] != rack_id:
-        try:
-            target_rack = await get_or_404(session, Rack, patch["rack_id"])
-        except IPAMError as e:
-            raise HTTPException(e.status_code, str(e))
-        target_devices = await _devices(session, target_rack.id)
-        if "carrier_id" not in patch:
-            patch["carrier_id"] = None
-
-    # Unmounting (explicit carrier_id: null) clears the slot too, unless the
-    # client re-seated it in the same patch.
-    if patch.get("carrier_id", "unset") is None and "slot" not in patch:
-        patch["slot"] = None
-    merged = {**_device_fields(device), **patch}
-    merged.pop("rack_id", None)  # carried by target_rack, not the candidate
-    if merged["u_position"] is None and merged["carrier_id"] is None:
-        raise HTTPException(
-            422, "u_position is required unless the device mounts into a carrier"
-        )
-    carrier = _inherit_carrier(target_devices, merged)
-    candidate = RackDevice(rack_id=target_rack.id, **merged)
+    # ip_address_id is a link, not a devices column — apply it after the
+    # placement patch so a rejected placement can't half-move links.
+    ip_link = patch.pop("ip_address_id", _UNSET)
     try:
-        check_placement(
-            target_rack, target_devices, candidate, exclude_id=device.id
-        )
-        _check_layout_change(devices, device, patch)
+        await apply_device_patch(session, device, patch)
     except IPAMError as e:
         raise HTTPException(e.status_code, str(e))
-    for field, value in patch.items():
-        setattr(device, field, value)
-    if carrier is not None:
-        # u_position/face weren't necessarily in the patch — apply the
-        # carrier-derived values the candidate was validated with.
-        device.u_position = carrier.u_position
-        device.face = carrier.face
-    moved_racks = device.rack_id != rack_id
-    if device.slot_layout is not None and (
-        "u_position" in patch or "face" in patch or moved_racks
-    ):
-        # Carrier moved — children mirror its span + face (and follow it
-        # across racks: the tray physically carries them).
-        for c in devices:
-            if c.carrier_id == device.id:
-                c.u_position = device.u_position
-                c.face = device.face
-                if moved_racks:
-                    c.rack_id = device.rack_id
+    if ip_link is not _UNSET:
+        await _link_single_ip(session, device, ip_link)
     try:
         await session.commit()
     except IntegrityError as e:
         await session.rollback()
         raise HTTPException(409, "duplicate or invalid value") from e
     await session.refresh(device)
-    return _device_out(device)
-
-
-def _check_layout_change(
-    devices: list[RackDevice], device: RackDevice, patch: dict
-) -> None:
-    """A carrier's slot_layout can only shrink/clear when no mounted child
-    sits in a slot the new layout doesn't have."""
-    if "slot_layout" not in patch:
-        return
-    children = [d for d in devices if d.carrier_id == device.id]
-    if not children:
-        return
-    new_layout = patch["slot_layout"]
-    count = SLOT_LAYOUTS.get(new_layout or "")
-    if count is None:
-        raise CarrierError(
-            f"{device.name} still has {len(children)} mounted device(s)"
-        )
-    over = [c for c in children if c.slot is not None and c.slot >= count]
-    if over:
-        names = ", ".join(c.name or f"#{c.id}" for c in over[:5])
-        raise CarrierError(
-            f"slot_layout={new_layout} strands mounted devices: {names}"
-        )
-
-
-def _device_fields(d: RackDevice) -> dict:
-    return {
-        f: getattr(d, f)
-        for f in (
-            "name", "device_type", "u_position", "u_height", "face", "colour",
-            "category", "manufacturer", "model", "asset_id", "ip_address_id",
-            "source", "carrier_id", "slot", "slot_layout", "notes",
-        )
-    }
+    ips = await ips_by_device(session, [device.id])
+    return await _device_out(session, device, ips[device.id])
 
 
 @router.delete(
@@ -460,13 +438,16 @@ def _device_fields(d: RackDevice) -> dict:
 async def delete_device(
     rack_id: int, device_id: int, session: AsyncSession = Depends(get_session)
 ):
+    """Unrack, not delete: placement NULLs, the device row lives on.
+
+    Real deletion is DELETE /devices/{id}. Mounted children leave the rack
+    with their carrier but stay mounted to it.
+    """
     _, device = await _get_device(session, rack_id, device_id)
-    # Delete mounted children explicitly first — each gets audited; the
-    # DB-level ON DELETE CASCADE on carrier_id is the backstop.
-    for d in await _devices(session, rack_id):
-        if d.carrier_id == device.id:
-            await session.delete(d)
-    await session.delete(device)
+    try:
+        await apply_device_patch(session, device, {"rack_id": None})
+    except IPAMError as e:
+        raise HTTPException(e.status_code, str(e))
     await session.commit()
 
 
@@ -480,24 +461,25 @@ async def import_devices(
 ):
     """Bulk-load parsed Rackula devices in one transaction.
 
-    `replace` wipes existing rows first; `merge` keeps them and skips
-    incoming rows that collide or fall outside the rack.
+    `replace` unracks existing devices first (they're first-class rows now —
+    wiping would destroy inventory); `merge` keeps them and skips incoming
+    rows that collide or fall outside the rack.
     """
     rack = await _get_rack(session, rack_id)
     placed = await _devices(session, rack.id)
     if body.mode == "replace":
-        # ORM deletes so the wipe is audited per device (changelog hooks).
-        # Children first — a carrier delete would DB-cascade them anyway.
-        for d in sorted(placed, key=lambda x: x.carrier_id is None):
-            await session.delete(d)
+        for d in placed:
+            await apply_device_patch(session, d, {"rack_id": None})
         await session.flush()
         placed = []
     created = 0
     skipped: list[SkippedDevice] = []
     # carrier_key -> the carrier row created from this payload (children
-    # reference it before real ids exist).
-    carriers: dict[str, RackDevice] = {}
+    # reference it before real ids exist). links defer the ip_address_id
+    # writes until the new rows hold real ids.
+    carriers: dict[str, Device] = {}
     children: list[RackDeviceImportItem] = []
+    links: list[tuple[Device, int | None]] = []
     try:
         for d in body.devices:
             if d.carrier_key and d.slot_layout is None:
@@ -506,7 +488,8 @@ async def import_devices(
             # this endpoint exists for Rackula round-trips — provenance is
             # fixed here rather than trusting the payload's source field.
             fields = d.model_dump(exclude={"carrier_key"})
-            _inherit_carrier(placed, fields)
+            ip_link = fields.pop("ip_address_id", None)
+            inherit_carrier(placed, fields)
             if fields["u_position"] is None:
                 skipped.append(
                     SkippedDevice(
@@ -514,7 +497,7 @@ async def import_devices(
                     )
                 )
                 continue
-            device = RackDevice(
+            device = Device(
                 rack_id=rack.id, **{**fields, "source": "rackula"}
             )
             try:
@@ -528,6 +511,7 @@ async def import_devices(
             placed.append(device)
             if d.carrier_key:
                 carriers[d.carrier_key] = device
+            links.append((device, ip_link))
             created += 1
         # Flush so payload carriers hold real ids before children mount.
         await session.flush()
@@ -547,13 +531,13 @@ async def import_devices(
                 )
                 continue
             fields = {
-                **d.model_dump(exclude={"carrier_key"}),
+                **d.model_dump(exclude={"carrier_key", "ip_address_id"}),
                 "carrier_id": carrier.id,
                 "u_position": carrier.u_position,
                 "face": carrier.face,
                 "source": "rackula",
             }
-            device = RackDevice(rack_id=rack.id, **fields)
+            device = Device(rack_id=rack.id, **fields)
             try:
                 check_placement(rack, placed, device)
             except IPAMError as e:
@@ -564,6 +548,10 @@ async def import_devices(
             session.add(device)
             placed.append(device)
             created += 1
+        await session.flush()
+        for device, ip_id in links:
+            if ip_id is not None:
+                await _link_single_ip(session, device, ip_id)
         await session.commit()
     except IntegrityError as e:
         await session.rollback()

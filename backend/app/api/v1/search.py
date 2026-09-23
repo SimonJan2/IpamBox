@@ -21,9 +21,10 @@ from app.models.asset import Asset
 from app.models.certificate import Certificate
 from app.models.circuit import Circuit
 from app.models.custom_list import CustomList, CustomListRow
+from app.models.device import Device
 from app.models.ip_address import IPAddress
 from app.models.prefix import Prefix
-from app.models.rack import Rack, RackDevice, RackGroup
+from app.models.rack import Rack, RackGroup
 from app.models.service import Service
 from app.models.site import Site
 from app.models.vlan import VLAN
@@ -33,6 +34,7 @@ from app.schemas.search import (
     SearchAsset,
     SearchCertificate,
     SearchCircuit,
+    SearchDevice,
     SearchJump,
     SearchList,
     SearchListRow,
@@ -84,7 +86,8 @@ async def search(
     empty = SearchOut(
         addresses=[], prefixes=[], sites=[], vrfs=[], vlans=[],
         circuits=[], certificates=[], assets=[], services=[],
-        lists=[], list_rows=[], racks=[], rack_groups=[], jump=None,
+        lists=[], list_rows=[], racks=[], rack_groups=[], devices=[],
+        jump=None,
     )
     q = q.strip()
     if not q:
@@ -188,8 +191,9 @@ async def search(
             or_(
                 match(Rack.name, Rack.room),
                 Rack.id.in_(
-                    select(RackDevice.rack_id).where(
-                        match(RackDevice.name, RackDevice.model)
+                    select(Device.rack_id).where(
+                        Device.rack_id.is_not(None),
+                        match(Device.name, Device.model),
                     )
                 ),
                 Rack.group_id.in_(
@@ -203,6 +207,11 @@ async def search(
         select(RackGroup)
         .where(match(RackGroup.name, RackGroup.description))
         .order_by(RackGroup.name)
+    )
+    devices = await take(
+        select(Device)
+        .where(match(Device.name, Device.model, Device.serial_number))
+        .order_by(Device.name)
     )
     # row search: jsonb::text match across all cells, joined to its list
     list_row_hits = await take_rows(
@@ -340,6 +349,16 @@ async def search(
         rack_groups=[
             SearchRackGroup(id=g.id, name=g.name, site_id=g.site_id)
             for g in rack_groups
+        ],
+        devices=[
+            SearchDevice(
+                id=d.id,
+                name=d.name,
+                model=d.model,
+                serial_number=d.serial_number,
+                rack_id=d.rack_id,
+            )
+            for d in devices
         ],
         jump=jump,
     )

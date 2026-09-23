@@ -20,11 +20,12 @@ from app.models.change_log import ChangeLog
 from app.models.circuit import Circuit
 from app.models.color_rule import ColorRule
 from app.models.custom_list import CustomList, CustomListRow
+from app.models.device import Device
 from app.models.import_batch import ImportBatch
 from app.models.ip_address import IPAddress
 from app.models.ip_range import IPRange
 from app.models.prefix import Prefix
-from app.models.rack import Rack, RackDevice, RackGroup
+from app.models.rack import Rack, RackGroup
 from app.models.service import Service
 from app.models.site import Site
 from app.models.tag import Tag, TagAssignment
@@ -53,8 +54,8 @@ AUDITED_MODELS: tuple = (
     CustomList,
     CustomListRow,
     Rack,
-    RackDevice,
     RackGroup,
+    Device,
 )
 # churn-only columns that produce noise, never signal — sort_order/pinned/
 # group_position change on every drag/drop and would spam the audit log

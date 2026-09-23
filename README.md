@@ -50,10 +50,15 @@ Scapy raw-socket scanning · Next.js 15 dark-mode UI
   (30-day countdown), SW/HW asset + serial-number inventory, rack
   elevations, and a service catalog — first-class tables with pages,
   search, RBAC, backup and changelog coverage.
+- **Devices**: first-class device inventory — a device owns many IPs
+  (mgmt + service + iLO), links an asset and a site, and optionally sits
+  in a rack. Health is the worst status across its linked IPs; unracked
+  devices are valid inventory.
 - **Rack elevations**: racks with per-U device placement on front/rear
   faces, a read-only SVG elevation view, and collision validation
   (front+rear share a U; same-face overlaps are rejected). Live scan-health
-  dots for IP-linked devices, a next-free-U finder, a printable report and
+  dots reflect each device's worst linked-IP status, a next-free-U finder,
+  a printable report and
   QR labels. **Rack groups** render bayed rows — ordered racks side by side
   with per-rack and per-row U/power/weight rollups, and an edit mode for
   dragging devices across racks. A dashboard card charts fleet capacity.
@@ -221,6 +226,7 @@ apply without a restart, and can be reset back to the env value per key.
 | `/circuits` `/certificates` | WAN circuits, certificate expiry (30d countdown) |
 | `/inventory` `/services` | SW/HW + serial inventory, service catalog |
 | `/racks` `/racks/[id]` `/racks/groups/[id]` `/racks/[id]/print` | Rack list + groups, live elevation, bayed row view, print report + QR labels, Rackula round-trip |
+| `/devices` `/devices/[id]` | First-class device inventory — multi-IP links, worst-of health, optional rack placement |
 | `/import` | Workbook import wizard — upload, detection, preview, commit |
 | `/vlans` `/tags` | VLAN groups + VLANs, tag management |
 | `/scans` | Trigger/schedule/cancel scans, live progress |

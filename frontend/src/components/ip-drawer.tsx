@@ -1,14 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { Trash2 } from "lucide-react";
+import Link from "next/link";
+import { Cpu, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
 import { fmtTs } from "@/lib/prefs";
-import type { IpAddress, IpRole, IpStatus, Tag } from "@/types";
+import type { Device, IpAddress, IpRole, IpStatus, Page, Tag } from "@/types";
 import { HistoryPanel } from "@/components/history-panel";
 import { IpStatusBadge } from "@/components/status-badge";
 import { TagChip, TagPicker } from "@/components/tag-picker";
@@ -71,6 +72,47 @@ export function IpDrawer({
   const [natError, setNatError] = useState<string | null>(null);
   const natTouched = useRef(false);
   const natTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Device link — devText is the picker input, devId the resolved row.
+  const [devId, setDevId] = useState<number | null>(null);
+  const [devText, setDevText] = useState("");
+  const [devOptions, setDevOptions] = useState<Device[]>([]);
+  const devTouched = useRef(false);
+  const devTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const fetchDevs = useCallback(async (q: string) => {
+    try {
+      const p = await api.get<Page<Device>>(
+        `/api/v1/devices?limit=25${q ? `&q=${encodeURIComponent(q)}` : ""}`
+      );
+      setDevOptions(p.items);
+    } catch {
+      setDevOptions([]);
+    }
+  }, []);
+
+  const scheduleDevs = (q: string) => {
+    if (devTimer.current) clearTimeout(devTimer.current);
+    devTimer.current = setTimeout(() => void fetchDevs(q), 250);
+  };
+
+  const createFromIp = async () => {
+    if (!addr && !ip) return;
+    setBusy(true);
+    try {
+      const created = await api.post<Device>("/api/v1/devices", {
+        name: addr?.hostname || ip,
+        mac_address: addr?.mac_address || null,
+        manufacturer: addr?.vendor || null,
+      });
+      setDevId(created.id);
+      setDevText(created.name);
+      toast.success(`Device “${created.name}” created`);
+    } catch (e) {
+      toast.error("Create failed", { description: String(e) });
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const fetchNat = useCallback(
     async (q: string) => {
@@ -106,6 +148,10 @@ export function IpDrawer({
     setNatOptions([]);
     setNatError(null);
     natTouched.current = false;
+    setDevId(addr?.device_id ?? null);
+    setDevText(addr?.device_name ?? "");
+    setDevOptions([]);
+    devTouched.current = false;
     if (addr?.nat_inside_id) {
       api
         .get<IpAddress>(`/api/v1/addresses/${addr.nat_inside_id}`)
@@ -118,6 +164,7 @@ export function IpDrawer({
     }
     return () => {
       if (natTimer.current) clearTimeout(natTimer.current);
+      if (devTimer.current) clearTimeout(devTimer.current);
     };
   }, [addr, open, prefixId]);
 
@@ -156,6 +203,7 @@ export function IpDrawer({
         status: form.status,
         role: form.role === "none" ? null : form.role,
         nat_inside_id: natId,
+        device_id: devId,
         notes: form.notes || null,
       };
       if (addr) {
@@ -363,6 +411,64 @@ export function IpDrawer({
                   <option key={a.id} value={a.address} />
                 ))}
             </datalist>
+          </div>
+          <div className="grid gap-1.5">
+            <div className="flex items-center justify-between">
+              <Label htmlFor={`${uid}-device`}>Device</Label>
+              {devId ? (
+                <Link
+                  href={`/devices/${devId}`}
+                  className="flex items-center gap-1 text-xs text-emerald-400 hover:underline"
+                >
+                  <Cpu className="h-3 w-3" /> open device
+                </Link>
+              ) : (
+                canWrite && (
+                  <button
+                    type="button"
+                    onClick={createFromIp}
+                    disabled={busy}
+                    className="text-xs text-emerald-400 hover:underline disabled:opacity-50"
+                  >
+                    + create device from this IP
+                  </button>
+                )
+              )}
+            </div>
+            <Input
+              id={`${uid}-device`}
+              dir="auto"
+              value={devText}
+              onChange={(e) => {
+                setDevText(e.target.value);
+                setDevId(
+                  devOptions.find((d) => d.name === e.target.value)?.id ?? null
+                );
+                scheduleDevs(e.target.value);
+              }}
+              onFocus={() => {
+                if (!devTouched.current) {
+                  devTouched.current = true;
+                  void fetchDevs(devText);
+                }
+              }}
+              placeholder="link a device (name / model / serial)"
+              list="device-candidates"
+              disabled={!canWrite}
+            />
+            <datalist id="device-candidates">
+              {devOptions.map((d) => (
+                <option key={d.id} value={d.name}>
+                  {[d.manufacturer, d.model].filter(Boolean).join(" ") ||
+                    `device #${d.id}`}
+                </option>
+              ))}
+            </datalist>
+            {devText && !devId && (
+              <p className="text-xs text-muted-foreground">
+                No device selected — the link is cleared on save.
+              </p>
+            )}
           </div>
           <div className="grid gap-1.5">
             <Label htmlFor={`${uid}-notes`}>Notes</Label>

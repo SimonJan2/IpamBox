@@ -76,6 +76,10 @@ class IPAddress(Base):
     switch_name: Mapped[str | None] = mapped_column(String(255))
     switch_port: Mapped[str | None] = mapped_column(String(64))
     counter_location: Mapped[str | None] = mapped_column(String(255))
+    # Device membership — one device owns many IPs (mgmt/service/iLO).
+    device_id: Mapped[int | None] = mapped_column(
+        ForeignKey("devices.id", ondelete="SET NULL"), index=True
+    )
     # Overflow bag for imported values that have no typed column
     # (status_raw, mac_raw, other_ips, unmatched sheet columns, …).
     custom_fields: Mapped[dict | None] = mapped_column(JSONB, server_default="{}")
@@ -90,6 +94,9 @@ class IPAddress(Base):
 
     prefix: Mapped["Prefix"] = relationship(back_populates="addresses")  # noqa: F821
     vrf: Mapped["VRF"] = relationship()  # noqa: F821
+    # Never lazy-loaded on hot paths — device_name on responses is stamped
+    # via a grouped query (services/devices.py::stamp_device_names).
+    device: Mapped["Device | None"] = relationship(back_populates="ips")  # noqa: F821
 
     __table_args__ = (
         UniqueConstraint("vrf_id", "address", name="uq_ip_addresses_vrf_address"),

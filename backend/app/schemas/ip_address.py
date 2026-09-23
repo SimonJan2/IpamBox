@@ -28,6 +28,7 @@ class IPAddressCreate(BaseModel):
     status: IPStatus = IPStatus.ACTIVE
     role: IPRole | None = None
     nat_inside_id: int | None = None
+    device_id: int | None = None
     serial_number: str | None = Field(default=None, max_length=128)
     switch_name: str | None = Field(default=None, max_length=255)
     switch_port: str | None = Field(default=None, max_length=64)
@@ -56,6 +57,7 @@ class IPAddressUpdate(BaseModel):
     status: IPStatus | None = None
     role: IPRole | None = None
     nat_inside_id: int | None = None
+    device_id: int | None = None
     serial_number: str | None = Field(default=None, max_length=128)
     switch_name: str | None = Field(default=None, max_length=255)
     switch_port: str | None = Field(default=None, max_length=64)
@@ -90,6 +92,7 @@ class IPAddressOut(BaseModel):
     status: IPStatus
     role: IPRole | None
     nat_inside_id: int | None
+    device_id: int | None
     open_ports: list[int] | None
     device_type: str | None
     missed_scans: int
@@ -103,6 +106,8 @@ class IPAddressOut(BaseModel):
     notes: str | None
     row_color: str | None
     display_color: str | None = None
+    # Resolved device name — stamped by the API layer, not a column.
+    device_name: str | None = None
     created_at: datetime
     updated_at: datetime
 

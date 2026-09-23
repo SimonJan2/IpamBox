@@ -213,7 +213,9 @@ class RackDeviceOut(BaseModel):
     manufacturer: str | None
     model: str | None
     asset_id: int | None
-    ip_address_id: int | None
+    # Not a devices column anymore — derived: the worst-status linked IP
+    # (keeps the v1 response shape for the rack UI).
+    ip_address_id: int | None = None
     source: str
     carrier_id: int | None
     slot: int | None
@@ -225,7 +227,8 @@ class RackDeviceOut(BaseModel):
     updated_at: datetime
     asset: LinkedRef | None = None
     ip: IpRef | None = None
-    # Live scan health of the linked IP — nulls when ip_address_id is null.
+    # Device health rollup — worst status across all linked IPs; null =
+    # unmonitored. ip/ip_last_seen describe the IP driving that status.
     ip_status: IPStatus | None = None
     ip_last_seen: datetime | None = None
 

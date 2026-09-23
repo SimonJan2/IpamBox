@@ -77,8 +77,11 @@ device flagged with a *slot layout*; other devices mount into its slots:
   in the same slot.
 - Single level only: a carrier can't mount inside another carrier, and a
   child can't be taller than its carrier.
-- Deleting a carrier removes its mounted children too (the delete dialog
-  says how many).
+- Unracking a carrier lifts the whole tray out of the rack — its mounted
+  children leave the rack too but stay mounted to it (the tray still
+  physically holds them). Devices are first-class rows: removing one from
+  a rack never deletes it — it becomes unracked inventory on the
+  [Devices](/devices) page.
 - The device library includes **1U dual shelf**, **1U quad bracket**, and
   **Rack shelf** starters; any device can become a carrier via the *Carrier
   layout* field.
@@ -89,7 +92,9 @@ To mount a device: pick it in the form's **Mounted in** select and choose a
 ### Health overlay
 
 The **Health** toggle (on by default, remembered per browser) draws a status
-dot on every device block — the live scan status of its linked IP address,
+dot on every device block — the device's **health rollup**: the worst status
+across *all* its linked IP addresses (a server can own mgmt + service + iLO
+IPs; offline beats discovered beats dhcp beats reserved beats active),
 using the same colors as the address table:
 
 | Dot | Meaning |
@@ -99,12 +104,14 @@ using the same colors as the address table:
 | cyan | `dhcp` |
 | violet | `discovered` |
 | zinc | `offline` |
-| grey | unmonitored — no linked IP |
+| grey | unmonitored — no linked IPs |
 
 Click a device block (or a table row) for a detail card: name, U range, face,
-linked [asset](/docs/inventory) and IP address — with the IP's status badge
-and relative *last seen* ("2h ago"). The device table below lists every
-placement top-down, including a Status column for the linked IP.
+linked [asset](/docs/inventory) and the health-driving IP — with its status
+badge and relative *last seen* ("2h ago"). The **Device →** button jumps to
+the [device page](/docs/devices) (all its IPs, links, placement). The device
+table below lists every placement top-down, including a Status column for
+the health rollup.
 
 ### Capacity totals
 
@@ -133,7 +140,9 @@ opposite rear gear in the same U.
 - Carrier children skip the rack-level checks entirely — their carrier
   already occupies that U and face. They only conflict with a sibling
   sharing the same slot.
-- A device may link to an [asset](/docs/inventory) and an IP address.
+- A device may link to an [asset](/docs/inventory) and any number of IP
+  addresses — see [Devices](/docs/devices). Deleting a rack unracks its
+  devices (they survive); deleting a *device* is done from its page.
 
 ## Rackula round-trip
 
@@ -152,8 +161,9 @@ a drag-and-drop editor:
   IpamBox equivalent). Rackula carriers import as carrier trays and their
   container children mount into slots — Rackula's auto-created trays arrive
   as a "shelf"-layout carrier named **Shelf**. Choose **merge** (keep
-  existing, skip conflicts) or **replace** (wipe current devices first).
-  Imported devices carry a `rackula` source badge.
+  existing, skip conflicts) or **replace** (unrack current devices first —
+  they survive as unracked inventory, never deleted). Imported devices
+  carry a `rackula` source badge.
 
 ## Printing and labels
 
@@ -178,9 +188,11 @@ a drag-and-drop editor:
 | **Description / Notes** | Free text |
 
 Devices: name, device type (free text or library slug), U position, height,
-face, colour, category, manufacturer/model, linked asset/IP, **Power (W)**,
+face, colour, category, manufacturer/model, linked asset/IP(s), **Power (W)**,
 **Weight (kg)**, notes — plus **Mounted in**/**Slot** for carrier children
-and **Carrier layout** to make the device itself a carrier. The **device
+and **Carrier layout** to make the device itself a carrier. The single
+**Linked IP** field on this form replaces the device's whole IP set; multi-IP
+management lives on the [device page](/docs/devices). The **device
 library** in the add dialog pre-fills common gear (servers, switches, PDUs,
 blanks, carrier trays) — including power/weight where upstream publishes it.
 

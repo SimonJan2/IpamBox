@@ -315,7 +315,8 @@ async def dashboard_stats(session: AsyncSession) -> dict:
     from app.models.asset import Asset
     from app.models.certificate import Certificate
     from app.models.circuit import Circuit
-    from app.models.rack import Rack, RackDevice
+    from app.models.device import Device
+    from app.models.rack import Rack
     from app.models.service import Service
 
     circuits_total = int(
@@ -345,12 +346,12 @@ async def dashboard_stats(session: AsyncSession) -> dict:
     rack_slots: dict[int, set[int]] = {}
     for r_id, pos, h in (
         await session.execute(
-            select(
-                RackDevice.rack_id, RackDevice.u_position, RackDevice.u_height
+            select(Device.rack_id, Device.u_position, Device.u_height).where(
+                Device.u_position.is_not(None)
             )
         )
     ).all():
-        rack_slots.setdefault(r_id, set()).update(range(pos, pos + h))
+        rack_slots.setdefault(r_id, set()).update(range(pos, pos + (h or 1)))
     rack_u_used = sum(len(s) for s in rack_slots.values())
     certificates_total = int(
         (await session.execute(select(func.count(Certificate.id)))).scalar_one()
