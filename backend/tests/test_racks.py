@@ -1,6 +1,8 @@
 """Rack elevations: CRUD, face-aware collision rules, Rackula import."""
 
 import ipaddress
+import os
+import subprocess
 from datetime import datetime, timezone
 
 import pytest
@@ -461,6 +463,352 @@ async def test_import_skips_out_of_bounds(client: AsyncClient):
     out = r.json()
     assert out["created"] == 1
     assert out["skipped"][0]["name"] == "tall"
+
+
+# ---------------------------------------------------------------- carriers
+
+
+async def _carrier(client: AsyncClient, rack_id: int, **kw) -> dict:
+    body = {
+        "name": "tray",
+        "u_position": 5,
+        "face": "front",
+        "slot_layout": "halves",
+        **kw,
+    }
+    r = await client.post(f"/api/v1/racks/{rack_id}/devices", json=body)
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+async def _mount(
+    client: AsyncClient, rack_id: int, carrier_id: int, slot: int, **kw
+) -> dict:
+    body = {"name": "kid", "carrier_id": carrier_id, "slot": slot, **kw}
+    r = await client.post(f"/api/v1/racks/{rack_id}/devices", json=body)
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+async def test_carrier_crud_and_mount(client: AsyncClient):
+    rack = await _rack(client)
+    tray = await _carrier(client, rack["id"], u_position=10, name="dual")
+    assert tray["slot_layout"] == "halves"
+    assert tray["carrier_id"] is None and tray["slot"] is None
+
+    left = await _mount(client, rack["id"], tray["id"], 0, name="sw-l")
+    assert left["carrier_id"] == tray["id"] and left["slot"] == 0
+    # server derives u_position/face from the carrier, not the client payload
+    right = await _mount(
+        client, rack["id"], tray["id"], 1,
+        name="sw-r", u_position=1, face="rear", u_height=1,
+    )
+    assert right["u_position"] == 10 and right["face"] == "front"
+
+    detail = (await client.get(f"/api/v1/racks/{rack['id']}")).json()
+    assert detail["device_count"] == 3 and detail["used_u"] == 1
+
+
+async def test_carrier_slot_conflict_and_range(client: AsyncClient):
+    rack = await _rack(client)
+    tray = await _carrier(client, rack["id"], u_position=4)
+    await _mount(client, rack["id"], tray["id"], 0, name="a")
+
+    # duplicate slot -> 409
+    r = await client.post(
+        f"/api/v1/racks/{rack['id']}/devices",
+        json={"name": "b", "u_position": 4, "carrier_id": tray["id"], "slot": 0},
+    )
+    assert r.status_code == 409 and "a" in r.json()["detail"]
+    # beyond the layout's slot count -> 422 (halves has 0..1)
+    r = await client.post(
+        f"/api/v1/racks/{rack['id']}/devices",
+        json={"name": "c", "u_position": 4, "carrier_id": tray["id"], "slot": 2},
+    )
+    assert r.status_code == 422
+    # mounting into a non-carrier -> 422
+    srv = await _dev(client, rack["id"], name="srv", u_position=8)
+    r = await client.post(
+        f"/api/v1/racks/{rack['id']}/devices",
+        json={"name": "d", "u_position": 8, "carrier_id": srv["id"], "slot": 0},
+    )
+    assert r.status_code == 422
+    # missing carrier -> 422
+    r = await client.post(
+        f"/api/v1/racks/{rack['id']}/devices",
+        json={"name": "e", "u_position": 1, "carrier_id": 9999, "slot": 0},
+    )
+    assert r.status_code == 422
+
+
+async def test_carrier_rules(client: AsyncClient):
+    rack = await _rack(client)
+    tray = await _carrier(client, rack["id"], u_position=4)
+
+    # a carrier can't itself be a child (single level)
+    r = await client.post(
+        f"/api/v1/racks/{rack['id']}/devices",
+        json={
+            "name": "nested", "u_position": 6, "slot_layout": "halves",
+            "carrier_id": tray["id"], "slot": 0,
+        },
+    )
+    assert r.status_code == 422
+    # child taller than its carrier -> 422
+    r = await client.post(
+        f"/api/v1/racks/{rack['id']}/devices",
+        json={
+            "name": "tall", "u_position": 4, "u_height": 2,
+            "carrier_id": tray["id"], "slot": 0,
+        },
+    )
+    assert r.status_code == 422
+    # slot without carrier_id -> 422
+    r = await client.post(
+        f"/api/v1/racks/{rack['id']}/devices",
+        json={"name": "orphan", "u_position": 3, "slot": 0},
+    )
+    assert r.status_code == 422
+    # self-carrier on patch -> 422
+    r = await client.patch(
+        f"/api/v1/racks/{rack['id']}/devices/{tray['id']}",
+        json={"carrier_id": tray["id"], "slot": 0},
+    )
+    assert r.status_code == 422
+
+
+async def test_child_never_conflicts_with_rack_level(client: AsyncClient):
+    """Children ride inside the carrier's span — it's the carrier (not the
+    child) that blocks rack-level placements on its face."""
+    rack = await _rack(client)
+    tray = await _carrier(client, rack["id"], u_position=10, face="front")
+    await _mount(client, rack["id"], tray["id"], 0, name="sw-l")
+    await _mount(client, rack["id"], tray["id"], 1, name="sw-r")
+
+    # the carrier blocks a front device at U10, regardless of children
+    r = await client.post(
+        f"/api/v1/racks/{rack['id']}/devices",
+        json={"name": "srv", "u_position": 10, "face": "front"},
+    )
+    assert r.status_code == 409 and "tray" in r.json()["detail"]
+    # opposite face shares the U legally
+    r = await client.post(
+        f"/api/v1/racks/{rack['id']}/devices",
+        json={"name": "pdu", "u_position": 10, "face": "rear"},
+    )
+    assert r.status_code == 201
+
+
+async def test_carrier_move_syncs_children(client: AsyncClient):
+    rack = await _rack(client)
+    tray = await _carrier(client, rack["id"], u_position=5, face="front")
+    kid = await _mount(client, rack["id"], tray["id"], 0)
+
+    r = await client.patch(
+        f"/api/v1/racks/{rack['id']}/devices/{tray['id']}",
+        json={"u_position": 8, "face": "rear"},
+    )
+    assert r.status_code == 200
+    detail = (await client.get(f"/api/v1/racks/{rack['id']}")).json()
+    child = next(d for d in detail["devices"] if d["id"] == kid["id"])
+    assert child["u_position"] == 8 and child["face"] == "rear"
+
+
+async def test_mount_unmount_and_reseat_via_patch(client: AsyncClient):
+    rack = await _rack(client)
+    tray = await _carrier(client, rack["id"], u_position=6)
+    srv = await _dev(client, rack["id"], name="srv", u_position=2)
+
+    # mount an existing rack-level device into a slot
+    r = await client.patch(
+        f"/api/v1/racks/{rack['id']}/devices/{srv['id']}",
+        json={"carrier_id": tray["id"], "slot": 1},
+    )
+    assert r.status_code == 200, r.text
+    got = r.json()
+    assert got["carrier_id"] == tray["id"] and got["slot"] == 1
+    assert got["u_position"] == 6  # inherited from the carrier
+
+    # re-seat into the other slot
+    r = await client.patch(
+        f"/api/v1/racks/{rack['id']}/devices/{srv['id']}", json={"slot": 0}
+    )
+    assert r.status_code == 200 and r.json()["slot"] == 0
+
+    # unmount back to a rack position
+    r = await client.patch(
+        f"/api/v1/racks/{rack['id']}/devices/{srv['id']}",
+        json={"carrier_id": None, "u_position": 3},
+    )
+    got = r.json()
+    assert r.status_code == 200, r.text
+    assert got["carrier_id"] is None and got["slot"] is None
+    assert got["u_position"] == 3
+
+
+async def test_carrier_layout_shrink_strands_children(client: AsyncClient):
+    rack = await _rack(client)
+    tray = await _carrier(client, rack["id"], u_position=4)
+    await _mount(client, rack["id"], tray["id"], 1, name="right-half")
+
+    # halves -> shelf would strand the child in slot 1
+    r = await client.patch(
+        f"/api/v1/racks/{rack['id']}/devices/{tray['id']}",
+        json={"slot_layout": "shelf"},
+    )
+    assert r.status_code == 422 and "right-half" in r.json()["detail"]
+    # clearing the layout outright with children mounted also fails
+    r = await client.patch(
+        f"/api/v1/racks/{rack['id']}/devices/{tray['id']}",
+        json={"slot_layout": None},
+    )
+    assert r.status_code == 422
+    # halves -> quarters is a superset — fine
+    r = await client.patch(
+        f"/api/v1/racks/{rack['id']}/devices/{tray['id']}",
+        json={"slot_layout": "quarters"},
+    )
+    assert r.status_code == 200 and r.json()["slot_layout"] == "quarters"
+
+
+async def test_delete_carrier_cascades_children(client: AsyncClient):
+    rack = await _rack(client)
+    tray = await _carrier(client, rack["id"], u_position=4)
+    await _mount(client, rack["id"], tray["id"], 0, name="a")
+    await _mount(client, rack["id"], tray["id"], 1, name="b")
+
+    assert (
+        await client.delete(
+            f"/api/v1/racks/{rack['id']}/devices/{tray['id']}"
+        )
+    ).status_code == 204
+    detail = (await client.get(f"/api/v1/racks/{rack['id']}")).json()
+    assert detail["devices"] == []
+
+
+async def test_import_creates_carriers_and_children(client: AsyncClient):
+    """Rackula carrier gear arrives as a carrier entry (slot_layout +
+    carrier_key) followed by children keyed to it."""
+    rack = await _rack(client)
+    r = await client.post(
+        f"/api/v1/racks/{rack['id']}/devices/import",
+        json={
+            "mode": "merge",
+            "devices": [
+                {
+                    "name": "dual shelf", "u_position": 9, "face": "front",
+                    "slot_layout": "halves", "carrier_key": "dev-3",
+                },
+                {
+                    "name": "sw-a", "u_position": 9,
+                    "carrier_key": "dev-3", "slot": 0,
+                },
+                {
+                    "name": "sw-b", "u_position": 9,
+                    "carrier_key": "dev-3", "slot": 1,
+                },
+                # auto-carrier synthesized client-side as a plain shelf
+                {
+                    "name": "Shelf", "u_position": 12, "face": "front",
+                    "slot_layout": "shelf", "carrier_key": "auto-7",
+                },
+                {
+                    "name": "rpi", "u_position": 12,
+                    "carrier_key": "auto-7", "slot": 0,
+                },
+                {
+                    "name": "lost", "u_position": 1,
+                    "carrier_key": "missing", "slot": 0,
+                },
+            ],
+        },
+    )
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert out["created"] == 5
+    assert [s["name"] for s in out["skipped"]] == ["lost"]
+
+    detail = (await client.get(f"/api/v1/racks/{rack['id']}")).json()
+    by_name = {d["name"]: d for d in detail["devices"]}
+    tray = by_name["dual shelf"]
+    assert by_name["sw-a"]["carrier_id"] == tray["id"]
+    assert by_name["sw-b"]["slot"] == 1
+    assert by_name["rpi"]["carrier_id"] == by_name["Shelf"]["id"]
+    # every device carries the rackula source badge
+    assert all(d["source"] == "rackula" for d in detail["devices"])
+
+
+async def test_import_child_slot_conflict_skips(client: AsyncClient):
+    rack = await _rack(client)
+    r = await client.post(
+        f"/api/v1/racks/{rack['id']}/devices/import",
+        json={
+            "mode": "merge",
+            "devices": [
+                {
+                    "name": "tray", "u_position": 4, "slot_layout": "halves",
+                    "carrier_key": "t",
+                },
+                {"name": "a", "u_position": 4, "carrier_key": "t", "slot": 0},
+                {"name": "b", "u_position": 4, "carrier_key": "t", "slot": 0},
+            ],
+        },
+    )
+    out = r.json()
+    assert out["created"] == 2
+    assert [s["name"] for s in out["skipped"]] == ["b"]
+    assert "a" in out["skipped"][0]["reason"]
+
+
+# --------------------------------------------------------- migration check
+
+
+def test_alembic_rack_carriers_roundtrip():
+    """0020 upgrade + downgrade + upgrade again on a scratch database."""
+    import asyncio
+
+    import asyncpg
+
+    from tests.conftest import TEST_DB_NAME, _base_dsn, _split_dsn, test_url
+
+    scratch = f"{TEST_DB_NAME}_carriers"
+
+    async def _run():
+        root, query = _split_dsn(_base_dsn())
+        conn = await asyncpg.connect(f"{root}/postgres{query}")
+        try:
+            await conn.execute(f'DROP DATABASE IF EXISTS "{scratch}"')
+            await conn.execute(f'CREATE DATABASE "{scratch}"')
+        finally:
+            await conn.close()
+
+        backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        url = test_url().replace(f"/{TEST_DB_NAME}", f"/{scratch}")
+        env = dict(os.environ, DATABASE_URL=url)
+        for cmd in ("upgrade head", "downgrade -1", "upgrade head"):
+            subprocess.run(
+                ["alembic", *cmd.split()], check=True, env=env, cwd=backend_dir
+            )
+
+        conn = await asyncpg.connect(
+            url.replace("postgresql+asyncpg://", "postgresql://")
+        )
+        try:
+            cols = await conn.fetch(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name='rack_devices'"
+            )
+            names = {r["column_name"] for r in cols}
+            assert {"carrier_id", "slot", "slot_layout"} <= names
+        finally:
+            await conn.close()
+            conn = await asyncpg.connect(f"{root}/postgres{query}")
+            try:
+                await conn.execute(f'DROP DATABASE IF EXISTS "{scratch}"')
+            finally:
+                await conn.close()
+
+    asyncio.run(_run())
 
 
 # ------------------------------------------------------------ integrations

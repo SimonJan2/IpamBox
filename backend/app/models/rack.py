@@ -1,7 +1,17 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, String, Text, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    func,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -85,6 +95,15 @@ class RackDevice(Base):
     source: Mapped[str] = mapped_column(
         String(16), default="manual", server_default="manual"
     )
+    # Carrier mounting: NULL slot_layout = normal device; "halves"/"quarters"/
+    # "shelf" = carrier tray whose children ride in slots. Children set
+    # carrier_id + slot; their u_position/face mirror the carrier's
+    # (display-only). Single level — carriers never carry carrier_id.
+    carrier_id: Mapped[int | None] = mapped_column(
+        ForeignKey("rack_devices.id", ondelete="CASCADE"), index=True
+    )
+    slot: Mapped[int | None] = mapped_column()
+    slot_layout: Mapped[str | None] = mapped_column(String(16))
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -97,11 +116,25 @@ class RackDevice(Base):
     # selectin so attribute access stays async-safe without explicit eager loads.
     asset: Mapped["Asset | None"] = relationship(lazy="selectin")  # noqa: F821
     ip_address: Mapped["IPAddress | None"] = relationship(lazy="selectin")  # noqa: F821
+    # Self-FK: children ride in the carrier's slots. Deleting the carrier
+    # cascades at the DB level; the API also deletes children explicitly so
+    # each removal is audited.
+    carrier: Mapped["RackDevice | None"] = relationship(
+        remote_side="RackDevice.id", lazy="selectin"
+    )
 
     # No unique constraint on (rack_id, u_position) — front/rear pairs legally
     # share U slots; collisions are validated in the service layer.
     __table_args__ = (
         Index("ix_rack_devices_rack_u", "rack_id", "u_position"),
+        # One child per slot (NULL carrier_id rows don't participate).
+        Index(
+            "ix_rack_devices_carrier_slot",
+            "carrier_id",
+            "slot",
+            unique=True,
+            postgresql_where=text("carrier_id IS NOT NULL"),
+        ),
     )
 
     def __changelog_repr__(self) -> str:

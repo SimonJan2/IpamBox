@@ -18,17 +18,27 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { STATUS_TOKENS } from "@/lib/status-tokens";
-import { canPlace, conflicts, freeSlots } from "@/lib/rack-collision";
+import {
+  canMount,
+  canPlace,
+  conflicts,
+  freeSlots,
+  slotCount,
+  slotLabel,
+} from "@/lib/rack-collision";
 import type { IpStatus, RackDevice, RackFace } from "@/types";
 import {
+  CarrierFrameSvg,
   DeviceBlockSvg,
   HEALTH_KEY,
   RackElevation,
   RackUGrid,
   rackGeom,
+  slotRect,
   textOn,
   usedUSlots,
   type RackGeom,
+  type SlotRect,
 } from "@/components/racks/rack-elevation";
 
 /** Saved UI pref for edit mode — same `ipambox:` key namespace as the health
@@ -93,7 +103,8 @@ function DropRow({
 }
 
 /** A device block wired for editing: draggable + focusable with arrow-key
- *  moves while `edit` is on; a plain selectable block otherwise. */
+ *  moves while `edit` is on; a plain selectable block otherwise. Carriers
+ *  render as a slotted frame; mounted children render inside their slot. */
 function EditorBlock({
   d,
   geom,
@@ -103,6 +114,8 @@ function EditorBlock({
   pending,
   pendingValid,
   focused,
+  rect,
+  compact = false,
   suppressClick,
   onSelect,
   onKeyMove,
@@ -118,6 +131,9 @@ function EditorBlock({
   pending: { u: number; face: RackFace } | null;
   pendingValid: boolean;
   focused: boolean;
+  /** Carrier children pass their slot's sub-rect. */
+  rect?: SlotRect;
+  compact?: boolean;
   suppressClick: { current: boolean };
   onSelect?: (d: RackDevice | null) => void;
   onKeyMove: (d: RackDevice, e: React.KeyboardEvent<SVGGElement>) => void;
@@ -136,37 +152,46 @@ function EditorBlock({
       ? `${d.name} — ${span}, ${face}. Enter commits, Escape cancels.`
       : `${d.name} — ${span}, ${face}. Arrow keys move, Enter selects.`
     : `${d.name} — ${span}, ${face}`;
-  return (
+  const shared = {
+    d,
+    geom,
+    selected,
+    u: pending?.u,
+    ghost: (isDragging
+      ? "drag"
+      : pending
+        ? pendingValid
+          ? "ok"
+          : "bad"
+        : null) as "drag" | "ok" | "bad" | null,
+    focused: edit && focused,
+    ref: (el: SVGGElement | null) => setNodeRef(el as unknown as HTMLElement),
+    ...(edit ? { ...attributes, ...listeners } : {}),
+    onClick: () => {
+      if (!suppressClick.current) onSelect?.(selected ? null : d);
+    },
+    onKeyDown: edit ? (e: React.KeyboardEvent<SVGGElement>) => onKeyMove(d, e) : undefined,
+    onFocus: edit ? onFocus : undefined,
+    onBlur: edit ? onBlur : undefined,
+    className: cn(
+      "outline-none",
+      edit
+        ? "cursor-grab touch-none active:cursor-grabbing"
+        : onSelect && "cursor-pointer"
+    ),
+    role: edit || onSelect ? "button" : undefined,
+    tabIndex: edit ? 0 : undefined,
+    "aria-label": label,
+  };
+  return d.slot_layout != null ? (
+    <CarrierFrameSvg {...shared} />
+  ) : (
     <DeviceBlockSvg
-      d={d}
-      geom={geom}
+      {...shared}
       health={health}
-      selected={selected}
-      u={pending?.u}
       face={pending?.face}
-      ghost={
-        isDragging ? "drag" : pending ? (pendingValid ? "ok" : "bad") : null
-      }
-      focused={edit && focused}
-      ref={(el: SVGGElement | null) =>
-        setNodeRef(el as unknown as HTMLElement)
-      }
-      {...(edit ? { ...attributes, ...listeners } : {})}
-      onClick={() => {
-        if (!suppressClick.current) onSelect?.(selected ? null : d);
-      }}
-      onKeyDown={edit ? (e) => onKeyMove(d, e) : undefined}
-      onFocus={edit ? onFocus : undefined}
-      onBlur={edit ? onBlur : undefined}
-      className={cn(
-        "outline-none",
-        edit
-          ? "cursor-grab touch-none active:cursor-grabbing"
-          : onSelect && "cursor-pointer"
-      )}
-      role={edit || onSelect ? "button" : undefined}
-      tabIndex={edit ? 0 : undefined}
-      aria-label={label}
+      rect={rect}
+      compact={compact}
     />
   );
 }
@@ -208,12 +233,19 @@ export function RackEditor({
   const [pending, setPending] = useState<Pending | null>(null);
   const [drag, setDrag] = useState<DragSession | null>(null);
   const [overU, setOverU] = useState<number | null>(null);
+  /** Carrier slot under the pointer during a drag — resolved from pointer
+   *  geometry, not dnd-kit, so slots stay distinct from U rows. */
+  const [overSlot, setOverSlot] = useState<{
+    carrierId: number;
+    slot: number;
+  } | null>(null);
   const [focusId, setFocusId] = useState<number | null>(null);
   const [announce, setAnnounce] = useState("");
   /** Swallows the click a drop gesture also fires (block + drop row). */
   const suppressClick = useRef(false);
   /** Serializes PATCHes so back-to-back moves can't reorder on the wire. */
   const queue = useRef<Promise<unknown>>(Promise.resolve());
+  const svgRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
     try {
@@ -226,6 +258,25 @@ export function RackEditor({
   const visible = useMemo(
     () => devices.filter((d) => d.face === "both" || d.face === view),
     [devices, view]
+  );
+  /** Visible carriers (they're rack-level; children inherit their face). */
+  const carriers = useMemo(
+    () =>
+      new Map(
+        visible.filter((d) => d.slot_layout != null).map((d) => [d.id, d])
+      ),
+    [visible]
+  );
+  const topLevel = useMemo(
+    () => visible.filter((d) => d.carrier_id == null),
+    [visible]
+  );
+  const slotted = useMemo(
+    () =>
+      visible.filter(
+        (d) => d.carrier_id != null && carriers.has(d.carrier_id)
+      ),
+    [visible, carriers]
   );
   const usedU = usedUSlots(devices);
   const pendDev = pending ? devices.find((d) => d.id === pending.id) : null;
@@ -256,12 +307,22 @@ export function RackEditor({
     queue.current = queue.current.then(job).catch(() => {});
   };
 
-  /** PATCH u_position+face; on failure restore `back` and toast the server's
-   *  conflict message (409/422 both land here — the server stays right). */
+  /** The four placement fields every move snapshot/restores — mounting and
+   *  unmounting both patch carrier_id/slot, so undo needs the full quad. */
+  type Placement = {
+    u_position: number;
+    face: RackFace;
+    carrier_id: number | null;
+    slot: number | null;
+  };
+
+  /** PATCH placement fields; on failure restore `back` and toast the
+   *  server's conflict message (409/422 both land here — the server stays
+   *  right). */
   const save = async (
     id: number,
-    body: { u_position: number; face: RackFace },
-    back: { u_position: number; face: RackFace }
+    body: Partial<Placement>,
+    back: Placement
   ): Promise<boolean> => {
     try {
       const saved = await api.patch<RackDevice>(
@@ -278,26 +339,72 @@ export function RackEditor({
     }
   };
 
-  const commitMove = (d: RackDevice, u: number, face: RackFace) => {
-    if (u === d.u_position && face === d.face) return;
-    const back = { u_position: d.u_position, face: d.face };
-    const next = { u_position: u, face };
-    apply(d.id, next);
+  /** Optimistic placement change + PATCH + undo toast — shared by plain
+   *  moves, carrier mounts and unmounts. `local` is the fully-resolved
+   *  placement shown immediately; `body` is what the wire sees (mounts let
+   *  the server derive u_position/face). */
+  const commitPlacement = (
+    d: RackDevice,
+    body: Partial<Placement>,
+    local: Placement,
+    label: string
+  ) => {
+    const back: Placement = {
+      u_position: d.u_position,
+      face: d.face,
+      carrier_id: d.carrier_id,
+      slot: d.slot,
+    };
+    apply(d.id, local);
     enqueue(async () => {
-      if (!(await save(d.id, next, back))) return;
-      const faceNote =
-        face !== d.face ? ` — moved to ${face} face` : "";
-      toast.success(`${d.name} → U${u}${faceNote}`, {
+      if (!(await save(d.id, body, back))) return;
+      toast.success(label, {
         action: {
           label: "Undo",
           onClick: () => {
             apply(d.id, back);
-            enqueue(() => save(d.id, back, next));
+            enqueue(() => save(d.id, back, local));
           },
         },
       });
-      setAnnounce(`${d.name} moved to ${spanLabel(u, d.u_height)}${faceNote}`);
+      setAnnounce(label);
     });
+  };
+
+  const commitMove = (d: RackDevice, u: number, face: RackFace) => {
+    if (u === d.u_position && face === d.face) return;
+    const faceNote = face !== d.face ? ` — moved to ${face} face` : "";
+    commitPlacement(
+      d,
+      { u_position: u, face },
+      { u_position: u, face, carrier_id: d.carrier_id, slot: d.slot },
+      `${d.name} moved to ${spanLabel(u, d.u_height)}${faceNote}`
+    );
+  };
+
+  const commitMount = (d: RackDevice, carrier: RackDevice, slot: number) => {
+    if (d.carrier_id === carrier.id && d.slot === slot) return;
+    const where = slotLabel(carrier.slot_layout, slot);
+    commitPlacement(
+      d,
+      { carrier_id: carrier.id, slot },
+      {
+        carrier_id: carrier.id,
+        slot,
+        u_position: carrier.u_position,
+        face: carrier.face,
+      },
+      `${d.name} mounted in ${carrier.name} (${where})`
+    );
+  };
+
+  const commitUnmount = (d: RackDevice, u: number, face: RackFace) => {
+    commitPlacement(
+      d,
+      { carrier_id: null, slot: null, u_position: u, face },
+      { carrier_id: null, slot: null, u_position: u, face },
+      `${d.name} unmounted to ${spanLabel(u, d.u_height)}`
+    );
   };
 
   const toggleHealth = () =>
@@ -319,6 +426,7 @@ export function RackEditor({
       setPending(null);
       setDrag(null);
       setOverU(null);
+      setOverSlot(null);
     }
     setAnnounce(
       next
@@ -349,8 +457,41 @@ export function RackEditor({
     );
   };
 
-  const onDragMove = (e: DragMoveEvent) =>
+  /** Carrier slot under the drag pointer, if any — resolved from pointer
+   *  geometry (SVG coords) rather than droppables so slot hits stay
+   *  deterministic regardless of nesting order. Only non-carrier devices
+   *  can mount. */
+  const slotAtPointer = (e: DragMoveEvent | DragEndEvent) => {
+    const svg = svgRef.current;
+    const ctm = svg?.getScreenCTM();
+    const act = e.activatorEvent;
+    if (!svg || !ctm || !(act instanceof PointerEvent)) return null;
+    const pt = new DOMPoint(
+      act.clientX + e.delta.x,
+      act.clientY + e.delta.y
+    ).matrixTransform(ctm.inverse());
+    for (const carrier of carriers.values()) {
+      for (let s = 0; s < slotCount(carrier.slot_layout); s++) {
+        const r = slotRect(geom, carrier, s);
+        if (
+          pt.x >= r.x &&
+          pt.x <= r.x + r.w &&
+          pt.y >= r.y &&
+          pt.y <= r.y + r.h
+        ) {
+          return { carrierId: carrier.id, slot: s };
+        }
+      }
+    }
+    return null;
+  };
+
+  const onDragMove = (e: DragMoveEvent) => {
     setOverU(e.over ? Number(e.over.id) : null);
+    setOverSlot(
+      dragDev && !dragDev.slot_layout ? slotAtPointer(e) : null
+    );
+  };
 
   const onDragEnd = (e: DragEndEvent) => {
     suppressClick.current = true;
@@ -358,16 +499,33 @@ export function RackEditor({
       suppressClick.current = false;
     }, 0);
     const d = devices.find((x) => x.id === Number(e.active.id));
+    const slotHit = d && !d.slot_layout ? slotAtPointer(e) : null;
     const u = e.over ? Number(e.over.id) : null;
     const session = drag;
     setDrag(null);
     setOverU(null);
-    if (!d || !session || u === null) return;
+    setOverSlot(null);
+    if (!d || !session) return;
+    if (slotHit) {
+      const carrier = carriers.get(slotHit.carrierId);
+      if (carrier && canMount(devices, carrier, slotHit.slot, d)) {
+        commitMount(d, carrier, slotHit.slot);
+      } else {
+        setAnnounce(
+          `${d.name}: ${carrier?.name ?? "carrier"} ${slotLabel(carrier?.slot_layout ?? null, slotHit.slot)} unavailable — stays at ${spanLabel(d.u_position, d.u_height)}`
+        );
+      }
+      return;
+    }
+    if (u === null) return;
     if (session.free.has(u)) {
-      commitMove(d, u, session.face);
+      // dropping a mounted child on a plain U row un-mounts it
+      if (d.carrier_id != null) commitUnmount(d, u, session.face);
+      else commitMove(d, u, session.face);
     } else {
       const names = conflicts(devices, {
         ...d,
+        carrier_id: null,
         u_position: u,
         face: session.face,
       })
@@ -382,6 +540,7 @@ export function RackEditor({
   const onDragCancel = () => {
     setDrag(null);
     setOverU(null);
+    setOverSlot(null);
   };
 
   /** Arrow/Enter/Esc/F/B handling on a focused device block. Arrows jump to
@@ -397,6 +556,15 @@ export function RackEditor({
     }
     e.preventDefault();
     e.stopPropagation();
+    // Mounted children don't take arrow/face keys — slots aren't a linear
+    // range. Drag between slots, or drop on a U row to unmount.
+    if (d.carrier_id != null && k !== "Enter" && k !== "Escape") {
+      const carrier = carriers.get(d.carrier_id);
+      setAnnounce(
+        `${d.name} is mounted in ${carrier?.name ?? "a carrier"} — drag it between slots, or onto a U row to unmount`
+      );
+      return;
+    }
     const cur: Pending =
       pending?.id === d.id
         ? pending
@@ -552,6 +720,7 @@ export function RackEditor({
         </div>
 
         <svg
+          ref={svgRef}
           viewBox={`0 0 ${geom.W} ${geom.H}`}
           className="w-full max-w-sm rounded-lg border bg-card"
           role={edit ? "application" : "img"}
@@ -576,7 +745,7 @@ export function RackEditor({
               );
             })}
 
-          {visible.map((d) => (
+          {topLevel.map((d) => (
             <EditorBlock
               key={d.id}
               d={d}
@@ -598,8 +767,106 @@ export function RackEditor({
             />
           ))}
 
+          {/* Carrier slot targets — only while dragging a mountable
+              (non-carrier) device; resolved by pointer geometry. */}
+          {edit &&
+            drag &&
+            dragDev &&
+            !dragDev.slot_layout &&
+            [...carriers.values()].map((c) =>
+              Array.from({ length: slotCount(c.slot_layout) }, (_, s) => {
+                const r = slotRect(geom, c, s);
+                const ok = canMount(devices, c, s, dragDev);
+                const hot =
+                  overSlot?.carrierId === c.id && overSlot.slot === s;
+                return (
+                  <rect
+                    key={`${c.id}:${s}`}
+                    x={r.x + 1}
+                    y={r.y + 1}
+                    width={r.w - 2}
+                    height={r.h - 2}
+                    rx={2}
+                    strokeWidth={1}
+                    strokeDasharray="3 2"
+                    className={cn(
+                      "pointer-events-none transition-colors",
+                      ok
+                        ? "fill-emerald-500/10 stroke-emerald-500/40"
+                        : "fill-rose-500/10 stroke-rose-500/30",
+                      hot && ok && "fill-emerald-500/30",
+                      hot && !ok && "fill-rose-500/25"
+                    )}
+                  />
+                );
+              })
+            )}
+
+          {slotted.map((d) => {
+            const carrier = carriers.get(d.carrier_id!)!;
+            return (
+              <EditorBlock
+                key={d.id}
+                d={d}
+                geom={geom}
+                health={health}
+                edit={edit}
+                selected={d.id === selectedId}
+                pending={null}
+                pendingValid={false}
+                focused={focusId === d.id}
+                rect={slotRect(geom, carrier, d.slot ?? 0)}
+                compact
+                suppressClick={suppressClick}
+                onSelect={onSelect}
+                onKeyMove={keyMove}
+                onFocus={() => setFocusId(d.id)}
+                onBlur={() => {
+                  setFocusId((f) => (f === d.id ? null : f));
+                }}
+              />
+            );
+          })}
+
           {drag &&
             dragDev &&
+            overSlot &&
+            (() => {
+              const carrier = carriers.get(overSlot.carrierId);
+              if (!carrier) return null;
+              const r = slotRect(geom, carrier, overSlot.slot);
+              const ok = canMount(devices, carrier, overSlot.slot, dragDev);
+              return (
+                <g className="pointer-events-none">
+                  <rect
+                    x={r.x}
+                    y={r.y}
+                    width={r.w}
+                    height={r.h}
+                    rx={2}
+                    fill={dragDev.colour ?? "#334155"}
+                    fillOpacity={0.4}
+                    className={ok ? "stroke-emerald-400" : "stroke-rose-400"}
+                    strokeWidth={1.5}
+                    strokeDasharray="4 2"
+                  />
+                  <text
+                    x={r.x + r.w / 2}
+                    y={r.y + r.h / 2}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fill={textOn(dragDev.colour)}
+                    fontSize={Math.min(9, Math.max(6.5, geom.U * 0.4))}
+                  >
+                    {dragDev.name}
+                  </text>
+                </g>
+              );
+            })()}
+
+          {drag &&
+            dragDev &&
+            !overSlot &&
             overU !== null &&
             overU <= heightU - drag.height + 1 && (
               <g className="pointer-events-none">
@@ -635,9 +902,11 @@ export function RackEditor({
 
         {edit && (
           <p className="max-w-sm text-xs text-muted-foreground">
-            Drag a device onto a U slot — green fits, red conflicts. Or focus a
-            block: ↑/↓ moves (skipping blocked slots), F/B sets the face,
-            Enter commits, Esc cancels. Click an empty slot to add a device.
+            Drag a device onto a U slot — green fits, red conflicts. Drop it on
+            a carrier&apos;s slot to mount it there; drag a mounted child onto a
+            U row to unmount. Or focus a block: ↑/↓ moves (skipping blocked
+            slots), F/B sets the face, Enter commits, Esc cancels. Click an
+            empty slot to add a device.
           </p>
         )}
 

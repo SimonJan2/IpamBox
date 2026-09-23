@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type ComponentProps } from "react";
 
 import { cn } from "@/lib/utils";
 import { STATUS_TOKENS } from "@/lib/status-tokens";
+import { slotLabel } from "@/lib/rack-collision";
 import type { IpStatus, RackDevice, RackFace } from "@/types";
 
 export const FACE_BADGE: Record<RackFace, string> = { front: "F", rear: "R", both: "F+R" };
@@ -39,11 +40,41 @@ export function rackGeom(heightU: number) {
   const H = heightU * U + 8;
   /** SVG y of the TOP edge of row `u`. */
   const uTop = (u: number) => H - 4 - u * U;
-  /** SVG y of a device block whose span starts at `pos` and is `h` U tall. */
-  const blockY = (pos: number, h: number) => uTop(pos + h) + 1;
+  /** SVG y of a device block whose span starts at `pos` and is `h` U tall.
+   *  The block's top edge is the top edge of its topmost row (pos+h-1). */
+  const blockY = (pos: number, h: number) => uTop(pos + h - 1) + 1;
   return { U, NUM_W, W, H, uTop, blockY };
 }
 export type RackGeom = ReturnType<typeof rackGeom>;
+
+export interface SlotRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** Sub-rect of a carrier's block for `slot`: halves split left/right,
+ *  quarters tile 2×2 (row-major, slot 0 top-left), shelf is the whole block. */
+export function slotRect(
+  geom: RackGeom,
+  carrier: Pick<RackDevice, "u_position" | "u_height" | "slot_layout">,
+  slot: number
+): SlotRect {
+  const x0 = geom.NUM_W + 2;
+  const w = geom.W - geom.NUM_W - 8;
+  const y = geom.blockY(carrier.u_position, carrier.u_height);
+  const h = carrier.u_height * geom.U - 2;
+  if (carrier.slot_layout === "halves") {
+    return { x: x0 + (slot * w) / 2, y, w: w / 2, h };
+  }
+  if (carrier.slot_layout === "quarters") {
+    const col = slot % 2;
+    const row = Math.floor(slot / 2); // row 0 is the top pair
+    return { x: x0 + (col * w) / 2, y: y + (row * h) / 2, w: w / 2, h: h / 2 };
+  }
+  return { x: x0, y, w, h };
+}
 
 /** U-number column + row grid lines, bottom-up. */
 export function RackUGrid({ heightU, geom }: { heightU: number; geom: RackGeom }) {
@@ -100,6 +131,8 @@ export function DeviceBlockSvg({
   face,
   ghost = null,
   focused = false,
+  rect,
+  compact = false,
   ...gProps
 }: {
   d: RackDevice;
@@ -115,11 +148,119 @@ export function DeviceBlockSvg({
   ghost?: "drag" | "ok" | "bad" | null;
   /** Keyboard focus ring (edit mode). */
   focused?: boolean;
+  /** Override the block's geometry — carrier children render inside their
+   *  slot rect instead of spanning the full block width. */
+  rect?: SlotRect;
+  /** Slot rendering: tighter label, no face badge (inherited anyway). */
+  compact?: boolean;
 } & Omit<ComponentProps<"g">, "d">) {
   const pos = u ?? d.u_position;
   const f = face ?? d.face;
-  const y = geom.blockY(pos, d.u_height);
-  const h = d.u_height * geom.U - 2;
+  const r = rect ?? {
+    x: geom.NUM_W + 2,
+    y: geom.blockY(pos, d.u_height),
+    w: geom.W - geom.NUM_W - 8,
+    h: d.u_height * geom.U - 2,
+  };
+  const fill = d.colour ?? "#334155";
+  const fg = textOn(d.colour);
+  const maxChars = compact ? 14 : 30;
+  const label =
+    d.name.length > maxChars ? `${d.name.slice(0, maxChars - 1)}…` : d.name;
+  const stroke = ghost === "bad"
+    ? "stroke-rose-400"
+    : ghost === "ok" || selected
+      ? "stroke-emerald-400"
+      : focused
+        ? "stroke-sky-400"
+        : "stroke-border";
+  return (
+    <g {...gProps}>
+      <rect
+        x={r.x}
+        y={r.y}
+        width={r.w}
+        height={r.h}
+        rx={2}
+        fill={fill}
+        fillOpacity={ghost === "drag" ? 0.35 : f === "both" ? 1 : 0.85}
+        className={cn("transition-all", stroke)}
+        strokeWidth={ghost || selected ? 2 : focused ? 1.5 : 0.5}
+        strokeDasharray={ghost === "ok" || ghost === "bad" ? "4 2" : undefined}
+      />
+      {health && (
+        <circle
+          cx={r.x + (compact ? 6 : 7)}
+          cy={r.y + Math.min(compact ? 6 : 9, r.h / 2)}
+          r={compact ? 2 : 3}
+          className={cn(
+            "pointer-events-none",
+            d.ip_status
+              ? STATUS_TOKENS[d.ip_status].dotFill
+              : "fill-muted-foreground/40"
+          )}
+        />
+      )}
+      <text
+        x={r.x + r.w / 2}
+        y={r.y + r.h / 2}
+        textAnchor="middle"
+        dominantBaseline="central"
+        fill={fg}
+        fontSize={
+          compact
+            ? Math.min(9, Math.max(6.5, geom.U * 0.4))
+            : Math.min(11, Math.max(8, geom.U * 0.5))
+        }
+        className="pointer-events-none select-none"
+      >
+        {label}
+      </text>
+      {!compact && (
+        <text
+          x={geom.W - 12}
+          y={r.y + Math.min(9, r.h / 2)}
+          textAnchor="end"
+          dominantBaseline="central"
+          fill={fg}
+          fillOpacity={0.75}
+          fontSize={8}
+          className="pointer-events-none select-none"
+        >
+          {FACE_BADGE[f]}
+        </text>
+      )}
+    </g>
+  );
+}
+
+/** A carrier tray's frame: the device block itself (muted — children get the
+ *  spotlight) plus slot divider lines. Children render on top as sibling
+ *  blocks positioned by slotRect. Accepts the same interaction props as
+ *  DeviceBlockSvg so the editor can drag/select/ghost it as one unit. */
+export function CarrierFrameSvg({
+  d,
+  geom,
+  selected = false,
+  u,
+  ghost = null,
+  focused = false,
+  ...gProps
+}: {
+  d: RackDevice;
+  geom: RackGeom;
+  selected?: boolean;
+  u?: number;
+  ghost?: "drag" | "ok" | "bad" | null;
+  focused?: boolean;
+} & Omit<ComponentProps<"g">, "d">) {
+  const pos = u ?? d.u_position;
+  const r = {
+    x: geom.NUM_W + 2,
+    y: geom.blockY(pos, d.u_height),
+    w: geom.W - geom.NUM_W - 8,
+    h: d.u_height * geom.U - 2,
+  };
   const fill = d.colour ?? "#334155";
   const fg = textOn(d.colour);
   const label = d.name.length > 30 ? `${d.name.slice(0, 29)}…` : d.name;
@@ -133,52 +274,58 @@ export function DeviceBlockSvg({
   return (
     <g {...gProps}>
       <rect
-        x={geom.NUM_W + 2}
-        y={y}
-        width={geom.W - geom.NUM_W - 8}
-        height={h}
+        x={r.x}
+        y={r.y}
+        width={r.w}
+        height={r.h}
         rx={2}
         fill={fill}
-        fillOpacity={ghost === "drag" ? 0.35 : f === "both" ? 1 : 0.85}
+        fillOpacity={ghost === "drag" ? 0.15 : 0.35}
         className={cn("transition-all", stroke)}
         strokeWidth={ghost || selected ? 2 : focused ? 1.5 : 0.5}
         strokeDasharray={ghost === "ok" || ghost === "bad" ? "4 2" : undefined}
       />
-      {health && (
-        <circle
-          cx={geom.NUM_W + 9}
-          cy={y + Math.min(9, h / 2)}
-          r={3}
-          className={cn(
-            "pointer-events-none",
-            d.ip_status
-              ? STATUS_TOKENS[d.ip_status].dotFill
-              : "fill-muted-foreground/40"
-          )}
+      {d.slot_layout === "halves" && (
+        <line
+          x1={r.x + r.w / 2}
+          x2={r.x + r.w / 2}
+          y1={r.y}
+          y2={r.y + r.h}
+          className="stroke-border"
+          strokeWidth={0.5}
         />
       )}
+      {d.slot_layout === "quarters" && (
+        <>
+          <line
+            x1={r.x + r.w / 2}
+            x2={r.x + r.w / 2}
+            y1={r.y}
+            y2={r.y + r.h}
+            className="stroke-border"
+            strokeWidth={0.5}
+          />
+          <line
+            x1={r.x}
+            x2={r.x + r.w}
+            y1={r.y + r.h / 2}
+            y2={r.y + r.h / 2}
+            className="stroke-border"
+            strokeWidth={0.5}
+          />
+        </>
+      )}
       <text
-        x={geom.NUM_W + 2 + (geom.W - geom.NUM_W - 8) / 2}
-        y={y + h / 2}
+        x={r.x + r.w / 2}
+        y={r.y + r.h / 2}
         textAnchor="middle"
         dominantBaseline="central"
         fill={fg}
-        fontSize={Math.min(11, Math.max(8, geom.U * 0.5))}
+        fillOpacity={0.8}
+        fontSize={Math.min(10, Math.max(7, geom.U * 0.45))}
         className="pointer-events-none select-none"
       >
         {label}
-      </text>
-      <text
-        x={geom.W - 12}
-        y={y + Math.min(9, h / 2)}
-        textAnchor="end"
-        dominantBaseline="central"
-        fill={fg}
-        fillOpacity={0.75}
-        fontSize={8}
-        className="pointer-events-none select-none"
-      >
-        {FACE_BADGE[f]}
       </text>
     </g>
   );
@@ -228,6 +375,26 @@ export function RackElevation({
   const visible = useMemo(
     () => devices.filter((d) => d.face === "both" || d.face === effView),
     [devices, effView]
+  );
+  // Children ride inside their carrier's block — they draw in their slot,
+  // and only when the carrier itself is visible on this face.
+  const carriers = useMemo(
+    () =>
+      new Map(
+        visible.filter((d) => d.slot_layout != null).map((d) => [d.id, d])
+      ),
+    [visible]
+  );
+  const topLevel = useMemo(
+    () => visible.filter((d) => d.carrier_id == null),
+    [visible]
+  );
+  const slotted = useMemo(
+    () =>
+      visible.filter(
+        (d) => d.carrier_id != null && carriers.has(d.carrier_id)
+      ),
+    [visible, carriers]
   );
   const usedU = usedUSlots(devices);
   const geom = rackGeom(heightU);
@@ -288,10 +455,22 @@ export function RackElevation({
       >
         <RackUGrid heightU={heightU} geom={geom} />
 
-        {visible.map((d) => {
+        {topLevel.map((d) => {
           const selected = d.id === selectedId;
           const top = d.u_position + d.u_height - 1;
-          return (
+          const label = `${d.name} — U${d.u_position}${d.u_height > 1 ? `–${top}` : ""}, ${d.face}`;
+          return d.slot_layout != null ? (
+            <CarrierFrameSvg
+              key={d.id}
+              d={d}
+              geom={geom}
+              selected={selected}
+              onClick={() => onSelect?.(selected ? null : d)}
+              className={onSelect ? "cursor-pointer" : undefined}
+              role={onSelect ? "button" : undefined}
+              aria-label={`${label} — carrier (${d.slot_layout})`}
+            />
+          ) : (
             <DeviceBlockSvg
               key={d.id}
               d={d}
@@ -301,7 +480,26 @@ export function RackElevation({
               onClick={() => onSelect?.(selected ? null : d)}
               className={onSelect ? "cursor-pointer" : undefined}
               role={onSelect ? "button" : undefined}
-              aria-label={`${d.name} — U${d.u_position}${d.u_height > 1 ? `–${top}` : ""}, ${d.face}`}
+              aria-label={label}
+            />
+          );
+        })}
+
+        {slotted.map((d) => {
+          const carrier = carriers.get(d.carrier_id!)!;
+          return (
+            <DeviceBlockSvg
+              key={d.id}
+              d={d}
+              geom={geom}
+              health={health}
+              selected={d.id === selectedId}
+              compact
+              rect={slotRect(geom, carrier, d.slot ?? 0)}
+              onClick={() => onSelect?.(d.id === selectedId ? null : d)}
+              className={onSelect ? "cursor-pointer" : undefined}
+              role={onSelect ? "button" : undefined}
+              aria-label={`${d.name} — ${carrier.name} ${slotLabel(carrier.slot_layout, d.slot ?? 0)}`}
             />
           );
         })}

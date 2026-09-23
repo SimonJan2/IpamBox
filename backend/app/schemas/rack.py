@@ -9,6 +9,10 @@ from app.schemas.common import hex_color_or_none
 
 _WIDTHS = (10, 19)
 
+# Carrier trays: halves = 2 side-by-side slots, quarters = 4, shelf = 1
+# full-width slot. Mirrors SLOT_LAYOUTS in app.services.racks.
+SlotLayout = Literal["halves", "quarters", "shelf"]
+
 
 def _rail_width(v: int | None) -> int | None:
     if v is not None and v not in _WIDTHS:
@@ -78,7 +82,9 @@ class RackOut(BaseModel):
 class RackDeviceCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     device_type: str | None = Field(default=None, max_length=255)
-    u_position: int = Field(ge=1)
+    # Optional only for carrier mounts — u_position derives from the carrier
+    # server-side. The API layer rejects rack-level rows that omit it.
+    u_position: int | None = Field(default=None, ge=1)
     u_height: int = Field(default=1, ge=1, le=100)
     face: RackFace = RackFace.FRONT
     colour: str | None = Field(default=None, max_length=7)
@@ -89,6 +95,12 @@ class RackDeviceCreate(BaseModel):
     ip_address_id: int | None = None
     source: Literal["manual", "rackula"] = "manual"
     notes: str | None = None
+    # Carrier mounting: carrier_id + slot mount the device into a carrier's
+    # slot (u_position/face derive from the carrier server-side); slot_layout
+    # flags the device itself as a carrier tray.
+    carrier_id: int | None = None
+    slot: int | None = Field(default=None, ge=0)
+    slot_layout: SlotLayout | None = None
 
     @field_validator("colour")
     @classmethod
@@ -109,6 +121,9 @@ class RackDeviceUpdate(BaseModel):
     asset_id: int | None = None
     ip_address_id: int | None = None
     notes: str | None = None
+    carrier_id: int | None = None
+    slot: int | None = Field(default=None, ge=0)
+    slot_layout: SlotLayout | None = None
 
     @field_validator("colour")
     @classmethod
@@ -144,6 +159,9 @@ class RackDeviceOut(BaseModel):
     asset_id: int | None
     ip_address_id: int | None
     source: str
+    carrier_id: int | None
+    slot: int | None
+    slot_layout: str | None
     notes: str | None
     created_at: datetime
     updated_at: datetime
@@ -162,9 +180,17 @@ class NextFreeUOut(BaseModel):
     u_position: int | None
 
 
+class RackDeviceImportItem(RackDeviceCreate):
+    """One import payload entry. `carrier_key` groups a child under the
+    payload's carrier entry carrying the same key (real DB ids don't exist
+    yet at import time); carriers emit it alongside their slot_layout."""
+
+    carrier_key: str | None = Field(default=None, max_length=64)
+
+
 class RackDeviceImport(BaseModel):
     mode: Literal["merge", "replace"] = "merge"
-    devices: list[RackDeviceCreate] = Field(default_factory=list, max_length=500)
+    devices: list[RackDeviceImportItem] = Field(default_factory=list, max_length=500)
 
 
 class SkippedDevice(BaseModel):

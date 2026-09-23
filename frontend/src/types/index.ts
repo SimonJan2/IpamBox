@@ -638,6 +638,10 @@ export interface ListTarget {
 
 export type RackFace = "front" | "rear" | "both";
 
+/** Carrier tray layouts: halves = 2 side-by-side slots, quarters = 4,
+ *  shelf = 1 full-width slot. Slot counts live in rack-collision.ts. */
+export type SlotLayout = "halves" | "quarters" | "shelf";
+
 export interface Rack {
   id: number;
   site_id: number | null;
@@ -680,6 +684,12 @@ export interface RackDevice {
   model: string | null;
   asset_id: number | null;
   ip_address_id: number | null;
+  /** Set on a carrier child — the tray device it rides in. */
+  carrier_id: number | null;
+  /** Child's index into the carrier's slot_layout. */
+  slot: number | null;
+  /** Non-null flags this device as a carrier tray. */
+  slot_layout: SlotLayout | null;
   asset: LinkedRef | null;
   ip: IpRef | null;
   /** Live scan health of the linked IP — null when unlinked. */
@@ -699,7 +709,8 @@ export interface RackDetail extends Rack {
 export interface RackDeviceCreate {
   name: string;
   device_type?: string | null;
-  u_position: number;
+  /** Optional when mounting into a carrier — the server derives it. */
+  u_position?: number | null;
   u_height?: number;
   face?: RackFace;
   colour?: string | null;
@@ -710,6 +721,15 @@ export interface RackDeviceCreate {
   ip_address_id?: number | null;
   source?: "manual" | "rackula";
   notes?: string | null;
+  carrier_id?: number | null;
+  slot?: number | null;
+  slot_layout?: SlotLayout | null;
+}
+
+/** Import-payload entry: `carrier_key` groups a child under the carrier
+ *  entry carrying the same key (real ids don't exist at import time). */
+export interface RackDeviceImportItem extends RackDeviceCreate {
+  carrier_key?: string | null;
 }
 
 export interface SkippedDevice {
