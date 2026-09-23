@@ -11,8 +11,8 @@
  *  Slugs double as Rackula `device_type` values on export, so keep them
  *  stable lowercase-dash identifiers. `face_default` preselects the
  *  mounting face; everything prefills the form and stays editable.
- *  `watts`/`weight_kg` are informational here — the V2.5 capacity rollup
- *  consumes them; they are NOT stored on rack_devices.
+ *  `watts`/`weight_kg` prefill the device form and persist on rack_devices —
+ *  the V2.5 capacity rollup consumes the stored values.
  */
 import type { RackFace, SlotLayout } from "@/types";
 

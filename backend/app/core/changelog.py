@@ -24,7 +24,7 @@ from app.models.import_batch import ImportBatch
 from app.models.ip_address import IPAddress
 from app.models.ip_range import IPRange
 from app.models.prefix import Prefix
-from app.models.rack import Rack, RackDevice
+from app.models.rack import Rack, RackDevice, RackGroup
 from app.models.service import Service
 from app.models.site import Site
 from app.models.tag import Tag, TagAssignment
@@ -54,10 +54,12 @@ AUDITED_MODELS: tuple = (
     CustomListRow,
     Rack,
     RackDevice,
+    RackGroup,
 )
-# churn-only columns that produce noise, never signal — sort_order/pinned
-# change on every drag/drop and would spam the audit log per gesture
-SKIP_FIELDS = {"updated_at", "last_seen", "password_hash", "sort_order", "pinned", "missed_scans"}
+# churn-only columns that produce noise, never signal — sort_order/pinned/
+# group_position change on every drag/drop and would spam the audit log
+# per gesture
+SKIP_FIELDS = {"updated_at", "last_seen", "password_hash", "sort_order", "pinned", "group_position", "missed_scans"}
 _SPECS_KEY = "_changelog_specs"
 _REPR_ATTRS = ("name", "prefix", "address", "cidr", "username")
 

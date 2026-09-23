@@ -315,6 +315,7 @@ async def dashboard_stats(session: AsyncSession) -> dict:
     from app.models.asset import Asset
     from app.models.certificate import Certificate
     from app.models.circuit import Circuit
+    from app.models.rack import Rack, RackDevice
     from app.models.service import Service
 
     circuits_total = int(
@@ -326,6 +327,31 @@ async def dashboard_stats(session: AsyncSession) -> dict:
     services_total = int(
         (await session.execute(select(func.count(Service.id)))).scalar_one()
     )
+    # Rack capacity: occupied slots follow used_u semantics — a front+rear
+    # pair shares one U, carrier children ride their carrier's span. The
+    # per-rack slot sets are merged in Python (same rule as
+    # services.racks.used_u) since racks are few and devices are skinny rows.
+    racks_total = int(
+        (await session.execute(select(func.count(Rack.id)))).scalar_one()
+    )
+    rack_u_total = int(
+        (
+            await session.execute(
+                select(func.coalesce(func.sum(Rack.height_u), 0))
+            )
+        ).scalar_one()
+    )
+    rack_u_used = 0
+    rack_slots: dict[int, set[int]] = {}
+    for r_id, pos, h in (
+        await session.execute(
+            select(
+                RackDevice.rack_id, RackDevice.u_position, RackDevice.u_height
+            )
+        )
+    ).all():
+        rack_slots.setdefault(r_id, set()).update(range(pos, pos + h))
+    rack_u_used = sum(len(s) for s in rack_slots.values())
     certificates_total = int(
         (await session.execute(select(func.count(Certificate.id)))).scalar_one()
     )
@@ -401,6 +427,9 @@ async def dashboard_stats(session: AsyncSession) -> dict:
         "certs_expiring_30d": certs_expiring_30d,
         "assets_total": assets_total,
         "services_total": services_total,
+        "racks_total": racks_total,
+        "rack_u_used": rack_u_used,
+        "rack_u_total": rack_u_total,
         "mac_mismatches": mac_mismatches,
         "certs_expiring": certs_expiring,
         "mac_mismatch_items": mac_mismatch_items,

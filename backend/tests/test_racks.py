@@ -839,9 +839,13 @@ async def test_rack_and_device_changes_are_audited(client: AsyncClient):
 def test_backup_registry_covers_rack_tables():
     names = {spec.name for spec in BACKUP_TABLES}
     assert "racks" in names and "rack_devices" in names
+    assert "rack_groups" in names
     # rack_devices restores after racks + its SET NULL parents
     order = [spec.name for spec in BACKUP_TABLES]
     assert order.index("racks") > order.index("sites")
+    # racks restore after rack_groups (racks.group_id -> rack_groups.id)
+    assert order.index("sites") < order.index("rack_groups")
+    assert order.index("rack_groups") < order.index("racks")
     for parent in ("racks", "assets", "ip_addresses"):
         assert order.index("rack_devices") > order.index(parent)
 
@@ -853,3 +857,484 @@ async def test_search_finds_rack_by_name_room_and_device(client: AsyncClient):
     for q, why in (("colo-a", "name"), ("cage", "room"), ("unifi", "device")):
         out = (await client.get("/api/v1/search", params={"q": q})).json()
         assert any(r["id"] == rack["id"] for r in out["racks"]), why
+
+
+# ------------------------------------------------------------------ groups
+
+
+async def _group(client: AsyncClient, **kw) -> dict:
+    body = {"name": "Row A", **kw}
+    r = await client.post("/api/v1/rack-groups", json=body)
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+async def test_rack_group_crud(client: AsyncClient):
+    site = (await client.post("/api/v1/sites", json={"name": "DC1"})).json()
+    g = await _group(
+        client, name="Row A", site_id=site["id"], description="prod row"
+    )
+    assert g["site_id"] == site["id"] and g["rack_count"] == 0
+    assert g["pinned"] is False and g["display_color"] is None
+
+    r = await client.patch(
+        f"/api/v1/rack-groups/{g['id']}",
+        json={"description": "prod row 1", "pinned": True},
+    )
+    assert r.status_code == 200 and r.json()["description"] == "prod row 1"
+    assert r.json()["pinned"] is True
+
+    groups = (await client.get("/api/v1/rack-groups")).json()
+    assert [x["name"] for x in groups] == ["Row A"]
+
+    # site filter + unknown site on create/update -> 404
+    filtered = (
+        await client.get("/api/v1/rack-groups", params={"site_id": site["id"]})
+    ).json()
+    assert [x["id"] for x in filtered] == [g["id"]]
+    r = await client.post(
+        "/api/v1/rack-groups", json={"name": "x", "site_id": 9999}
+    )
+    assert r.status_code == 404
+    r = await client.patch(
+        f"/api/v1/rack-groups/{g['id']}", json={"site_id": 9999}
+    )
+    assert r.status_code == 404
+
+    assert (
+        await client.delete(f"/api/v1/rack-groups/{g['id']}")
+    ).status_code == 204
+    assert (
+        await client.get(f"/api/v1/rack-groups/{g['id']}")
+    ).status_code == 404
+
+
+async def test_rack_group_membership_and_ordering(client: AsyncClient):
+    g = await _group(client)
+    # create straight into the group — no position -> appended at the end
+    r1 = await _rack(client, name="auto-join", group_id=g["id"])
+    assert r1["group_id"] == g["id"] and r1["group_position"] == 1
+    assert r1["group_name"] == "Row A"
+    # patching racks in is the move operation — explicit positions order them
+    a = await _rack(client, name="A")
+    b = await _rack(client, name="B")
+    c = await _rack(client, name="C")
+    for rack, pos in ((a, 4), (b, 2), (c, 3)):
+        r = await client.patch(
+            f"/api/v1/racks/{rack['id']}",
+            json={"group_id": g["id"], "group_position": pos},
+        )
+        assert r.status_code == 200 and r.json()["group_name"] == "Row A"
+
+    # group detail returns racks in group_position order
+    detail = (await client.get(f"/api/v1/rack-groups/{g['id']}")).json()
+    assert detail["rack_count"] == 4
+    assert [r["name"] for r in detail["racks"]] == [
+        "auto-join",  # position 1
+        "B",          # position 2
+        "C",          # position 3
+        "A",          # position 4
+    ]
+    assert detail["racks"][1]["group_position"] == 2
+
+    # list rows carry membership + aggregates
+    listed = (await client.get("/api/v1/racks")).json()["items"]
+    by_name = {r["name"]: r for r in listed}
+    assert by_name["B"]["group_name"] == "Row A"
+    assert by_name["B"]["group_position"] == 2
+
+    # ?group_id= filters the rack list (the groups tab's "show members" link)
+    filtered = (
+        await client.get("/api/v1/racks", params={"group_id": g["id"]})
+    ).json()
+    assert filtered["total"] == 4
+
+    # patch back out — group_id AND the now-meaningless position both clear
+    r = await client.patch(f"/api/v1/racks/{a['id']}", json={"group_id": None})
+    assert r.status_code == 200
+    assert r.json()["group_id"] is None and r.json()["group_position"] is None
+    detail = (await client.get(f"/api/v1/rack-groups/{g['id']}")).json()
+    assert [r["name"] for r in detail["racks"]] == ["auto-join", "B", "C"]
+
+    # bogus group -> 404
+    r = await client.patch(f"/api/v1/racks/{b['id']}", json={"group_id": 9999})
+    assert r.status_code == 404
+    r = await client.post(
+        "/api/v1/racks", json={"name": "x", "group_id": 9999}
+    )
+    assert r.status_code == 404
+
+
+async def test_rack_group_delete_unassigns_members(client: AsyncClient):
+    g = await _group(client)
+    r = await _rack(client, name="orphan", group_id=g["id"])
+    assert (
+        await client.delete(f"/api/v1/rack-groups/{g['id']}")
+    ).status_code == 204
+    got = (await client.get(f"/api/v1/racks/{r['id']}")).json()
+    assert got["group_id"] is None and got["group_name"] is None
+
+
+async def test_rack_group_reorder(client: AsyncClient):
+    a = await _group(client, name="Row A")
+    b = await _group(client, name="Row B")
+    r = await client.post(
+        "/api/v1/rack-groups/reorder", json={"ids": [b["id"], a["id"]]}
+    )
+    assert r.status_code == 204
+    groups = (await client.get("/api/v1/rack-groups")).json()
+    assert [g["name"] for g in groups] == ["Row B", "Row A"]
+
+
+async def test_rack_group_rbac(
+    client: AsyncClient, session: AsyncSession, auth_on
+):
+    from app.models.rack import RackGroup
+
+    g = RackGroup(name="Row A")
+    session.add(g)
+    session.add_all(
+        [
+            User(
+                username="v",
+                password_hash=hash_password(PASSWORD),
+                role=UserRole.VIEWER,
+            ),
+            User(
+                username="c",
+                password_hash=hash_password(PASSWORD),
+                role=UserRole.CONTRIBUTOR,
+            ),
+        ]
+    )
+    await session.commit()
+    await session.refresh(g)
+
+    r = await client.post(
+        "/api/v1/auth/login", json={"username": "v", "password": PASSWORD}
+    )
+    assert r.status_code == 200
+    assert (await client.get("/api/v1/rack-groups")).status_code == 200
+    assert (await client.get(f"/api/v1/rack-groups/{g.id}")).status_code == 200
+    assert (
+        await client.post("/api/v1/rack-groups", json={"name": "x"})
+    ).status_code == 403
+    assert (
+        await client.patch(f"/api/v1/rack-groups/{g.id}", json={"name": "y"})
+    ).status_code == 403
+    assert (
+        await client.post("/api/v1/rack-groups/reorder", json={"ids": [g.id]})
+    ).status_code == 403
+    assert (
+        await client.delete(f"/api/v1/rack-groups/{g.id}")
+    ).status_code == 403
+
+    # contributor writes but cannot delete
+    r = await client.post(
+        "/api/v1/auth/login", json={"username": "c", "password": PASSWORD}
+    )
+    assert r.status_code == 200
+    assert (
+        await client.post("/api/v1/rack-groups", json={"name": "x"})
+    ).status_code == 201
+    assert (
+        await client.patch(f"/api/v1/rack-groups/{g.id}", json={"name": "y"})
+    ).status_code == 200
+    assert (
+        await client.delete(f"/api/v1/rack-groups/{g.id}")
+    ).status_code == 403
+
+
+async def test_rack_group_changes_are_audited(client: AsyncClient):
+    g = await _group(client, name="Audited Row")
+    await client.patch(
+        f"/api/v1/rack-groups/{g['id']}", json={"description": "d"}
+    )
+    await client.delete(f"/api/v1/rack-groups/{g['id']}")
+    log = (
+        await client.get("/api/v1/changelog", params={"object_type": "RackGroup"})
+    ).json()["items"]
+    assert [e["action"] for e in log] == ["delete", "update", "create"]
+    assert log[-1]["object_repr"] == "Audited Row"
+
+
+async def test_search_finds_rack_groups_and_members(client: AsyncClient):
+    g = await _group(client, name="ProdRow-9")
+    rack = await _rack(client, name="member", group_id=g["id"])
+    out = (await client.get("/api/v1/search", params={"q": "prodrow"})).json()
+    assert any(x["id"] == g["id"] for x in out["rack_groups"])
+    # member racks surface via their group's name too
+    assert any(x["id"] == rack["id"] for x in out["racks"])
+
+
+# ------------------------------------------------------ capacity aggregates
+
+
+async def test_rack_capacity_aggregates(client: AsyncClient):
+    rack = await _rack(client, height_u=10)
+    await _dev(client, rack["id"], name="pdu", u_position=1)
+    detail = (await client.get(f"/api/v1/racks/{rack['id']}")).json()
+    # no device supplied values -> nulls (the UI hides the block entirely)
+    assert detail["power_w"] is None and detail["weight_kg"] is None
+
+    await _dev(
+        client, rack["id"], name="srv-a", u_position=2,
+        watts=400, weight_kg=12.5,
+    )
+    await _dev(client, rack["id"], name="srv-b", u_position=3, watts=300)
+
+    detail = (await client.get(f"/api/v1/racks/{rack['id']}")).json()
+    assert detail["power_w"] == 700
+    assert detail["weight_kg"] == 12.5
+    by_name = {x["name"]: x for x in detail["devices"]}
+    assert by_name["srv-a"]["watts"] == 400
+    assert by_name["srv-a"]["weight_kg"] == 12.5
+    assert by_name["srv-b"]["watts"] == 300
+    assert by_name["srv-b"]["weight_kg"] is None
+    assert by_name["pdu"]["watts"] is None
+
+    # carrier children still draw real power/weight even though they share
+    # the carrier's U span
+    tray = await _carrier(client, rack["id"], u_position=6, watts=50)
+    await _mount(
+        client, rack["id"], tray["id"], 0, name="half-a",
+        watts=100, weight_kg=2,
+    )
+    detail = (await client.get(f"/api/v1/racks/{rack['id']}")).json()
+    assert detail["used_u"] == 4  # U1,U2,U3 + U6 tray (child shares its span)
+    assert detail["power_w"] == 850
+    assert detail["weight_kg"] == 14.5
+
+    # the same sums land on the list endpoint
+    row = next(
+        r
+        for r in (await client.get("/api/v1/racks")).json()["items"]
+        if r["id"] == rack["id"]
+    )
+    assert row["power_w"] == 850 and row["weight_kg"] == 14.5
+
+    # clearing values re-nulls the aggregate (vs. reporting a fake 0)
+    r = await client.patch(
+        f"/api/v1/racks/{rack['id']}/devices/{by_name['srv-a']['id']}",
+        json={"watts": None, "weight_kg": None},
+    )
+    assert r.status_code == 200 and r.json()["watts"] is None
+    detail = (await client.get(f"/api/v1/racks/{rack['id']}")).json()
+    assert detail["power_w"] == 450 and detail["weight_kg"] == 2
+
+    # negative / out-of-precision values are rejected
+    for bad in ({"watts": -5}, {"weight_kg": -1}, {"weight_kg": 123456}):
+        r = await client.patch(
+            f"/api/v1/racks/{rack['id']}/devices/{by_name['srv-b']['id']}",
+            json=bad,
+        )
+        assert r.status_code == 422, bad
+
+
+async def test_rack_group_detail_carries_aggregates(client: AsyncClient):
+    g = await _group(client)
+    a = await _rack(
+        client, name="A", height_u=10, group_id=g["id"], group_position=2
+    )
+    await _rack(client, name="B", height_u=8, group_id=g["id"], group_position=1)
+    await _dev(client, a["id"], u_position=1, watts=500, weight_kg=20)
+
+    detail = (await client.get(f"/api/v1/rack-groups/{g['id']}")).json()
+    assert [r["name"] for r in detail["racks"]] == ["B", "A"]
+    a_row = detail["racks"][1]
+    assert a_row["used_u"] == 1
+    assert a_row["power_w"] == 500 and a_row["weight_kg"] == 20
+    # devices ride along (the row view draws elevations from them)
+    assert a_row["devices"][0]["watts"] == 500
+
+
+async def test_dashboard_rack_capacity(client: AsyncClient):
+    stats = (await client.get("/api/v1/dashboard/stats")).json()
+    assert stats["racks_total"] == 0
+    assert stats["rack_u_used"] == 0 and stats["rack_u_total"] == 0
+
+    a = await _rack(client, height_u=10)
+    b = await _rack(client, height_u=4)
+    # front+rear pair shares U1-2 (counts once); a lone device at U4 of b
+    await _dev(client, a["id"], u_position=1, u_height=2, face="front")
+    await _dev(client, a["id"], u_position=1, u_height=2, face="rear")
+    await _dev(client, b["id"], u_position=4)
+    stats = (await client.get("/api/v1/dashboard/stats")).json()
+    assert stats["racks_total"] == 2
+    assert stats["rack_u_total"] == 14
+    assert stats["rack_u_used"] == 3
+
+
+# ---------------------------------------------------------- cross-rack move
+
+
+async def test_device_cross_rack_move(client: AsyncClient):
+    src = await _rack(client, name="src", height_u=10)
+    dst = await _rack(client, name="dst", height_u=10)
+    d = await _dev(client, src["id"], name="nomad", u_position=2, watts=200)
+    await _dev(client, dst["id"], name="blocker", u_position=5, face="front")
+
+    # colliding with the target rack's gear -> 409, device stays put
+    r = await client.patch(
+        f"/api/v1/racks/{src['id']}/devices/{d['id']}",
+        json={"rack_id": dst["id"], "u_position": 5},
+    )
+    assert r.status_code == 409
+    # past the target's top -> 422
+    r = await client.patch(
+        f"/api/v1/racks/{src['id']}/devices/{d['id']}",
+        json={"rack_id": dst["id"], "u_position": 11},
+    )
+    assert r.status_code == 422
+    # bogus target -> 404
+    r = await client.patch(
+        f"/api/v1/racks/{src['id']}/devices/{d['id']}",
+        json={"rack_id": 9999, "u_position": 1},
+    )
+    assert r.status_code == 404
+
+    r = await client.patch(
+        f"/api/v1/racks/{src['id']}/devices/{d['id']}",
+        json={"rack_id": dst["id"], "u_position": 7},
+    )
+    assert r.status_code == 200, r.text
+    got = r.json()
+    assert got["rack_id"] == dst["id"] and got["u_position"] == 7
+
+    src_detail = (await client.get(f"/api/v1/racks/{src['id']}")).json()
+    dst_detail = (await client.get(f"/api/v1/racks/{dst['id']}")).json()
+    assert src_detail["device_count"] == 0 and src_detail["power_w"] is None
+    assert dst_detail["device_count"] == 2 and dst_detail["power_w"] == 200
+
+
+async def test_carrier_move_takes_children_across_racks(client: AsyncClient):
+    src = await _rack(client)
+    dst = await _rack(client)
+    tray = await _carrier(client, src["id"], u_position=5, name="tray")
+    kid = await _mount(client, src["id"], tray["id"], 0, name="kid")
+    await _mount(client, src["id"], tray["id"], 1, name="kid2")
+
+    r = await client.patch(
+        f"/api/v1/racks/{src['id']}/devices/{tray['id']}",
+        json={"rack_id": dst["id"], "u_position": 3},
+    )
+    assert r.status_code == 200, r.text
+    dst_detail = (await client.get(f"/api/v1/racks/{dst['id']}")).json()
+    by_name = {d["name"]: d for d in dst_detail["devices"]}
+    assert by_name["tray"]["u_position"] == 3
+    # the tray physically carries its children — they moved with it and
+    # mirror its new span
+    assert by_name["kid"]["rack_id"] == dst["id"]
+    assert by_name["kid"]["u_position"] == 3
+    assert by_name["kid"]["carrier_id"] == by_name["tray"]["id"]
+    src_detail = (await client.get(f"/api/v1/racks/{src['id']}")).json()
+    assert src_detail["devices"] == []
+
+    # a mounted child moved alone leaves its carrier behind — it unmounts
+    r = await client.patch(
+        f"/api/v1/racks/{dst['id']}/devices/{kid['id']}",
+        json={"rack_id": src["id"], "u_position": 8},
+    )
+    assert r.status_code == 200, r.text
+    got = r.json()
+    assert got["rack_id"] == src["id"]
+    assert got["carrier_id"] is None and got["slot"] is None
+    dst_detail = (await client.get(f"/api/v1/racks/{dst['id']}")).json()
+    assert sorted(d["name"] for d in dst_detail["devices"]) == ["kid2", "tray"]
+
+
+# --------------------------------------------------------- migration check
+
+
+def test_alembic_rack_groups_roundtrip():
+    """0021 upgrade + downgrade + upgrade again on a scratch database."""
+    import asyncio
+
+    import asyncpg
+
+    from tests.conftest import TEST_DB_NAME, _base_dsn, _split_dsn, test_url
+
+    scratch = f"{TEST_DB_NAME}_groups"
+
+    async def _run():
+        root, query = _split_dsn(_base_dsn())
+        conn = await asyncpg.connect(f"{root}/postgres{query}")
+        try:
+            await conn.execute(f'DROP DATABASE IF EXISTS "{scratch}"')
+            await conn.execute(f'CREATE DATABASE "{scratch}"')
+        finally:
+            await conn.close()
+
+        backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        url = test_url().replace(f"/{TEST_DB_NAME}", f"/{scratch}")
+        env = dict(os.environ, DATABASE_URL=url)
+
+        def alembic(*cmd):
+            subprocess.run(
+                ["alembic", *cmd], check=True, env=env, cwd=backend_dir
+            )
+
+        async def fetch(sql):
+            c = await asyncpg.connect(
+                url.replace("postgresql+asyncpg://", "postgresql://")
+            )
+            try:
+                return await c.fetch(sql)
+            finally:
+                await c.close()
+
+        alembic("upgrade", "head")
+        rows = await fetch(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_name='rack_groups'"
+        )
+        assert len(rows) == 1
+        cols = await fetch(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name='racks'"
+        )
+        assert {"group_id", "group_position"} <= {
+            r["column_name"] for r in cols
+        }
+
+        # downgrade restores the pre-0021 schema
+        alembic("downgrade", "-1")
+        rows = await fetch(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_name='rack_groups'"
+        )
+        assert len(rows) == 0
+        cols = await fetch(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name='racks'"
+        )
+        assert "group_id" not in {r["column_name"] for r in cols}
+        cols = await fetch(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name='rack_devices'"
+        )
+        assert "watts" not in {r["column_name"] for r in cols}
+
+        # and upgrades again cleanly
+        alembic("upgrade", "head")
+        rows = await fetch(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_name='rack_groups'"
+        )
+        assert len(rows) == 1
+        cols = await fetch(
+            "SELECT column_name, data_type, numeric_precision, numeric_scale "
+            "FROM information_schema.columns WHERE table_name='rack_devices' "
+            "AND column_name IN ('watts','weight_kg')"
+        )
+        types = {r["column_name"]: r["data_type"] for r in cols}
+        assert types == {"watts": "integer", "weight_kg": "numeric"}
+        assert {r["numeric_scale"] for r in cols if r["column_name"] == "weight_kg"} == {2}
+
+        conn = await asyncpg.connect(f"{root}/postgres{query}")
+        try:
+            await conn.execute(f'DROP DATABASE IF EXISTS "{scratch}"')
+        finally:
+            await conn.close()
+
+    asyncio.run(_run())

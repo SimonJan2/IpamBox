@@ -6,7 +6,29 @@ Physical rack elevations — which devices sit in which U slots, on which face.
 
 [Racks](/racks) works like the other entity pages: search, column sort, pin,
 drag to reorder, row colors, history. Each row shows the device count and a
-used-U bar (`used_u / height_u` — front and rear gear sharing a U counts once).
+used-U bar (`used_u / height_u` — front and rear gear sharing a U counts once),
+plus a **Capacity** column summing device `watts`/`weight_kg` (dashes when no
+device supplies a value).
+
+## Rack groups (bayed rows)
+
+A datacenter row is never one rack. **Rack groups** collect racks standing
+side by side — the "Rack groups" panel at the top of the racks page lists
+them with member counts; clicking a name opens the **row view**
+(`/racks/groups/[id]`): the member racks drawn left to right, bottom-aligned
+like a real bayed row, each with its own health dots. The strip scrolls
+horizontally for wide rows; the header rolls up group totals (U used/free,
+Σ watts, Σ kg).
+
+- Assign a rack to a group in its dialog — pick the group and optionally a
+  **Position** (left-to-right; blank appends at the row's right end). Setting
+  the group back to *None* removes it.
+- Group rows filter like VLAN groups: the filter button on a group row
+  scopes the rack table to its members.
+- With write access, the row view's **Edit** toggle lets you drag a device
+  sideways onto another rack's U row — a real cross-rack move validated by
+  the API. A mounted child dropped on a U row unmounts; a carrier carries
+  its children across racks with it.
 
 ## Rack detail
 
@@ -84,6 +106,15 @@ linked [asset](/docs/inventory) and IP address — with the IP's status badge
 and relative *last seen* ("2h ago"). The device table below lists every
 placement top-down, including a Status column for the linked IP.
 
+### Capacity totals
+
+When any device in the rack carries **Power (W)** or **Weight (kg)**, the
+header shows the rack's roll-up — e.g. `Σ 1.2 kW · 34 kg` — hidden entirely
+when no device supplies either value. The same sums appear per rack in the
+group row view and per group in its header, and the
+[dashboard](/) "Rack capacity" card charts the fleet's used/total U with the
+fullest racks.
+
 ### Finding free space
 
 The header shows a **next free U** hint for a 1U front device. In the
@@ -141,15 +172,17 @@ a drag-and-drop editor:
 |---|---|
 | **Name** | Searchable from the palette |
 | **Site / Room** | Where the rack lives (room is free text) |
+| **Rack group / Position** | Bayed-row membership; position orders left-to-right (blank appends) |
 | **Height (U)** | 1–100, default 42 |
 | **Rail width** | 19″ or 10″ |
 | **Description / Notes** | Free text |
 
 Devices: name, device type (free text or library slug), U position, height,
-face, colour, category, manufacturer/model, linked asset/IP, notes — plus
-**Mounted in**/**Slot** for carrier children and **Carrier layout** to make
-the device itself a carrier. The **device library** in the add dialog
-pre-fills common gear (servers, switches, PDUs, blanks, carrier trays).
+face, colour, category, manufacturer/model, linked asset/IP, **Power (W)**,
+**Weight (kg)**, notes — plus **Mounted in**/**Slot** for carrier children
+and **Carrier layout** to make the device itself a carrier. The **device
+library** in the add dialog pre-fills common gear (servers, switches, PDUs,
+blanks, carrier trays) — including power/weight where upstream publishes it.
 
 ## Device image library
 
@@ -160,8 +193,9 @@ the complete Check Point / Aruba / HPE-storage families even where no image
 exists, plus a curated set of generic rack gear; CC0 — see
 `/rack-library/ATTRIBUTION.md` in the shipped files). Entries carry real
 dimensions (`u_height`, `is_full_depth`), product photos, and where
-upstream publishes them, typical power draw and weight — those feed the
-capacity rollup, they are not stored on `rack_devices`.
+upstream publishes them, typical power draw and weight — picking an entry
+pre-fills the form's Power/Weight fields, which persist on the device and
+feed the rack/group capacity rollups.
 
 - Picking a library entry sets the *device type* slug; the elevation then
   draws the product's front/rear photo instead of a colour block. Rear view

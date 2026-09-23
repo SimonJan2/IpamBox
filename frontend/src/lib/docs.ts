@@ -159,10 +159,10 @@ export const DOC_ARTICLES: DocArticle[] = [
   {
     slug: "racks",
     title: "Racks",
-    description: "Rack elevations — device placement, faces, and Rackula round-trip.",
+    description: "Rack elevations, bayed rack groups, capacity rollups, and Rackula round-trip.",
     category: "inventory",
     icon: Container,
-    keywords: ["rack", "elevation", "rackula", "cabinet", "u position", "datacenter"],
+    keywords: ["rack", "elevation", "rackula", "cabinet", "u position", "datacenter", "group", "row", "power", "watts", "weight", "capacity"],
   },
   {
     slug: "services",

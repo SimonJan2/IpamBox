@@ -23,7 +23,7 @@ from app.models.circuit import Circuit
 from app.models.custom_list import CustomList, CustomListRow
 from app.models.ip_address import IPAddress
 from app.models.prefix import Prefix
-from app.models.rack import Rack, RackDevice
+from app.models.rack import Rack, RackDevice, RackGroup
 from app.models.service import Service
 from app.models.site import Site
 from app.models.vlan import VLAN
@@ -39,6 +39,7 @@ from app.schemas.search import (
     SearchOut,
     SearchPrefix,
     SearchRack,
+    SearchRackGroup,
     SearchService,
     SearchSite,
     SearchVlan,
@@ -83,7 +84,7 @@ async def search(
     empty = SearchOut(
         addresses=[], prefixes=[], sites=[], vrfs=[], vlans=[],
         circuits=[], certificates=[], assets=[], services=[],
-        lists=[], list_rows=[], racks=[], jump=None,
+        lists=[], list_rows=[], racks=[], rack_groups=[], jump=None,
     )
     q = q.strip()
     if not q:
@@ -179,7 +180,8 @@ async def search(
         .where(match(CustomList.name, CustomList.description))
         .order_by(CustomList.id)
     )
-    # rack names/rooms, plus racks containing a matching device name
+    # rack names/rooms, plus racks containing a matching device name or
+    # sitting in a matching group
     racks = await take(
         select(Rack)
         .where(
@@ -190,9 +192,17 @@ async def search(
                         match(RackDevice.name, RackDevice.model)
                     )
                 ),
+                Rack.group_id.in_(
+                    select(RackGroup.id).where(match(RackGroup.name))
+                ),
             )
         )
         .order_by(Rack.name)
+    )
+    rack_groups = await take(
+        select(RackGroup)
+        .where(match(RackGroup.name, RackGroup.description))
+        .order_by(RackGroup.name)
     )
     # row search: jsonb::text match across all cells, joined to its list
     list_row_hits = await take_rows(
@@ -326,6 +336,10 @@ async def search(
         racks=[
             SearchRack(id=r.id, name=r.name, room=r.room, site_id=r.site_id)
             for r in racks
+        ],
+        rack_groups=[
+            SearchRackGroup(id=g.id, name=g.name, site_id=g.site_id)
+            for g in rack_groups
         ],
         jump=jump,
     )

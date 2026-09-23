@@ -1,5 +1,6 @@
 import enum
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
@@ -7,6 +8,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Index,
+    Numeric,
     String,
     Text,
     func,
@@ -23,6 +25,35 @@ class RackFace(str, enum.Enum):
     BOTH = "both"
 
 
+class RackGroup(Base):
+    """A bayed row: racks ordered left-to-right as they stand in the DC."""
+
+    __tablename__ = "rack_groups"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    site_id: Mapped[int | None] = mapped_column(
+        ForeignKey("sites.id", ondelete="SET NULL"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    description: Mapped[str | None] = mapped_column(Text)
+    sort_order: Mapped[int | None] = mapped_column(index=True)
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    row_color: Mapped[str | None] = mapped_column(String(7))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    site: Mapped["Site | None"] = relationship()  # noqa: F821
+    racks: Mapped[list["Rack"]] = relationship(
+        back_populates="group",
+        order_by="Rack.group_position",
+        lazy="selectin",
+    )
+
+    def __changelog_repr__(self) -> str:
+        return self.name or f"rack_group#{self.id}"
+
+
 class Rack(Base):
     """A physical rack/cabinet at a site — owns rack_devices rows."""
 
@@ -32,6 +63,12 @@ class Rack(Base):
     site_id: Mapped[int | None] = mapped_column(
         ForeignKey("sites.id", ondelete="SET NULL"), index=True
     )
+    # Bayed-row membership: which group + left-to-right position inside it.
+    # NULL group = standalone rack; NULL position sorts to the row's end.
+    group_id: Mapped[int | None] = mapped_column(
+        ForeignKey("rack_groups.id", ondelete="SET NULL"), index=True
+    )
+    group_position: Mapped[int | None] = mapped_column()
     name: Mapped[str] = mapped_column(String(255), index=True)
     description: Mapped[str | None] = mapped_column(Text)
     room: Mapped[str | None] = mapped_column(String(255))
@@ -46,7 +83,12 @@ class Rack(Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
+    __table_args__ = (
+        Index("ix_racks_group_pos", "group_id", "group_position"),
+    )
+
     site: Mapped["Site | None"] = relationship()  # noqa: F821
+    group: Mapped["RackGroup | None"] = relationship(back_populates="racks")
     # selectin keeps collection access async-safe (RackDetail validates it).
     devices: Mapped[list["RackDevice"]] = relationship(
         back_populates="rack",
@@ -104,6 +146,9 @@ class RackDevice(Base):
     )
     slot: Mapped[int | None] = mapped_column()
     slot_layout: Mapped[str | None] = mapped_column(String(16))
+    # Nameplate draw / installed weight — feed rack + group capacity rollups.
+    watts: Mapped[int | None] = mapped_column()
+    weight_kg: Mapped[Decimal | None] = mapped_column(Numeric(7, 2))
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

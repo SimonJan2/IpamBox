@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BookOpen,
+  Boxes,
   Building2,
   Cable,
   Container,
@@ -89,6 +90,11 @@ interface SearchOut {
     id: number;
     name: string;
     room: string | null;
+    site_id: number | null;
+  }[];
+  rack_groups: {
+    id: number;
+    name: string;
     site_id: number | null;
   }[];
   jump: {
@@ -217,6 +223,14 @@ function itemsFor(res: SearchOut, q: string): Item[] {
       label: r.name,
       sub: r.room ?? undefined,
       href: `/racks/${r.id}`,
+    });
+  for (const g of res.rack_groups ?? [])
+    items.push({
+      group: "Racks",
+      icon: Boxes,
+      label: g.name,
+      sub: "rack group",
+      href: `/racks/groups/${g.id}`,
     });
   return items;
 }

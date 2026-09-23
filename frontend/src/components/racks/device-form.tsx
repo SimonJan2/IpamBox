@@ -59,6 +59,8 @@ const EMPTY = {
   carrier_id: "none",
   slot: "0",
   slot_layout: "none",
+  watts: "",
+  weight_kg: "",
   notes: "",
 };
 
@@ -126,6 +128,9 @@ export function DeviceFormDialog({
               : "none",
             slot: String(editing.slot ?? 0),
             slot_layout: editing.slot_layout ?? "none",
+            watts: editing.watts != null ? String(editing.watts) : "",
+            weight_kg:
+              editing.weight_kg != null ? String(editing.weight_kg) : "",
             notes: editing.notes ?? "",
           }
         : {
@@ -170,6 +175,8 @@ export function DeviceFormDialog({
       manufacturer: d.manufacturer ?? "",
       model: d.model ?? "",
       slot_layout: d.slot_layout ?? "none",
+      watts: d.watts != null ? String(d.watts) : f.watts,
+      weight_kg: d.weight_kg != null ? String(d.weight_kg) : f.weight_kg,
     }));
 
   const submit = async () => {
@@ -196,6 +203,8 @@ export function DeviceFormDialog({
           form.slot_layout === "none"
             ? null
             : (form.slot_layout as SlotLayout),
+        watts: form.watts !== "" ? Number(form.watts) : null,
+        weight_kg: form.weight_kg !== "" ? Number(form.weight_kg) : null,
         notes: form.notes || null,
       };
       if (editing) {
@@ -475,6 +484,30 @@ export function DeviceFormDialog({
           <div className="grid gap-1.5">
             <Label htmlFor={`${uid}-model`}>Model</Label>
             <Input id={`${uid}-model`} dir="auto" value={form.model} onChange={set("model")} />
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor={`${uid}-watts`}>Power (W)</Label>
+            <Input
+              id={`${uid}-watts`}
+              dir="ltr"
+              type="number"
+              min={0}
+              placeholder="nameplate draw"
+              value={form.watts}
+              onChange={set("watts")}
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor={`${uid}-weight`}>Weight (kg)</Label>
+            <Input
+              id={`${uid}-weight`}
+              dir="ltr"
+              type="number"
+              min={0}
+              step="0.01"
+              value={form.weight_kg}
+              onChange={set("weight_kg")}
+            />
           </div>
           <div className="grid gap-1.5">
             <Label htmlFor={`${uid}-asset`}>Linked asset</Label>

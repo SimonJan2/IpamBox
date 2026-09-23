@@ -94,6 +94,12 @@ class SearchRack(BaseModel):
     site_id: int | None
 
 
+class SearchRackGroup(BaseModel):
+    id: int
+    name: str
+    site_id: int | None
+
+
 class SearchJump(BaseModel):
     """q parsed as an IP address -> the deepest prefix containing it."""
     address: str
@@ -115,4 +121,5 @@ class SearchOut(BaseModel):
     lists: list[SearchList] = []
     list_rows: list[SearchListRow] = []
     racks: list[SearchRack] = []
+    rack_groups: list[SearchRackGroup] = []
     jump: SearchJump | None
