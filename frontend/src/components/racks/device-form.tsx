@@ -5,7 +5,11 @@ import { toast } from "sonner";
 
 import { api } from "@/lib/api";
 import { useAsyncData } from "@/lib/use-async-data";
-import { RACK_LIBRARY, type LibraryDevice } from "@/lib/rack-library";
+import {
+  loadRackLibrary,
+  RACK_LIBRARY,
+  type LibraryDevice,
+} from "@/lib/rack-library";
 import { slotCount, slotLabel } from "@/lib/rack-collision";
 import { foldHebrew } from "@/lib/utils";
 import type {
@@ -94,6 +98,9 @@ export function DeviceFormDialog({
     () => api.get<IpAddress[]>("/api/v1/addresses?limit=200"),
     [open]
   );
+  // Bundled manifest (falls back to the tiny inline set while it loads).
+  const libQ = useAsyncData(loadRackLibrary, [open]);
+  const library = libQ.data ?? RACK_LIBRARY;
 
   useEffect(() => {
     if (!open) return;
@@ -143,13 +150,13 @@ export function DeviceFormDialog({
 
   const libMatches = useMemo(() => {
     const needle = foldHebrew(libFilter.toLowerCase());
-    if (!needle) return RACK_LIBRARY;
-    return RACK_LIBRARY.filter((d) =>
+    if (!needle) return library;
+    return library.filter((d) =>
       [d.slug, d.name, d.manufacturer, d.model].some(
         (f) => f && foldHebrew(f.toLowerCase()).includes(needle)
       )
     );
-  }, [libFilter]);
+  }, [libFilter, library]);
 
   const applyLibrary = (d: LibraryDevice) =>
     setForm((f) => ({
@@ -249,7 +256,7 @@ export function DeviceFormDialog({
               />
               {libFilter && (
                 <div className="max-h-36 overflow-y-auto rounded-md border">
-                  {libMatches.map((d) => (
+                  {libMatches.slice(0, 60).map((d) => (
                     <button
                       key={d.slug}
                       type="button"
@@ -259,19 +266,34 @@ export function DeviceFormDialog({
                       }}
                       className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-sm hover:bg-accent/50"
                     >
-                      <span
-                        className="h-3 w-3 shrink-0 rounded-sm"
-                        style={{ backgroundColor: d.colour }}
-                      />
+                      {d.front_image ? (
+                        // eslint-disable-next-line @next/next/no-img-element -- tiny bundled webp, no next/image benefit
+                        <img
+                          src={`/rack-library/${d.front_image}`}
+                          alt=""
+                          loading="lazy"
+                          className="h-3.5 w-10 shrink-0 rounded-sm border object-cover"
+                        />
+                      ) : (
+                        <span
+                          className="h-3 w-3 shrink-0 rounded-sm"
+                          style={{ backgroundColor: d.colour }}
+                        />
+                      )}
                       <span dir="auto" className="truncate">{d.name}</span>
-                      <span className="ml-auto text-xs text-muted-foreground">
-                        {d.u_height}U
+                      <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                        {d.u_height}U{d.watts ? ` · ${d.watts}W` : ""}
                       </span>
                     </button>
                   ))}
                   {libMatches.length === 0 && (
                     <p className="px-2 py-1.5 text-sm text-muted-foreground">
                       No library match — fill the fields manually.
+                    </p>
+                  )}
+                  {libMatches.length > 60 && (
+                    <p className="px-2 py-1.5 text-xs text-muted-foreground">
+                      +{libMatches.length - 60} more — keep typing to narrow it down.
                     </p>
                   )}
                 </div>

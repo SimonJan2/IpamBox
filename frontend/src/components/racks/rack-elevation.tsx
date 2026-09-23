@@ -1,10 +1,23 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ComponentProps } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+  type ComponentProps,
+} from "react";
 
 import { cn } from "@/lib/utils";
 import { STATUS_TOKENS } from "@/lib/status-tokens";
 import { slotLabel } from "@/lib/rack-collision";
+import {
+  libraryBySlug,
+  libraryImage,
+  loadRackLibrary,
+  type LibraryDevice,
+} from "@/lib/rack-library";
+import { useAsyncData } from "@/lib/use-async-data";
 import type { IpStatus, RackDevice, RackFace } from "@/types";
 
 export const FACE_BADGE: Record<RackFace, string> = { front: "F", rear: "R", both: "F+R" };
@@ -52,6 +65,23 @@ export interface SlotRect {
   y: number;
   w: number;
   h: number;
+}
+
+/** Module-scope hook shared by the elevation + editor: the bundled device
+ *  library keyed by slug (manifest load is cached by loadRackLibrary). */
+export function useLibraryBySlug(): Map<string, LibraryDevice> {
+  const libQ = useAsyncData(loadRackLibrary, []);
+  return useMemo(() => libraryBySlug(libQ.data ?? []), [libQ.data]);
+}
+
+/** Image URL for a device viewed from `view`, when its `device_type` slug
+ *  matches a manifest entry that bundles one. Undefined -> colour block. */
+export function deviceImage(
+  d: Pick<RackDevice, "device_type">,
+  view: "front" | "rear",
+  bySlug: Map<string, LibraryDevice>
+): string | undefined {
+  return libraryImage(d.device_type ? bySlug.get(d.device_type) : undefined, view);
 }
 
 /** Sub-rect of a carrier's block for `slot`: halves split left/right,
@@ -133,6 +163,7 @@ export function DeviceBlockSvg({
   focused = false,
   rect,
   compact = false,
+  image,
   ...gProps
 }: {
   d: RackDevice;
@@ -153,7 +184,12 @@ export function DeviceBlockSvg({
   rect?: SlotRect;
   /** Slot rendering: tighter label, no face badge (inherited anyway). */
   compact?: boolean;
+  /** Bundled product image (`/rack-library/...`) — drawn inside the block
+   *  over the colour rect, which stays as backdrop/fallback. */
+  image?: string;
 } & Omit<ComponentProps<"g">, "d">) {
+  // useId's `:r0:` colons break url(#…) fragment refs in some browsers.
+  const clipId = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const pos = u ?? d.u_position;
   const f = face ?? d.face;
   const r = rect ?? {
@@ -163,10 +199,19 @@ export function DeviceBlockSvg({
     h: d.u_height * geom.U - 2,
   };
   const fill = d.colour ?? "#334155";
-  const fg = textOn(d.colour);
+  const fg = image ? "#f8fafc" : textOn(d.colour);
   const maxChars = compact ? 14 : 30;
   const label =
     d.name.length > maxChars ? `${d.name.slice(0, maxChars - 1)}…` : d.name;
+  const fontSize = compact
+    ? Math.min(9, Math.max(6.5, geom.U * 0.4))
+    : Math.min(11, Math.max(8, geom.U * 0.5));
+  /** Name chip over the photo — sized to the (approximate) label box so it
+   *  stays readable without hiding more of the image than needed. */
+  const chipW = image
+    ? Math.min(r.w - 3, label.length * fontSize * 0.58 + 6)
+    : 0;
+  const chipH = image ? Math.min(r.h - 2, fontSize * 1.45) : 0;
   const stroke = ghost === "bad"
     ? "stroke-rose-400"
     : ghost === "ok" || selected
@@ -188,6 +233,24 @@ export function DeviceBlockSvg({
         strokeWidth={ghost || selected ? 2 : focused ? 1.5 : 0.5}
         strokeDasharray={ghost === "ok" || ghost === "bad" ? "4 2" : undefined}
       />
+      {image && (
+        <>
+          <clipPath id={clipId}>
+            <rect x={r.x} y={r.y} width={r.w} height={r.h} rx={2} />
+          </clipPath>
+          <image
+            href={image}
+            x={r.x}
+            y={r.y}
+            width={r.w}
+            height={r.h}
+            preserveAspectRatio="xMidYMid meet"
+            clipPath={`url(#${clipId})`}
+            opacity={ghost === "drag" ? 0.35 : 1}
+            className="pointer-events-none select-none"
+          />
+        </>
+      )}
       {health && (
         <circle
           cx={r.x + (compact ? 6 : 7)}
@@ -201,17 +264,25 @@ export function DeviceBlockSvg({
           )}
         />
       )}
+      {image && (
+        <rect
+          x={r.x + (r.w - chipW) / 2}
+          y={r.y + (r.h - chipH) / 2}
+          width={chipW}
+          height={chipH}
+          rx={2}
+          fill="#0f172a"
+          fillOpacity={0.62}
+          className="pointer-events-none"
+        />
+      )}
       <text
         x={r.x + r.w / 2}
         y={r.y + r.h / 2}
         textAnchor="middle"
         dominantBaseline="central"
         fill={fg}
-        fontSize={
-          compact
-            ? Math.min(9, Math.max(6.5, geom.U * 0.4))
-            : Math.min(11, Math.max(8, geom.U * 0.5))
-        }
+        fontSize={fontSize}
         className="pointer-events-none select-none"
       >
         {label}
@@ -359,6 +430,7 @@ export function RackElevation({
   const [view, setView] = useState<"front" | "rear">("front");
   const effView = forceView ?? view;
   const [health, setHealth] = useState(true);
+  const libBySlug = useLibraryBySlug();
   useEffect(() => {
     try {
       if (localStorage.getItem(HEALTH_KEY) === "0") setHealth(false);
@@ -477,6 +549,7 @@ export function RackElevation({
               geom={geom}
               health={health}
               selected={selected}
+              image={deviceImage(d, effView, libBySlug)}
               onClick={() => onSelect?.(selected ? null : d)}
               className={onSelect ? "cursor-pointer" : undefined}
               role={onSelect ? "button" : undefined}
@@ -495,6 +568,7 @@ export function RackElevation({
               health={health}
               selected={d.id === selectedId}
               compact
+              image={deviceImage(d, effView, libBySlug)}
               rect={slotRect(geom, carrier, d.slot ?? 0)}
               onClick={() => onSelect?.(d.id === selectedId ? null : d)}
               className={onSelect ? "cursor-pointer" : undefined}

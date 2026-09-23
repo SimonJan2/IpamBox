@@ -11,9 +11,11 @@ used-U bar (`used_u / height_u` — front and rear gear sharing a U counts once)
 ## Rack detail
 
 Open a rack to see its **elevation**: an SVG drawing of the rack, U1 at the
-bottom, devices as colour blocks. The **Front / Rear** toggle picks which
-face is drawn — front and rear devices legitimately share U slots, so each
-view shows only its own face (plus `both`-face gear like shelves).
+bottom. Devices whose *device type* matches the bundled library render as
+real product photos (front and rear); everything else renders as a colour
+block. The **Front / Rear** toggle picks which face is drawn — front and
+rear devices legitimately share U slots, so each view shows only its own
+face (plus `both`-face gear like shelves).
 
 ### Editing the elevation
 
@@ -148,3 +150,30 @@ face, colour, category, manufacturer/model, linked asset/IP, notes — plus
 **Mounted in**/**Slot** for carrier children and **Carrier layout** to make
 the device itself a carrier. The **device library** in the add dialog
 pre-fills common gear (servers, switches, PDUs, blanks, carrier trays).
+
+## Device image library
+
+The library behind the picker is a bundled subset of the NetBox
+[devicetype-library](https://github.com/netbox-community/devicetype-library)
+(~1,600 device types — every upstream device that ships an elevation image,
+the complete Check Point / Aruba / HPE-storage families even where no image
+exists, plus a curated set of generic rack gear; CC0 — see
+`/rack-library/ATTRIBUTION.md` in the shipped files). Entries carry real
+dimensions (`u_height`, `is_full_depth`), product photos, and where
+upstream publishes them, typical power draw and weight — those feed the
+capacity rollup, they are not stored on `rack_devices`.
+
+- Picking a library entry sets the *device type* slug; the elevation then
+  draws the product's front/rear photo instead of a colour block. Rear view
+  uses the rear photo, falling back to the front one; entries without
+  images keep their colour block. Health dots, selection and editing work
+  the same on photo blocks.
+- Everything is served from `/rack-library/` inside the app — nothing is
+  fetched from the internet at runtime, so it works air-gapped.
+- **Refreshing** (maintainers): `cd frontend && npm run build:rack-library`
+  re-pulls the curated slug list, every upstream device with an elevation
+  image, and the FULL_IMPORT vendor families (Check Point, Aruba, HPE
+  storage — image or not) from the upstream repo, re-encodes images as
+  ≤400px WebP and rewrites the manifest (`--curated-only` skips the wide
+  sweeps); `npm run check:rack-library` verifies the bundle. The generated
+  files are committed — refresh them per release, like the OUI database.

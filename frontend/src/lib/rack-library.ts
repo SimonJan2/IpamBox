@@ -1,8 +1,18 @@
-/** Starter device catalog for the add-device form's library picker.
+/** Device catalog for the add-device form's library picker and the
+ *  elevation's product images.
  *
- * Slugs double as Rackula `device_type` values on export, so keep them
- * stable lowercase-dash identifiers. `face_default` preselects the mounting
- * face; everything prefills the form and stays editable.
+ *  The real catalog is generated at build time into
+ *  `public/rack-library/manifest.json` by `scripts/build-rack-library.mjs`
+ *  (curated NetBox devicetype-library subset — see public/rack-library/
+ *  ATTRIBUTION.md). `loadRackLibrary()` fetches it once and caches it in
+ *  module scope; `RACK_LIBRARY` starts as a tiny inline fallback so a
+ *  source checkout without the generated bundle still works.
+ *
+ *  Slugs double as Rackula `device_type` values on export, so keep them
+ *  stable lowercase-dash identifiers. `face_default` preselects the
+ *  mounting face; everything prefills the form and stays editable.
+ *  `watts`/`weight_kg` are informational here — the V2.5 capacity rollup
+ *  consumes them; they are NOT stored on rack_devices.
  */
 import type { RackFace, SlotLayout } from "@/types";
 
@@ -12,36 +22,69 @@ export interface LibraryDevice {
   manufacturer: string;
   model: string;
   u_height: number;
+  is_full_depth?: boolean;
   face_default: RackFace;
   colour: string;
   category: string;
+  /** Typical max draw (W) from the upstream def, when published. */
+  watts?: number;
+  weight_kg?: number;
+  /** Paths relative to /rack-library/ — present only when bundled. */
+  front_image?: string;
+  rear_image?: string;
   /** Set = this entry is a carrier tray other gear mounts into. */
   slot_layout?: SlotLayout;
 }
 
+/** Inline fallback — used until the manifest loads and whenever it 404s
+ *  (dev checkout without a generated bundle). Deliberately tiny; the
+ *  manifest carries the full catalog. */
 export const RACK_LIBRARY: LibraryDevice[] = [
   { slug: "server-1u", name: "1U Server", manufacturer: "Generic", model: "1U Rack Server", u_height: 1, face_default: "front", colour: "#38bdf8", category: "server" },
   { slug: "server-2u", name: "2U Server", manufacturer: "Generic", model: "2U Rack Server", u_height: 2, face_default: "front", colour: "#0ea5e9", category: "server" },
-  { slug: "server-4u", name: "4U Server", manufacturer: "Generic", model: "4U Rack Server", u_height: 4, face_default: "front", colour: "#0284c7", category: "server" },
   { slug: "switch-24p", name: "24-port Switch", manufacturer: "Generic", model: "24p L3 Switch", u_height: 1, face_default: "front", colour: "#34d399", category: "network" },
-  { slug: "switch-48p", name: "48-port Switch", manufacturer: "Generic", model: "48p L3 Switch", u_height: 1, face_default: "front", colour: "#10b981", category: "network" },
-  { slug: "router", name: "Router", manufacturer: "Generic", model: "Edge Router", u_height: 1, face_default: "front", colour: "#059669", category: "network" },
-  { slug: "firewall-1u", name: "Firewall", manufacturer: "Generic", model: "1U Firewall", u_height: 1, face_default: "front", colour: "#f43f5e", category: "firewall" },
-  { slug: "patch-panel-24", name: "Patch Panel 24", manufacturer: "Generic", model: "24p Cat6", u_height: 1, face_default: "front", colour: "#fbbf24", category: "patch-panel" },
-  { slug: "patch-panel-48", name: "Patch Panel 48", manufacturer: "Generic", model: "48p Cat6A", u_height: 1, face_default: "front", colour: "#f59e0b", category: "patch-panel" },
-  { slug: "pdu-1u", name: "Rack PDU", manufacturer: "Generic", model: "1U Switched PDU", u_height: 1, face_default: "rear", colour: "#a78bfa", category: "power" },
-  { slug: "ups-2u", name: "UPS 2U", manufacturer: "Generic", model: "2U Line-Interactive UPS", u_height: 2, face_default: "front", colour: "#818cf8", category: "power" },
   { slug: "blank-1u", name: "Blank Panel", manufacturer: "Generic", model: "1U Blank", u_height: 1, face_default: "front", colour: "#64748b", category: "blank" },
-  { slug: "brush-1u", name: "Brush Panel", manufacturer: "Generic", model: "1U Brush Strip", u_height: 1, face_default: "front", colour: "#94a3b8", category: "cable-management" },
-  { slug: "shelf-1u", name: "Rack Shelf", manufacturer: "Generic", model: "1U Cantilever Shelf", u_height: 1, face_default: "front", colour: "#cbd5e1", category: "shelf" },
   { slug: "carrier-dual", name: "1U dual shelf", manufacturer: "Generic", model: "1U Half-Width Dual Shelf", u_height: 1, face_default: "front", colour: "#cbd5e1", category: "carrier", slot_layout: "halves" },
-  { slug: "carrier-quad", name: "1U quad bracket", manufacturer: "Generic", model: "1U Quad Bracket", u_height: 1, face_default: "front", colour: "#cbd5e1", category: "carrier", slot_layout: "quarters" },
   { slug: "carrier-shelf", name: "Rack shelf", manufacturer: "Generic", model: "1U Carrier Tray", u_height: 1, face_default: "front", colour: "#cbd5e1", category: "carrier", slot_layout: "shelf" },
-  { slug: "kvm-console", name: "KVM Console", manufacturer: "Generic", model: "1U LCD Console", u_height: 1, face_default: "front", colour: "#e2e8f0", category: "kvm" },
-  { slug: "dell-r650", name: "Dell PowerEdge R650", manufacturer: "Dell", model: "PowerEdge R650", u_height: 1, face_default: "front", colour: "#38bdf8", category: "server" },
-  { slug: "dell-r750", name: "Dell PowerEdge R750", manufacturer: "Dell", model: "PowerEdge R750", u_height: 2, face_default: "front", colour: "#0ea5e9", category: "server" },
-  { slug: "dl380-g10", name: "HPE ProLiant DL380", manufacturer: "HPE", model: "ProLiant DL380 Gen10", u_height: 2, face_default: "front", colour: "#22d3ee", category: "server" },
-  { slug: "udm-pro", name: "UniFi Dream Machine Pro", manufacturer: "Ubiquiti", model: "UDM-Pro", u_height: 1, face_default: "front", colour: "#34d399", category: "network" },
-  { slug: "usw-48poe", name: "UniFi Switch 48 PoE", manufacturer: "Ubiquiti", model: "USW-48-PoE", u_height: 1, face_default: "front", colour: "#4ade80", category: "network" },
-  { slug: "apc-sm1500", name: "APC Smart-UPS", manufacturer: "APC", model: "SMX1500RM2U", u_height: 2, face_default: "front", colour: "#a78bfa", category: "power" },
 ];
+
+let loading: Promise<LibraryDevice[]> | null = null;
+
+/** Fetch `/rack-library/manifest.json` once (module-scoped cache). On any
+ *  failure the inline fallback stays in place — the returned array is
+ *  always `RACK_LIBRARY`, mutated in place so late readers see the full
+ *  catalog too. */
+export function loadRackLibrary(): Promise<LibraryDevice[]> {
+  loading ??= (async () => {
+    try {
+      const res = await fetch("/rack-library/manifest.json");
+      if (res.ok) {
+        const list = (await res.json()) as LibraryDevice[];
+        if (Array.isArray(list) && list.length > 0)
+          RACK_LIBRARY.splice(0, RACK_LIBRARY.length, ...list);
+      }
+    } catch {
+      // Offline or no generated bundle — keep the inline fallback.
+    }
+    return RACK_LIBRARY;
+  })();
+  return loading;
+}
+
+/** slug -> entry lookup for `device_type` matching on the elevation. */
+export function libraryBySlug(
+  list: LibraryDevice[] = RACK_LIBRARY
+): Map<string, LibraryDevice> {
+  return new Map(list.map((d) => [d.slug, d]));
+}
+
+/** Bundled image URL for `entry` viewed from `view`, or undefined when the
+ *  entry has no image (caller falls back to the colour block). Rear view
+ *  prefers `rear_image` and falls back to `front_image`. */
+export function libraryImage(
+  entry: LibraryDevice | undefined,
+  view: "front" | "rear"
+): string | undefined {
+  const rel = view === "rear" ? entry?.rear_image ?? entry?.front_image : entry?.front_image;
+  return rel ? `/rack-library/${rel}` : undefined;
+}

@@ -30,12 +30,14 @@ import type { IpStatus, RackDevice, RackFace } from "@/types";
 import {
   CarrierFrameSvg,
   DeviceBlockSvg,
+  deviceImage,
   HEALTH_KEY,
   RackElevation,
   RackUGrid,
   rackGeom,
   slotRect,
   textOn,
+  useLibraryBySlug,
   usedUSlots,
   type RackGeom,
   type SlotRect,
@@ -116,6 +118,7 @@ function EditorBlock({
   focused,
   rect,
   compact = false,
+  image,
   suppressClick,
   onSelect,
   onKeyMove,
@@ -134,6 +137,8 @@ function EditorBlock({
   /** Carrier children pass their slot's sub-rect. */
   rect?: SlotRect;
   compact?: boolean;
+  /** Bundled product image for the current view (see DeviceBlockSvg). */
+  image?: string;
   suppressClick: { current: boolean };
   onSelect?: (d: RackDevice | null) => void;
   onKeyMove: (d: RackDevice, e: React.KeyboardEvent<SVGGElement>) => void;
@@ -192,6 +197,7 @@ function EditorBlock({
       face={pending?.face}
       rect={rect}
       compact={compact}
+      image={image}
     />
   );
 }
@@ -230,6 +236,7 @@ export function RackEditor({
   const [view, setView] = useState<"front" | "rear">("front");
   const [health, setHealth] = useState(true);
   const [edit, setEdit] = useState(false);
+  const libBySlug = useLibraryBySlug();
   const [pending, setPending] = useState<Pending | null>(null);
   const [drag, setDrag] = useState<DragSession | null>(null);
   const [overU, setOverU] = useState<number | null>(null);
@@ -756,6 +763,7 @@ export function RackEditor({
               pending={pending?.id === d.id ? pending : null}
               pendingValid={pendValid}
               focused={focusId === d.id}
+              image={deviceImage(d, view, libBySlug)}
               suppressClick={suppressClick}
               onSelect={onSelect}
               onKeyMove={keyMove}
@@ -817,6 +825,7 @@ export function RackEditor({
                 focused={focusId === d.id}
                 rect={slotRect(geom, carrier, d.slot ?? 0)}
                 compact
+                image={deviceImage(d, view, libBySlug)}
                 suppressClick={suppressClick}
                 onSelect={onSelect}
                 onKeyMove={keyMove}

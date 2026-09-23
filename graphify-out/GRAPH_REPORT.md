@@ -1,600 +1,600 @@
 # Graph Report - IpamBox  (2026-09-23)
 
 ## Corpus Check
-- 44 files · ~305,188 words
+- 355 files · ~911,845 words
 - Verdict: corpus is large enough that graph structure adds value.
+- Unclassified: 20 file(s) not represented in the graph (top: (none) 7, .csv 6, .ini 2)
 
 ## Summary
-- 3212 nodes · 8498 edges · 201 communities (89 shown, 84 thin omitted)
-- Extraction: 94% EXTRACTED · 6% INFERRED · 0% AMBIGUOUS · INFERRED: 526 edges (avg confidence: 0.93)
+- 2955 nodes · 9754 edges · 181 communities (92 shown, 62 thin omitted)
+- Extraction: 93% EXTRACTED · 7% INFERRED · 0% AMBIGUOUS · INFERRED: 641 edges (avg confidence: 0.94)
 - Token cost: 0 input · 0 output
 
+## Graph Freshness
+- Built from commit: `408c2a0a`
+- Run `git rev-parse HEAD` and compare to check if the graph is stale.
+- Run `graphify update .` after code changes (no API cost).
+
 ## Community Hubs (Navigation)
-- Client UI Pages
-- Rack API & Devices
-- Auth & Settings UI
-- Runtime Settings & Worker
-- Backend Test Suite
-- IPAM Prefix Logic
-- App Entry & Maintenance
-- Docs & Deployment
-- Prefix Tree UI
-- Generic CRUD Router
-- Auth & Security
-- Table & List UI
-- IP Ranges & Discovery
-- IP Addresses API
-- Scanner & OUI
-- Community 15
-- Community 16
-- Community 17
-- Community 18
-- Community 19
-- Community 20
-- Community 21
-- Community 22
-- Community 23
-- Community 24
-- Community 25
-- Community 26
-- Community 27
-- Community 28
-- Community 29
-- Community 30
-- Community 31
-- Community 32
-- Community 33
-- Community 34
-- Community 35
-- Community 36
-- Community 37
-- Community 38
-- Community 39
-- Community 40
-- Community 41
-- Community 42
-- Community 43
-- Community 44
-- Community 45
-- Community 46
-- Community 47
-- Community 48
-- Community 49
-- Community 50
-- Community 51
-- Community 52
-- Community 53
-- Community 54
-- Community 55
-- Community 56
-- Community 57
-- Community 58
-- Community 59
-- Community 60
-- Community 61
-- Community 62
-- Community 63
-- Community 64
-- Community 65
-- Community 66
-- Community 67
-- Community 68
-- Community 69
-- Community 70
-- Community 71
-- Community 72
-- Community 73
-- Community 74
-- Community 75
-- Community 76
-- Community 77
-- Community 78
-- Community 79
-- Community 80
-- Community 81
-- Community 82
-- Community 83
-- Community 84
-- Community 85
-- Community 86
-- Community 87
-- Community 88
-- Community 89
-- Community 90
-- Community 91
-- Community 92
-- Community 93
-- Community 94
-- Community 95
-- Community 96
-- Community 97
-- Community 98
-- Community 99
-- Community 100
-- Community 101
-- Community 102
-- Community 124
-- Community 125
-- Community 126
-- Community 127
-- Community 128
-- Community 129
-- Community 130
-- Community 131
-- Community 132
-- Community 133
-- Community 134
-- Community 135
-- Community 136
-- Community 137
-- Community 138
-- Community 139
-- Community 140
-- Community 141
-- Community 142
-- Community 143
-- Community 144
-- Community 145
-- Community 146
-- Community 147
-- Community 149
-- Community 150
-- Community 151
-- Community 152
-- Community 154
-- Community 155
-- Community 156
-- Community 157
-- Community 158
-- Community 160
-- Community 161
-- Community 163
-- Community 164
-- Community 165
-- Community 166
-- Community 167
-- Community 168
-- Community 170
-- Community 171
-- Community 172
-- Community 173
-- Community 174
-- Community 175
-- Community 176
-- Community 177
-- Community 178
-- Community 179
-- Community 180
-- Community 182
-- Community 183
-- Community 184
-- Community 186
-- Community 187
-- Community 188
-- Community 189
-- Community 190
-- Community 191
-- Community 192
-- Community 193
-- Community 194
-- Community 195
-- Community 196
-- Community 197
-- Community 198
-- Community 199
-- Community 200
+- services/backup.py
+- react
+- IPAMError
+- cn
+- prefixes.py
+- list-client.tsx
+- rackula.ts
+- _get_rack
+- worker.py
+- v1/auth.py
+- IPAddress
+- test_racks.py
+- IpamBox
+- index.ts
+- addresses.py
+- get_redis
+- generate_demo_data.py
+- useAsyncData
+- ip-drawer.tsx
+- command-palette.tsx
+- restore_backup
+- color_rules.py
+- imports.py
+- entities.py
+- clean
+- route-error.tsx
+- _Planner
+- User
+- reconcile
+- package.json
+- test_scanner.py
+- tree/page.tsx
+- parse_site_sheet
+- dependencies
+- maintenance.py
+- v1/search.py
+- UserRole
+- HostResult
+- scanner.py
+- _matrix
+- test_workbook_import.py
+- test_ordering.py
+- extract_list_table
+- test_colors.py
+- build-rack-library.mjs
+- compilerOptions
+- users.py
+- schemas/certificate.py
+- schemas/import_batch.py
+- test_ipam_extras.py
+- test_settings.py
+- v1/settings.py
+- vlans.py
+- ip_display
+- import-client.tsx
+- v1/racks.py
+- _mklist
+- classify_sheet
+- test_search.py
+- RackDevice
+- TestSitesMasterParser
+- run_scan
+- Settings
+- schemas/ip_range.py
+- test_changelog.py
+- _upload
+- hex_color_or_none
+- restore
+- test_allocation.py
+- test_scan_cidr_tcp_fallback_reports_found
+- Racks
+- test_prefix_api.py
+- _FakePool
+- runtime_settings.py
+- TestNormalize
+- devDependencies
+- schemas/asset.py
+- schemas/vrf.py
+- check-rack-library.mjs
+- run_scheduled_backup
+- schemas/service.py
+- test_auth.py
+- _FakePool
+- auth_on
+- Demo import data — ALL FICTIONAL
+- scripts
+- test_entities.py
+- next
+- quick-scan.tsx
+- use-chart-theme.ts
+- get_effective
+- .test_legacy_bezeq_layout
+- env.py
+- Security Policy
+- schemas/changelog.py
+- _positional_columns
+- login/page.tsx
+- SettingsValidationError
+- setup/page.tsx
+- certificates/page.tsx
+- changelog/page.tsx
+- circuits/page.tsx
+- discovery/page.tsx
+- import/page.tsx
+- inventory/page.tsx
+- lists/page.tsx
+- lists/[slug]/page.tsx
+- app/page.tsx
+- prefixes/[id]/page.tsx
+- prefixes/[id]/print/page.tsx
+- racks/[id]/page.tsx
+- prefixes/page.tsx
+- label/page.tsx
+- racks/[id]/print/page.tsx
+- racks/page.tsx
+- scans/page.tsx
+- services/page.tsx
+- appearance/page.tsx
+- backup/page.tsx
+- color-rules/page.tsx
+- data/page.tsx
+- settings/page.tsx
+- scanning/page.tsx
+- security/page.tsx
+- users/page.tsx
+- sites/page.tsx
+- tags/page.tsx
+- vlans/page.tsx
+- arq==0.26.1
+- asyncpg==0.30.0
+- pydantic==2.10.3
+- pytest==8.3.4
+- next-env.d.ts
+- xff-shim.js
+- README.md
+- alembic==1.14.0
+- bcrypt==4.3.0
+- fastapi==0.115.6
+- httpx==0.28.1
+- openpyxl==3.1.5
+- psutil==6.1.0
+- scapy==2.6.1
+- uvicorn[standard]==0.32.1
+- IpamBox App Icon (icon.svg)
+- Root Layout (layout.tsx, title: IpamBox)
+- ip_addresses table
+- Architecture — web/api/scanner/db/redis services
+- Backup & restore (.json.gz snapshots)
+- IPAM feature set (hierarchy, overlap safety, allocation, CSV, workbook import)
+- IpamBox — self-hosted IPAM with built-in LAN scanner
+- Ops endpoints (/healthz, /readyz, /metrics, /api/v1/*)
+- Rack elevations feature (front/rear U placement, Rackula round-trip)
+- LAN scanner (ARP/ICMP/TCP/PTR/OUI reconciliation)
+- vrfs/page.tsx
 
 ## God Nodes (most connected - your core abstractions)
-1. `cn()` - 113 edges
-2. `react` - 95 edges
-3. `User` - 56 edges
-4. `IPAMError` - 55 edges
-5. `lucide-react` - 51 edges
-6. `get_or_404()` - 50 edges
-7. `api` - 50 edges
-8. `IPAddress` - 48 edges
-9. `get_settings()` - 42 edges
-10. `UserRole` - 41 edges
+1. `cn()` - 148 edges
+2. `react` - 121 edges
+3. `IPAMError` - 81 edges
+4. `lucide-react` - 67 edges
+5. `useAsyncData()` - 67 edges
+6. `User` - 66 edges
+7. `get_or_404()` - 66 edges
+8. `IPAddress` - 63 edges
+9. `useAuth()` - 57 edges
+10. `Prefix` - 55 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `api service (FastAPI/uvicorn backend)` --implements--> `Find free U (face-aware span search)`  [INFERRED]
-  docker-compose.yml → frontend/src/content/docs/racks.md
-- `ImportBatch` --calls--> `upload_workbook()`  [EXTRACTED]
-  frontend/src/types/index.ts → backend/app/api/v1/imports.py
+- `scanner service (arq worker, host networking)` --shares_data_with--> `ip column type (live IPAM resolution)`  [INFERRED]
+  docker-compose.yml → frontend/src/content/docs/lists.md
 - `4-tier RBAC (Administrator/Operator/Contributor/Viewer)` --semantically_similar_to--> `Four roles (Administrator, Operator, Contributor, Viewer)`  [EXTRACTED] [semantically similar]
   README.md → frontend/src/content/docs/accounts-and-roles.md
+- `ip column type (live IPAM resolution)` --semantically_similar_to--> `Health overlay`  [INFERRED] [semantically similar]
+  frontend/src/content/docs/lists.md → frontend/src/content/docs/racks.md
 - `Certificate expiry tracking` --semantically_similar_to--> `Inventory (asset register)`  [INFERRED] [semantically similar]
   frontend/src/content/docs/certificates.md → frontend/src/content/docs/inventory.md
-- `api service (FastAPI/uvicorn backend)` --implements--> `Rack placement rules (u_position, face conflicts)`  [INFERRED]
-  docker-compose.yml → frontend/src/content/docs/racks.md
+- `_addresses_stmt()` --uses--> `IPAddress`  [INFERRED]
+  backend/app/api/v1/addresses.py → backend/app/models/ip_address.py
 
 ## Import Cycles
 - None detected.
 
 ## Hyperedges (group relationships)
-- **Scan → reconcile → human-review flow** — frontend_src_content_docs_scans_scans, frontend_src_content_docs_scans_scan_pipeline, frontend_src_content_docs_scans_scapy_scanner, frontend_src_content_docs_discovery_reconciliation, frontend_src_content_docs_discovery_discovery_inbox, frontend_src_content_docs_addresses_ip_addresses, frontend_src_content_docs_addresses_mac_mismatch [EXTRACTED 1.00]
 - **Site → VRF → Prefix → IP address core hierarchy** — frontend_src_content_docs_sites_sites, frontend_src_content_docs_vrfs_vrfs, frontend_src_content_docs_subnets_subnets, frontend_src_content_docs_addresses_ip_addresses, frontend_src_content_docs_overview_data_model_hierarchy [EXTRACTED 1.00]
+- **Scan → reconcile → human-review flow** — frontend_src_content_docs_scans_scans, frontend_src_content_docs_scans_scan_pipeline, frontend_src_content_docs_scans_scapy_scanner, frontend_src_content_docs_discovery_reconciliation, frontend_src_content_docs_discovery_discovery_inbox, frontend_src_content_docs_addresses_ip_addresses, frontend_src_content_docs_addresses_mac_mismatch [EXTRACTED 1.00]
 - **X-Forwarded-For trusted-proxy pinning (web pinned IP + TEST-NET subnet + api TRUSTED_PROXIES)** — docker_compose_web_service, docker_compose_ipam_network, docker_compose_api_service [EXTRACTED 1.00]
-- **Live IP scan status propagation (scanner → ip_addresses → list ip column + rack health overlay)** — docker_compose_scanner_service, frontend_src_content_docs_lists_ip_addresses, frontend_src_content_docs_lists_ip_column_type, frontend_src_content_docs_racks_health_overlay [INFERRED 0.75]
 - **Workbook import lifecycle (batch provenance + key-column merge + custom-list import)** — frontend_src_content_docs_inventory_import_batch_provenance, frontend_src_content_docs_lists_key_column_merge, frontend_src_content_docs_lists_custom_lists [INFERRED 0.70]
+- **Live IP scan status propagation (scanner → ip_addresses → list ip column + rack health overlay)** — docker_compose_scanner_service, frontend_src_content_docs_lists_ip_addresses, frontend_src_content_docs_lists_ip_column_type, frontend_src_content_docs_racks_health_overlay [INFERRED 0.75]
+- **Rack library bundling pipeline** — frontend_public_rack_library_attribution_netbox_devicetype_library, frontend_scripts_build_rack_library, frontend_public_rack_library_attribution_rack_device_image_library, frontend_src_content_docs_racks_device_image_library [INFERRED 0.85]
 
-## Communities (201 total, 84 thin omitted)
+## Communities (181 total, 62 thin omitted)
 
-### Community 0 - "Client UI Pages"
-Cohesion: 0.05
-Nodes (82): CertificatesPage(), EMPTY, CircuitsPage(), EMPTY, BulkResp, metadata, PrintClient(), EMPTY (+74 more)
-
-### Community 1 - "Rack API & Devices"
-Cohesion: 0.06
-Nodes (83): _check_layout_change(), _check_refs(), create_device(), create_rack(), delete_device(), delete_rack(), _device_fields(), _device_out() (+75 more)
-
-### Community 2 - "Auth & Settings UI"
-Cohesion: 0.06
-Nodes (50): fmtEta(), ScansPage(), BackupSettingsPage(), downloadUrl(), fmtSize(), DataPage(), download(), fmtAgo() (+42 more)
-
-### Community 3 - "Runtime Settings & Worker"
-Cohesion: 0.04
-Nodes (71): ArqRedis, do_run_migrations(), run_migrations_online(), cancel_scan(), _check_cidr_allowed(), create_scan(), get_scan(), list_scans() (+63 more)
-
-### Community 4 - "Backend Test Suite"
-Cohesion: 0.07
-Nodes (70): AsyncClient, _base_dsn(), client(), engine(), _prepare_test_db(), fixture, session(), sf() (+62 more)
-
-### Community 5 - "IPAM Prefix Logic"
-Cohesion: 0.06
-Nodes (69): allocate_next_available(), create_prefix(), delete_prefix(), export_prefixes(), get_prefix(), list_prefixes(), prefix_addresses(), _prefix_rows() (+61 more)
-
-### Community 6 - "App Entry & Maintenance"
-Cohesion: 0.07
-Nodes (46): _job_payload(), gen(), healthz(), metrics(), get, Readiness probe: verifies DB + Redis connectivity., Prometheus-style text exposition of object + scan counters., readyz() (+38 more)
-
-### Community 7 - "Docs & Deployment"
-Cohesion: 0.08
-Nodes (69): api service (FastAPI/uvicorn backend), db service (PostgreSQL 16), ipam bridge network (192.0.2.0/24), redis service (Redis 7, appendonly), scanner service (arq worker, host networking), web service (Next.js frontend), Accounts & Roles, Insecure mode (IPAMBOX_ALLOW_INSECURE) (+61 more)
-
-### Community 8 - "Prefix Tree UI"
-Cohesion: 0.07
-Nodes (47): IP_ROLES, IP_STATUSES, PrefixDetailPage(), RANGE_ROLES, SplitPlan, toggleIn(), PrefixesPage(), PrefixRow (+39 more)
-
-### Community 9 - "Generic CRUD Router"
-Cohesion: 0.07
-Nodes (57): _crud_router(), delete_item(), get_item(), list_items(), reorder_items(), update_item(), _cascade_site_fields(), create_site() (+49 more)
-
-### Community 10 - "Auth & Security"
+### Community 0 - "services/backup.py"
 Cohesion: 0.09
-Nodes (62): auth_status(), change_password(), _current_user(), ensure_env_password_user(), login(), _login_session(), logout(), me() (+54 more)
+Nodes (44): after_flush(), before_flush(), _columns(), _create_changes(), _delete_changes(), SyncSession, Audit trail via session flush hooks. before_flush collects (object, action,…, register() (+36 more)
 
-### Community 11 - "Table & List UI"
+### Community 1 - "react"
+Cohesion: 0.08
+Nodes (77): ACTION_STYLES, ACTION_STYLES, BulkResp, ImportListDialog(), IPAM_FAMILIES, Step, LabelClient(), FACE_BADGE (+69 more)
+
+### Community 2 - "IPAMError"
+Cohesion: 0.05
+Nodes (99): update_address(), _crud_router(), create_item(), delete_item(), get_item(), list_items(), reorder_items(), update_item() (+91 more)
+
+### Community 3 - "cn"
+Cohesion: 0.05
+Nodes (83): IpCell(), SortableColRow(), IP_ROLES, IP_STATUSES, PrefixDetailPage(), RANGE_ROLES, SplitDialog(), SplitPlan (+75 more)
+
+### Community 4 - "prefixes.py"
+Cohesion: 0.06
+Nodes (81): allocate_next_available(), create_prefix(), delete_prefix(), export_prefixes(), get_prefix(), list_prefixes(), prefix_addresses(), _prefix_rows() (+73 more)
+
+### Community 5 - "list-client.tsx"
 Cohesion: 0.10
-Nodes (40): EMPTY, EMPTY, EMPTY, ServiceRow, TagsPage(), VLAN_STATUSES, VlanRow, VrfDialog() (+32 more)
+Nodes (79): CertificatesPage(), EMPTY, CircuitsPage(), EMPTY, AssetRow, EMPTY, InventoryPage(), ListsClient() (+71 more)
 
-### Community 12 - "IP Ranges & Discovery"
-Cohesion: 0.06
-Nodes (46): list_changelog(), AsyncSession, get, AsyncSession, get, stats(), confirm_discovered(), ConfirmBody (+38 more)
-
-### Community 13 - "IP Addresses API"
-Cohesion: 0.07
-Nodes (51): _address_csv_row(), _addresses_stmt(), bulk_addresses(), BulkBody, create_address(), delete_address(), export_addresses(), get_address() (+43 more)
-
-### Community 14 - "Scanner & OUI"
-Cohesion: 0.07
-Nodes (44): Longest-prefix OUI lookup (handles MA-L/MA-M/MA-S blocks)., _table(), vendor_for(), Exception, Carries {key: message} so the API can return per-field 422s., SettingsValidationError, _arp_scan(), _host_chunks() (+36 more)
-
-### Community 15 - "Community 15"
-Cohesion: 0.06
-Nodes (37): SettingField(), SOURCE_STYLE, metadata, viewport, AppearancePage(), metadata, PrefsInit(), SavedViews() (+29 more)
-
-### Community 16 - "Community 16"
-Cohesion: 0.04
-Nodes (49): AddressPage, BackupFileInfo, BackupFilesOut, BackupPreview, Certificate, ChangeField, ChangeLogEntry, Circuit (+41 more)
-
-### Community 17 - "Community 17"
-Cohesion: 0.07
-Nodes (43): assemble_ip(), clean(), _clean_octets(), map_status(), mask_to_prefixlen(), network_of(), norm_header(), norm_mac() (+35 more)
-
-### Community 18 - "Community 18"
-Cohesion: 0.08
-Nodes (31): CRUD routers for the workbook-imported entity families. Circuits, certificates,…, AssetKind, str, AssetCreate, AssetOut, AssetUpdate, BaseModel, field_validator (+23 more)
-
-### Community 19 - "Community 19"
-Cohesion: 0.13
-Nodes (28): FACE_BADGE, STATUSES, QuickScanDialog(), usePrefixScanOverlay(), useScanStream(), v4NetBounds(), EMPTY, STATUS_BADGE (+20 more)
-
-### Community 20 - "Community 20"
-Cohesion: 0.06
-Nodes (40): close_arq_pool(), close_redis(), get_redis(), Shared process-wide Redis client. Do NOT aclose() it per call — connections…, Shut down the shared client — lifespan/worker shutdown only., lifespan(), auth_on(), AsyncClient (+32 more)
-
-### Community 21 - "Community 21"
-Cohesion: 0.08
-Nodes (39): AddressList(), AddrMapViewSwitcher(), buildRows(), IP_STATUSES, Row, sortAddr(), SortKey, InlineText() (+31 more)
-
-### Community 22 - "Community 22"
-Cohesion: 0.08
-Nodes (39): metadata, RackDetailPage(), RackulaImportDialog(), Placed, LibraryDevice, RACK_LIBRARY, ABBREV_TO_CATEGORY, canonicalCategory() (+31 more)
-
-### Community 23 - "Community 23"
-Cohesion: 0.08
-Nodes (40): Any, _alembic_revisions(), backup_dir(), backup_filename(), BackupError, BackupPreview, BackupTable, build_backup() (+32 more)
-
-### Community 24 - "Community 24"
+### Community 6 - "rackula.ts"
 Cohesion: 0.05
-Nodes (41): dependencies, class-variance-authority, clsx, @dnd-kit/core, @dnd-kit/sortable, lucide-react, next, @radix-ui/react-dialog (+33 more)
+Nodes (74): DeviceFormDialog(), DragSession, DropRow(), EditorBlock(), errDetail(), Pending, RackEditor(), CarrierFrameSvg() (+66 more)
 
-### Community 25 - "Community 25"
-Cohesion: 0.07
-Nodes (12): EMPTY, ACTION_STYLES, EMPTY, ACTION_STYLES, BulkResp, BackupSettingsPage(), downloadUrl(), fmtSize() (+4 more)
+### Community 7 - "_get_rack"
+Cohesion: 0.17
+Nodes (24): _check_refs(), create_device(), create_rack(), delete_device(), delete_rack(), _device_fields(), _devices(), _get_device() (+16 more)
 
-### Community 26 - "Community 26"
-Cohesion: 0.12
-Nodes (35): _check_duplicate_vid(), create_vlan(), create_vlan_group(), delete_vlan(), delete_vlan_group(), list_vlan_groups(), list_vlans(), AsyncSession (+27 more)
-
-### Community 27 - "Community 27"
-Cohesion: 0.12
-Nodes (36): bulk_rows(), _check_columns(), create_list(), create_row(), delete_list(), delete_row(), get_list(), list_lists() (+28 more)
-
-### Community 28 - "Community 28"
-Cohesion: 0.07
-Nodes (31): AppShell(), AUTH_ROUTES, isActive(), NAV_FLAT, NAV_GROUPS, NavGroup, NavItem, NavLink() (+23 more)
-
-### Community 29 - "Community 29"
-Cohesion: 0.11
-Nodes (31): DeviceFormDialog(), DragSession, errDetail(), Pending, RackEditor(), CarrierFrameSvg(), DeviceBlockSvg(), FACE_BADGE (+23 more)
-
-### Community 30 - "Community 30"
-Cohesion: 0.14
-Nodes (36): delete_scheduled_backup(), delete, Base, User, _backup_bytes(), _envelope_bytes(), _mkusers(), Hand-craft a backup envelope (e.g. with a forged users table). (+28 more)
-
-### Community 31 - "Community 31"
-Cohesion: 0.15
-Nodes (37): generate_demo_data.py, assets_rows(), _assign_site_sheets(), _assign_site_sheets_clean(), build_en_workbook(), build_mixed_workbook(), build_sites(), certificates_rows() (+29 more)
-
-### Community 33 - "Community 33"
-Cohesion: 0.08
-Nodes (27): ACTION_STYLES, metadata, PrintClient(), ExpiryBadge(), ACTION_STYLES, ChangeDiff(), ChangeVal(), fmtChangeVal() (+19 more)
-
-### Community 34 - "Community 34"
-Cohesion: 0.16
-Nodes (3): parse_sites_master_records(), _Planner, Counter
-
-### Community 35 - "Community 35"
-Cohesion: 0.11
-Nodes (24): DocsIndexClient(), metadata, DocPage(), dynamicParams, generateMetadata(), loadMarkdown(), CommandPalette(), Icon (+16 more)
-
-### Community 36 - "Community 36"
-Cohesion: 0.11
-Nodes (25): CustomList, CustomListRow, Base, _apply_list(), commit_batch(), execute_plan(), rep(), _get_or_create_list() (+17 more)
-
-### Community 37 - "Community 37"
-Cohesion: 0.12
-Nodes (20): ListTarget, _cell_text(), extract_list_table(), _infer_type(), _ips(), _is_ip_token(), pick_key_column(), _sniff_header_row() (+12 more)
-
-### Community 38 - "Community 38"
+### Community 8 - "worker.py"
 Cohesion: 0.09
-Nodes (23): ACTION_STYLE, CommitResp, Counts, csvCell(), FAMILY_LABEL, ImportPage(), PreviewResp, Step (+15 more)
+Nodes (38): ArqRedis, cancel_scan(), _check_cidr_allowed(), create_scan(), get_scan(), _job_payload(), list_scans(), AsyncSession (+30 more)
 
-### Community 39 - "Community 39"
-Cohesion: 0.13
-Nodes (23): create_rule(), delete_rule(), get_rule(), list_rules(), preview_rule(), AsyncSession, delete, get (+15 more)
+### Community 9 - "v1/auth.py"
+Cohesion: 0.07
+Nodes (66): auth_status(), change_password(), _current_user(), ensure_env_password_user(), login(), _login_session(), logout(), me() (+58 more)
 
-### Community 40 - "Community 40"
-Cohesion: 0.15
-Nodes (27): AssignBody, assign_tag(), create_tag(), delete_tag(), get_tag(), list_assignments(), list_tags(), AsyncSession (+19 more)
+### Community 10 - "IPAddress"
+Cohesion: 0.08
+Nodes (44): list_lists(), Short label for a list-row search hit: key-column value, else the first non-…, _row_label(), CustomList, CustomListRow, User-defined table — preserves a workbook sheet's own shape (e.g. 'שרתים…, One row of a custom list — ``data`` maps column key -> string value., IPAddress (+36 more)
 
-### Community 41 - "Community 41"
-Cohesion: 0.12
-Nodes (29): _audit(), backup_now(), clear_discovery(), factory_reset(), purge_changelog(), purge_scans(), PurgeBody, AsyncSession (+21 more)
+### Community 11 - "test_racks.py"
+Cohesion: 0.10
+Nodes (57): _base_dsn(), client(), engine(), _prepare_test_db(), fixture, Split 'postgresql://host/db?params' into ('postgresql://host', '?params')., Create the test database (if missing) and run migrations against it., _split_dsn() (+49 more)
 
-### Community 42 - "Community 42"
+### Community 12 - "IpamBox"
+Cohesion: 0.09
+Nodes (61): api service (FastAPI/uvicorn backend), db service (PostgreSQL 16), ipam bridge network (192.0.2.0/24), redis service (Redis 7, appendonly), scanner service (arq worker, host networking), web service (Next.js frontend), Accounts & Roles, Insecure mode (IPAMBOX_ALLOW_INSECURE) (+53 more)
+
+### Community 13 - "index.ts"
+Cohesion: 0.05
+Nodes (48): AddressFilterPanel(), STATUSES, EMPTY, PrefixStatusBadge(), prefixVariant, scanVariant, TAG_COLORS, TagDialog() (+40 more)
+
+### Community 14 - "addresses.py"
+Cohesion: 0.07
+Nodes (46): _address_csv_row(), _addresses_stmt(), bulk_addresses(), BulkBody, create_address(), delete_address(), export_addresses(), get_address() (+38 more)
+
+### Community 15 - "get_redis"
+Cohesion: 0.07
+Nodes (34): close_arq_pool(), close_redis(), get_redis(), Shared process-wide Redis client. Do NOT aclose() it per call — connections…, Shut down the shared client — lifespan/worker shutdown only., healthz(), lifespan(), get (+26 more)
+
+### Community 16 - "generate_demo_data.py"
+Cohesion: 0.09
+Nodes (49): assets_rows(), _assign_site_sheets(), _assign_site_sheets_clean(), build_en_workbook(), build_mixed_workbook(), build_sites(), certificates_rows(), circuits_rows() (+41 more)
+
+### Community 17 - "useAsyncData"
+Cohesion: 0.08
+Nodes (35): ChangelogPage(), DashboardPage(), DiscoveryPage(), PrintClient(), PrintClient(), RackDetailPage(), fmtEta(), ScansPage() (+27 more)
+
+### Community 18 - "ip-drawer.tsx"
+Cohesion: 0.04
+Nodes (57): metadata, viewport, AppearancePage(), AppShell(), AUTH_ROUTES, isActive(), NAV_FLAT, NAV_GROUPS (+49 more)
+
+### Community 19 - "command-palette.tsx"
+Cohesion: 0.11
+Nodes (25): DocsIndexClient(), metadata, DocPage(), dynamicParams, generateMetadata(), loadMarkdown(), CommandPalette(), Icon (+17 more)
+
+### Community 20 - "restore_backup"
 Cohesion: 0.16
+Nodes (16): Delete assignments whose target no longer exists. For non-ORM write paths…, sweep_orphans(), BackupError, BackupPreview, _from_json(), _gunzip(), inspect_backup(), AsyncSession (+8 more)
+
+### Community 21 - "color_rules.py"
+Cohesion: 0.07
+Nodes (46): create_rule(), delete_rule(), get_rule(), list_rules(), preview_rule(), AsyncSession, delete, get (+38 more)
+
+### Community 22 - "imports.py"
+Cohesion: 0.13
 Nodes (26): commit_import(), delete_import(), get_import(), _import_dir(), list_imports(), _load_sheets(), preview_import(), AsyncSession (+18 more)
 
-### Community 43 - "Community 43"
+### Community 23 - "entities.py"
+Cohesion: 0.06
+Nodes (51): delete_scheduled_backup(), download_backup(), download_scheduled_backup(), delete, get, Download a full snapshot (every table except users) as .json.gz.…, list_changelog(), AsyncSession (+43 more)
+
+### Community 24 - "clean"
+Cohesion: 0.07
+Nodes (48): _looks_like_header(), Sheet family detection by header signature (Hebrew + English variants)., assemble_ip(), clean(), _clean_octets(), map_status(), mask_to_prefixlen(), network_of() (+40 more)
+
+### Community 26 - "_Planner"
+Cohesion: 0.08
+Nodes (18): parse_sites_master_records(), _Planner, _preview(), (first, second) octet-pair histogram of a sheet's addresses. Counting full…, Folded sheet title vs site name/code — word-boundary matching so 'int' doesn't…, Sheet title -> site key via code/name. Checks DB sites first, then sites…, A sheet that octet-matches a master row with no real name gives the site its…, The octet block belongs to an inactive (closed) site, which must not claim new… (+10 more)
+
+### Community 27 - "User"
+Cohesion: 0.16
+Nodes (33): User, _backup_bytes(), _envelope_bytes(), _mkusers(), Hand-craft a backup envelope (e.g. with a forged users table)., Guard: every ORM table must be backed up (or explicitly excluded). Adding a new…, Fresh-server scenario: the migration-seeded Global VRF is replaced by the…, Fresh-server scenario: the target's admins survive; its non-admin set is fully… (+25 more)
+
+### Community 28 - "reconcile"
 Cohesion: 0.11
-Nodes (29): _flag(), Any, AsyncSession, Merge scan results into the address table. Existing rows: refresh…, reconcile(), _mk_prefix(), A stored (e.g. imported) MAC that differs from the scan is flagged in…, Scanning a /24 under a documented /16 must not mark the other 255 subnets'… (+21 more)
+Nodes (18): _flag(), Any, AsyncSession, Merge scan results into the address table. Existing rows: refresh…, reconcile(), A stored (e.g. imported) MAC that differs from the scan is flagged in…, Scanning a /24 under a documented /16 must not mark the other 255 subnets'…, reconcile() called with no flags (the pre-toggles signature) must do exactly… (+10 more)
 
-### Community 44 - "Community 44"
+### Community 29 - "package.json"
+Cohesion: 0.07
+Nodes (26): name, private, version, DocsContent(), autoprefixer, clsx, postcss, @radix-ui/react-dropdown-menu (+18 more)
+
+### Community 30 - "test_scanner.py"
 Cohesion: 0.09
-Nodes (22): ImportBatch, ImportBatchStatus, Base, str, One uploaded workbook (or file) import run. `stats` holds the preview result:…, excel_date(), date, datetime/date passthrough; int/float serial (20000-80000) -> date; 'd/m/yy'… (+14 more)
+Nodes (36): exclusion_hit(), Return the first excluded CIDR overlapping ``net`` (either direction), or None.…, _global_vrf_id(), _infer_scan_vrf(), Fail live jobs that outlived the worker's job_timeout. An OOM-killed or…, Pick the VRF for a scan that didn't specify one. An exact-match prefix living…, reap_stale_scan_jobs(), _scan_vrf() (+28 more)
 
-### Community 45 - "Community 45"
+### Community 32 - "parse_site_sheet"
+Cohesion: 0.17
+Nodes (8): _blocks(), parse_site_sheet(), Split duplicated column groups (031-style runaway): each block starts at an…, MAC ADDRESS' (חיפה נמל / HAf old) is a mac column, not cf., Bare 'Name' (Cellular) maps to the hostname field., Non-empty unnamed columns pile into cf['extra'] instead of vanishing (Pelephone…, TestSiteSheetExtras, TestSiteSheetParser
+
+### Community 33 - "dependencies"
 Cohesion: 0.07
 Nodes (29): dependencies, class-variance-authority, clsx, @dnd-kit/core, @dnd-kit/sortable, js-yaml, jszip, lucide-react (+21 more)
 
-### Community 46 - "Community 46"
-Cohesion: 0.10
-Nodes (21): _api_cancel(), _FakeRedis, _mk_job(), In-memory stand-in for the worker's redis client (get/set/publish)., Point the worker at the test DB (sf) and the fake redis client., Simulate the API-side cancel: terminal status on a fresh connection., Cancel flag polled between phases -> ScanCancelled -> CANCELLED, and no…, Audit race: API writes CANCELLED mid-scan while the redis flag is lost… (+13 more)
-
-### Community 47 - "Community 47"
+### Community 34 - "maintenance.py"
 Cohesion: 0.13
-Nodes (17): _global_vrf_id(), _infer_scan_vrf(), Pick the VRF for a scan that didn't specify one. An exact-match prefix living…, _scan_vrf(), _extra_vrf(), _global_id(), The cap is a runtime setting: lowering it to 2 rejects a /24., scan_infers_vrf=off: no prefix-matching — scans without an explicit VRF always… (+9 more)
+Nodes (29): _audit(), backup_now(), clear_discovery(), factory_reset(), purge_changelog(), purge_scans(), PurgeBody, AsyncSession (+21 more)
 
-### Community 48 - "Community 48"
+### Community 35 - "v1/search.py"
+Cohesion: 0.19
+Nodes (23): _folded(), AsyncSession, get, Cross-object search for the command palette. One GET returns grouped matches…, Column expression with Hebrew final letters folded — pairs with fold_hebrew()…, search(), match(), BaseModel (+15 more)
+
+### Community 36 - "UserRole"
+Cohesion: 0.28
+Nodes (24): str, UserRole, Viewer tier can read lists/rows but every mutation is 403., TestPermissions, login(), mkuser(), other_client(), AsyncClient (+16 more)
+
+### Community 37 - "HostResult"
+Cohesion: 0.13
+Nodes (19): HostResult, _FakeRedis, _mk_job(), In-memory stand-in for the worker's redis client (get/set/publish)., Point the worker at the test DB (sf) and the fake redis client., Cancel flag polled between phases -> ScanCancelled -> CANCELLED, and no…, Audit race: API writes CANCELLED mid-scan while the redis flag is lost…, Cancel landing while reconcile writes rows: the flag + row re-check right… (+11 more)
+
+### Community 38 - "scanner.py"
+Cohesion: 0.12
+Nodes (20): Longest-prefix OUI lookup (handles MA-L/MA-M/MA-S blocks)., _table(), vendor_for(), _arp_scan(), _host_chunks(), _icmp_sweep(), infer_device_type(), _ptr_lookup() (+12 more)
+
+### Community 39 - "_matrix"
+Cohesion: 0.21
+Nodes (13): _master_row(), _matrix(), _plan(), _preview_of(), INTEGRATION: mostly 172.20/21.x + a few 10.10.x -> Integration Site via its…, טרמינל 3 כניסה' must NOT reassign rows to site 3 — under_site matches…, LEV_DR has no 10.x addresses — on a fresh DB it can only match a site planned…, int' is a substring of 'maintenence' — word-boundary matching must NOT bind… (+5 more)
+
+### Community 40 - "test_workbook_import.py"
+Cohesion: 0.10
+Nodes (21): Network_Address.xlsx ingestion. Pipeline: reader (xlsx -> matrices) -> classify…, parse_certificates(), Positional 5-col layout: platform, target/VS, server, cert, expiry., _csv_sheet(), load_upload(), load_workbook_bytes(), XLSX/CSV -> sheet matrices (openpyxl read_only streams / csv module)., Drop fully-empty trailing rows/cols for a stable matrix shape. (+13 more)
+
+### Community 41 - "test_ordering.py"
 Cohesion: 0.22
-Nodes (21): _folded(), AsyncSession, get, _row_label(), search(), match(), BaseModel, SearchAddress (+13 more)
+Nodes (21): auth_on(), _circuit_order(), _login(), _mk_circuits(), _mkuser(), AsyncClient, AsyncSession, fixture (+13 more)
 
-### Community 49 - "Community 49"
-Cohesion: 0.17
-Nodes (13): _master_row(), _plan(), _preview_of(), INTEGRATION: mostly 172.20/21.x + a few 10.10.x -> Integration Site via its…, טרמינל 3 כניסה' must NOT reassign rows to site 3 — under_site matches…, LEV_DR has no 10.x addresses — on a fresh DB it can only match a site planned…, int' is a substring of 'maintenence' — word-boundary matching must NOT bind…, Mashapan TA + MATPASH share number 200 — merge + conflict, not a silent… (+5 more)
+### Community 42 - "extract_list_table"
+Cohesion: 0.14
+Nodes (15): _cell_text(), extract_list_table(), _infer_type(), _ips(), _is_ip_token(), SheetMatrix -> (column defs, row dicts). columns: [{key, label, type, options?,…, Raw cell -> stored string. Dates iso-format; everything else cleans., (type, extra) for one column — extra carries options/multi. (+7 more)
 
-### Community 50 - "Community 50"
-Cohesion: 0.08
-Nodes (22): name, private, version, autoprefixer, clsx, postcss, @radix-ui/react-dropdown-menu, @radix-ui/react-label (+14 more)
-
-### Community 51 - "Community 51"
-Cohesion: 0.34
-Nodes (22): str, UserRole, login(), mkuser(), other_client(), AsyncClient, AsyncSession, allow_insecure keeps full access (existing behavior preserved). (+14 more)
-
-### Community 52 - "Community 52"
-Cohesion: 0.11
-Nodes (16): cellLabel(), CHIP_COLORS, chipColor(), COL_TYPES, ListClient(), metadata, IpDrawer(), ROLES (+8 more)
-
-### Community 53 - "Community 53"
-Cohesion: 0.17
-Nodes (10): parse_site_sheet(), _matrix(), קוי בזק ישן (029) — bandwidth/contact map to real fields, the rest of the…, שם לקוח באפל'' (trailing gershayim) still hits the alias., MAC ADDRESS' (חיפה נמל / HAf old) is a mac column, not cf., Bare 'Name' (Cellular) maps to the hostname field., Non-empty unnamed columns pile into cf['extra'] instead of vanishing (Pelephone…, TestCircuitsParser (+2 more)
-
-### Community 54 - "Community 54"
+### Community 43 - "test_colors.py"
 Cohesion: 0.27
 Nodes (19): _login(), _mk_rule(), _mk_site(), _mkuser(), AsyncClient, AsyncSession, Global row colors: manual row_color + rule-computed display_color. Covers the…, test_backup_roundtrips_color_rules() (+11 more)
 
-### Community 55 - "Community 55"
+### Community 44 - "build-rack-library.mjs"
 Cohesion: 0.13
-Nodes (15): AppShell(), AUTH_ROUTES, isActive(), NAV_FLAT, NAV_GROUPS, NavGroup, NavItem, NavLink() (+7 more)
+Nodes (23): arrLen(), attribution(), CATEGORY_COLOUR, CURATED, fetchBuf(), fetchJson(), FRONTEND, FULL_IMPORT (+15 more)
 
-### Community 56 - "Community 56"
-Cohesion: 0.16
-Nodes (18): _build_out(), _mask_url(), AsyncSession, get, Hide the password in a scheme://user:pass@host URL., read_settings(), update_settings(), ChangePasswordBody (+10 more)
-
-### Community 57 - "Community 57"
-Cohesion: 0.28
-Nodes (18): _circuit_order(), _login(), _mk_circuits(), _mkuser(), AsyncClient, AsyncSession, Global row ordering: POST /{entity}/reorder + pinned rows. Covered on both…, Reordering a subset keeps the slots those rows already had — rows outside the… (+10 more)
-
-### Community 58 - "Community 58"
+### Community 45 - "compilerOptions"
 Cohesion: 0.11
 Nodes (18): compilerOptions, allowJs, esModuleInterop, incremental, isolatedModules, jsx, lib, module (+10 more)
 
-### Community 59 - "Community 59"
-Cohesion: 0.18
-Nodes (4): _mklist(), TestBulkRows, TestListCRUD, TestRows
-
-### Community 60 - "Community 60"
-Cohesion: 0.17
-Nodes (16): download_backup(), download_scheduled_backup(), list_scheduled_backups(), AsyncSession, get, post, Request, Restore a backup file (raw .json.gz body). Wipes every data table (users are… (+8 more)
-
-### Community 61 - "Community 61"
+### Community 46 - "users.py"
 Cohesion: 0.24
 Nodes (16): _admin_count(), create_user(), delete_user(), list_users(), _out(), AsyncSession, BaseModel, delete (+8 more)
 
-### Community 62 - "Community 62"
+### Community 47 - "schemas/certificate.py"
+Cohesion: 0.17
+Nodes (13): CertificateCreate, CertificateOut, CertificateUpdate, BaseModel, field_validator, DashboardStats, MacMismatchItem, BaseModel (+5 more)
+
+### Community 48 - "schemas/import_batch.py"
 Cohesion: 0.20
-Nodes (10): LabelClient(), metadata, metadata, FACE_BADGE, PrintClient(), RackQrCode(), RackQrDialog(), rackUrl() (+2 more)
+Nodes (13): CommitOptions, ImportBatchOut, ListTarget, PreviewOptions, BaseModel, Per-sheet detection result shown in the wizard., Import a sheet as a custom list (user-selected or suggested)., User-confirmed mapping choices applied before building the plan. (+5 more)
 
-### Community 63 - "Community 63"
-Cohesion: 0.13
-Nodes (10): ACTION_STYLE, CommitResp, Counts, csvCell(), FAMILY_LABEL, ImportPage(), PreviewResp, Step (+2 more)
+### Community 49 - "test_ipam_extras.py"
+Cohesion: 0.22
+Nodes (17): _prefix(), export.csv takes the same filters as the list endpoint — a filtered view…, Same filtered-export treatment on the prefixes CSV (F8)., A documented v6 /64's 2^64 host count must not reach dashboard sums (~1.8e19 >…, test_address_role_nat_and_bulk(), test_addresses_export_respects_filters(), test_bulk_reports_real_counts(), test_container_move_with_children_rejected() (+9 more)
 
-### Community 64 - "Community 64"
-Cohesion: 0.21
-Nodes (7): classify_sheet(), _has(), _looks_like_header(), Sheet family detection by header signature (Hebrew + English variants)., (family, header_row_index, warnings). header_row_index = index of the row…, Network_Address.xlsx ingestion. Pipeline: reader (xlsx -> matrices) -> classify…, TestClassify
+### Community 50 - "test_settings.py"
+Cohesion: 0.17
+Nodes (15): fake_arq(), _pool(), _FakeArqJob, _FakePool, AsyncClient, fixture, Every new Settings > Features key is runtime-editable; untouched keys keep the…, test_backup_files_report_effective_schedule() (+7 more)
 
-### Community 65 - "Community 65"
+### Community 51 - "v1/settings.py"
+Cohesion: 0.18
+Nodes (20): _build_out(), _lan_info(), _mask_url(), AsyncSession, get, Hide the password in a scheme://user:pass@host URL., LAN identity detected by the host-networked worker (written to Redis). Falls…, read_settings() (+12 more)
+
+### Community 52 - "vlans.py"
 Cohesion: 0.19
-Nodes (8): _master_blocks(), parse_sites_master(), (first, second) octet pairs a master row declares — lets sheet->site matching…, Integration Site's '172,20-21' fragments -> octet-pair blocks, no 10.x…, Nameless master rows (10.22/35/37/39) become 'Site N' instead of being dropped…, היה "מטה ארצי" בעבר' -> 'מטה ארצי (לשעבר)' — the historical name, suffixed so…, The real header has 'הערות' twice — first non-empty wins., TestSitesMasterParser
+Nodes (21): _check_duplicate_vid(), create_vlan(), create_vlan_group(), delete_vlan(), delete_vlan_group(), list_vlan_groups(), AsyncSession, delete (+13 more)
 
-### Community 66 - "Community 66"
-Cohesion: 0.27
-Nodes (13): auth_on(), auth_on(), AsyncClient, fixture, _seed(), test_addresses_q_filter_not_broken(), test_search_empty_query(), test_search_grouped_results() (+5 more)
+### Community 53 - "ip_display"
+Cohesion: 0.17
+Nodes (10): CircuitCreate, CircuitOut, CircuitUpdate, BaseModel, field_validator, ip_display(), Any, Normalize asyncpg-returned ipaddress objects / strings to display form. INET… (+2 more)
 
-### Community 67 - "Community 67"
-Cohesion: 0.15
-Nodes (9): AssetRow, EMPTY, metadata, EMPTY, RackRow, RacksPage(), Asset, AssetKind (+1 more)
+### Community 54 - "import-client.tsx"
+Cohesion: 0.12
+Nodes (18): ACTION_STYLE, CommitResp, Counts, csvCell(), FAMILY_LABEL, ImportPage(), PreviewResp, SheetResults() (+10 more)
 
-### Community 68 - "Community 68"
+### Community 55 - "v1/racks.py"
+Cohesion: 0.22
+Nodes (21): _device_out(), Rack elevations: racks + nested devices + Rackula import. Not a `_crud_router`…, str, RackFace, IpRef, LinkedRef, NextFreeUOut, BaseModel (+13 more)
+
+### Community 56 - "_mklist"
+Cohesion: 0.18
+Nodes (4): _mklist(), TestBulkRows, TestListCRUD, TestRows
+
+### Community 57 - "classify_sheet"
 Cohesion: 0.31
-Nodes (10): _as_date(), _as_str(), count_matches(), display_color_for(), _ordered_cmp(), Any, AsyncSession, date (+2 more)
+Nodes (4): classify_sheet(), _has(), (family, header_row_index, warnings). header_row_index = index of the row…, TestClassify
 
-### Community 69 - "Community 69"
+### Community 58 - "test_search.py"
+Cohesion: 0.25
+Nodes (14): auth_on(), AsyncClient, fixture, Global /api/v1/search endpoint (UX-3)., Regression: list_addresses ?q= used to crash on a missing column., Site + VRF + prefix + address + one of each workbook entity., _seed(), test_addresses_q_filter_not_broken() (+6 more)
+
+### Community 59 - "RackDevice"
+Cohesion: 0.15
+Nodes (23): _check_layout_change(), import_devices(), _inherit_carrier(), When `carrier_id` is set, derive u_position/face from the carrier — a child's…, A carrier's slot_layout can only shrink/clear when no mounted child sits in a…, Bulk-load parsed Rackula devices in one transaction. `replace` wipes existing…, RackDevice, ConflictError (+15 more)
+
+### Community 60 - "TestSitesMasterParser"
+Cohesion: 0.20
+Nodes (5): Integration Site's '172,20-21' fragments -> octet-pair blocks, no 10.x…, Nameless master rows (10.22/35/37/39) become 'Site N' instead of being dropped…, היה "מטה ארצי" בעבר' -> 'מטה ארצי (לשעבר)' — the historical name, suffixed so…, The real header has 'הערות' twice — first non-empty wins., TestSitesMasterParser
+
+### Community 61 - "run_scan"
+Cohesion: 0.15
+Nodes (17): Exception, Raised inside the pipeline when the user cancels the scan., ScanCancelled, _due(), _eta_seconds(), _job_status(), _publish(), datetime (+9 more)
+
+### Community 62 - "Settings"
+Cohesion: 0.22
+Nodes (3): psycopg2-style URL for alembic offline mode / scripts., Settings, BaseSettings
+
+### Community 63 - "schemas/ip_range.py"
+Cohesion: 0.24
+Nodes (8): IPRangeRole, str, IPRangeCreate, IPRangeOut, IPRangeUpdate, BaseModel, field_validator, model_validator
+
+### Community 64 - "test_changelog.py"
 Cohesion: 0.23
 Nodes (12): AsyncClient, tag_assignments.object_id has no FK — deleting a tagged object must drop its…, Tag.assignments is already ORM delete-orphan — each removed assignment lands in…, PATCH settings with a null value deletes the app_settings row — that delete…, /addresses/bulk action=delete used to issue one Core DELETE — invisible to the…, test_bulk_delete_writes_changelog_entries(), test_changelog_captures_ip_status_change(), test_changelog_records_crud() (+4 more)
 
-### Community 70 - "Community 70"
+### Community 65 - "_upload"
+Cohesion: 0.31
+Nodes (7): v2 workbook: SRV2 edited, SRV3 added, SRV1 missing -> merge keeps SRV1, updates…, _servers_xlsx(), test_import_as_list_e2e(), test_manually_edited_row_wins_conflict(), test_reimport_merges_by_key(), TestCsvImport, _upload()
+
+### Community 66 - "hex_color_or_none"
+Cohesion: 0.11
+Nodes (14): hex_color_or_none(), Shared row/tag color validator: #rrggbb, normalized to lowercase., field_validator, field_validator, _rail_width(), field_validator, AssignBody, BaseModel (+6 more)
+
+### Community 67 - "restore"
+Cohesion: 0.23
+Nodes (12): list_scheduled_backups(), AsyncSession, post, Request, Restore a backup file (raw .json.gz body). Wipes every data table (users are…, Scheduled snapshot files written by the worker into BACKUP_DIR., restore(), BackupFileInfo (+4 more)
+
+### Community 68 - "test_allocation.py"
+Cohesion: 0.24
+Nodes (11): sf(), _mk_prefix(), test_address_crud_and_dup_guard(), test_allocation_skips_existing(), test_concurrent_allocation_unique(), alloc(), test_exhausted_prefix_conflicts(), test_sequential_allocation_skips_boundaries() (+3 more)
+
+### Community 69 - "test_scan_cidr_tcp_fallback_reports_found"
 Cohesion: 0.21
 Nodes (8): on_hosts fires once per detection step with that chunk's new IPs — ARP batch…, When L2+L3 find nothing, the TCP fallback publishes its batch too., test_scan_cidr_emits_found_deltas(), fake_icmp(), fake_probe(), fake_ptr(), on_hosts(), test_scan_cidr_tcp_fallback_reports_found()
 
-### Community 71 - "Community 71"
-Cohesion: 0.20
-Nodes (8): ColorRulesPage(), Draft, ENTITIES, OP_LABEL, OPS_BY_TYPE, opsFor(), RuleDialog(), metadata
+### Community 70 - "Racks"
+Cohesion: 0.16
+Nodes (17): CC0 1.0 Universal, netbox-community/devicetype-library, Rack device image library, Carrier slot layout, Device image library, Elevation editor, Find free U, Health overlay (+9 more)
 
-### Community 72 - "Community 72"
-Cohesion: 0.24
-Nodes (11): _job_status(), _publish(), Re-read the job row's status — the session's `job` instance goes stale the…, ARQ job: execute a scan and reconcile results., _resolve_prefix(), run_scan(), _cancelled(), hosts_found() (+3 more)
+### Community 71 - "test_prefix_api.py"
+Cohesion: 0.33
+Nodes (10): _global_vrf_id(), Splits are counted arithmetically before materializing: anything over…, test_overlap_same_vrf_rejected(), test_prefix_stats_fields(), test_prefixes_order_by_utilization_and_limit(), test_same_cidr_allowed_across_vrfs(), test_split_cardinality_cap(), test_split_endpoint() (+2 more)
 
-### Community 73 - "Community 73"
+### Community 72 - "_FakePool"
 Cohesion: 0.20
 Nodes (8): fake_arq(), _pool(), _FakeArqJob, _FakePool, fixture, Stands in for the arq Redis pool — never actually dispatches work., scan_exclude_networks=10.70.0.64/26 inside scan_networks=10.70.0.0/24: the…, test_scheduler_and_route_share_exclusion_guard()
 
-### Community 75 - "Community 75"
-Cohesion: 0.38
-Nodes (9): _global_vrf_id(), test_overlap_same_vrf_rejected(), test_prefix_stats_fields(), test_prefixes_order_by_utilization_and_limit(), test_same_cidr_allowed_across_vrfs(), test_split_cardinality_cap(), test_split_endpoint(), test_tree_endpoint() (+1 more)
+### Community 73 - "runtime_settings.py"
+Cohesion: 0.19
+Nodes (13): _env_sourced(), Any, Runtime-editable settings: app_settings rows override env defaults. Each public…, True when the field's current value differs from its declared default., One runtime-editable setting. field: the env-backed attribute on…, SettingSpec, _v_bool(), _v_cidr_list() (+5 more)
 
-### Community 76 - "Community 76"
+### Community 75 - "devDependencies"
 Cohesion: 0.20
-Nodes (8): Sheet, SheetClose, SheetContent, SheetDescription, SheetPortal, SheetTitle, SheetTrigger, @radix-ui/react-dialog
+Nodes (10): devDependencies, autoprefixer, postcss, sharp, tailwindcss, @types/js-yaml, @types/node, @types/react (+2 more)
 
-### Community 77 - "Community 77"
-Cohesion: 0.22
-Nodes (9): devDependencies, autoprefixer, postcss, tailwindcss, @types/js-yaml, @types/node, @types/react, @types/react-dom (+1 more)
+### Community 76 - "schemas/asset.py"
+Cohesion: 0.36
+Nodes (7): AssetKind, str, AssetCreate, AssetOut, AssetUpdate, BaseModel, field_validator
 
-### Community 78 - "Community 78"
+### Community 77 - "schemas/vrf.py"
+Cohesion: 0.33
+Nodes (5): BaseModel, field_validator, VRFCreate, VRFOut, VRFUpdate
+
+### Community 78 - "check-rack-library.mjs"
 Cohesion: 0.25
-Nodes (6): IP_ROLES, IP_STATUSES, PrefixDetailPage(), RANGE_ROLES, SplitPlan, toggleIn()
+Nodes (6): DIR, FACES, LAYOUTS, problems, referenced, slugs
 
-### Community 79 - "Community 79"
-Cohesion: 0.25
-Nodes (6): Draft, ENTITIES, OP_LABEL, OPS_BY_TYPE, opsFor(), RuleDialog()
+### Community 79 - "run_scheduled_backup"
+Cohesion: 0.24
+Nodes (13): backup_dir(), delete_backup_file(), list_backup_files(), prune_backups(), Path, Fetch a scheduled backup by file name (path-traversal safe)., Delete a scheduled backup by file name (path-traversal safe)., Delete oldest scheduled backups beyond the retention count. (+5 more)
 
-### Community 80 - "Community 80"
-Cohesion: 0.43
-Nodes (7): _mk_prefix(), test_address_crud_and_dup_guard(), test_allocation_skips_existing(), test_concurrent_allocation_unique(), alloc(), test_exhausted_prefix_conflicts(), test_sequential_allocation_skips_boundaries()
+### Community 80 - "schemas/service.py"
+Cohesion: 0.38
+Nodes (5): BaseModel, field_validator, ServiceCreate, ServiceOut, ServiceUpdate
 
-### Community 81 - "Community 81"
+### Community 81 - "test_auth.py"
 Cohesion: 0.29
-Nodes (4): _col_class(), _positional_columns(), Dominant content class of a column sample., Headerless sheet: locate the IP column, then assign the remaining canonical…
+Nodes (11): AsyncClient, When the socket peer isn't in ipambox_trusted_proxies, a supplied XFF is…, Spreading failures across many usernames from one IP trips the aggregate lock —…, Five bad logins for one (user, ip) pair must not lock out other users on the…, test_endpoints_require_auth(), test_lockout_keyed_per_user_ip_pair(), test_login_lockout(), test_per_ip_aggregate_backstop() (+3 more)
 
-### Community 82 - "Community 82"
-Cohesion: 0.29
-Nodes (7): Fail live jobs that outlived the worker's job_timeout. An OOM-killed or…, Every-minute cron: reaps live jobs that outlived job_timeout., reap_stale_scan_jobs(), scan_watchdog(), WorkerSettings, A worker killed mid-scan leaves RUNNING rows that would wedge the single-live-…, test_watchdog_reaps_stale_jobs()
-
-### Community 83 - "Community 83"
+### Community 82 - "_FakePool"
 Cohesion: 0.29
 Nodes (5): fake_arq(), _pool(), _FakeArqJob, _FakePool, fixture
 
-### Community 84 - "Community 84"
-Cohesion: 0.33
-Nodes (3): PrefixesPage(), PrefixRow, utilColor()
+### Community 83 - "auth_on"
+Cohesion: 0.29
+Nodes (4): auth_on(), fake_arq(), fixture, Turn auth on for a test, restore insecure mode after, and flush session/lockout…
 
-### Community 86 - "Community 86"
+### Community 84 - "Demo import data — ALL FICTIONAL"
+Cohesion: 0.29
+Nodes (6): Demo import data — ALL FICTIONAL, Files, `Network_Address_DEMO_EN.xlsx` — the edge-case workbook, `Network_Address_DEMO.xlsx` — the clean flagship, Regenerating, VLAN scheme (both workbooks + `demo-vlans.csv`)
+
+### Community 85 - "scripts"
+Cohesion: 0.29
+Nodes (7): scripts, build, build:rack-library, check:rack-library, dev, lint, start
+
+### Community 87 - "next"
 Cohesion: 0.33
 Nodes (3): nextConfig, metadata, next
 
-### Community 87 - "Community 87"
-Cohesion: 0.53
-Nodes (5): ALL_STATUSES, prefixText(), siteText(), TreePage(), vrfText()
+### Community 88 - "quick-scan.tsx"
+Cohesion: 0.15
+Nodes (13): QuickScanDialog(), useScanStream(), DialogClose, DialogDescription, DialogOverlay, DialogPortal, DialogTrigger, scanStreamUrl() (+5 more)
 
-### Community 89 - "Community 89"
+### Community 89 - "use-chart-theme.ts"
+Cohesion: 0.50
+Nodes (4): ChartTheme, FALLBACK, readTheme(), useChartTheme()
+
+### Community 90 - "get_effective"
+Cohesion: 0.24
+Nodes (11): Effective, get_effective(), AsyncSession, detect_interface(), detect_local_cidr(), CIDR of the default-route interface, e.g. '192.168.1.0/24'., ScanJob, Enqueue a scan for every configured network (effective settings). Targets:… (+3 more)
+
+### Community 91 - ".test_legacy_bezeq_layout"
 Cohesion: 0.40
-Nodes (5): AsyncSession, Request, Guard for every API route. Returns the User, or None in allow_insecure mode., require_auth(), set_actor()
+Nodes (3): קוי בזק ישן (029) — bandwidth/contact map to real fields, the rest of the…, שם לקוח באפל'' (trailing gershayim) still hits the alias., TestCircuitsParser
 
-### Community 91 - "Community 91"
+### Community 93 - "Security Policy"
 Cohesion: 0.40
-Nodes (5): scripts, build, dev, lint, start
+Nodes (4): Deployment notes, Reporting a vulnerability, Security Policy, Supported versions
 
-### Community 92 - "Community 92"
-Cohesion: 0.40
-Nodes (4): GRID_CELL_TOKENS, STATUS_TOKENS, StatusBadgeVariant, StatusTokenSet
-
-### Community 94 - "Community 94"
+### Community 94 - "schemas/changelog.py"
 Cohesion: 0.67
 Nodes (3): ChangeField, ChangeLogOut, BaseModel
 
+### Community 95 - "_positional_columns"
+Cohesion: 0.29
+Nodes (4): _col_class(), _positional_columns(), Dominant content class of a column sample., Headerless sheet: locate the IP column, then assign the remaining canonical…
+
+### Community 117 - "SettingsValidationError"
+Cohesion: 0.67
+Nodes (3): Exception, Carries {key: message} so the API can return per-field 422s., SettingsValidationError
+
 ## Knowledge Gaps
-- **444 isolated node(s):** `ChartTheme`, `PrefixRow`, `VlanRow`, `Group`, `StatusBadgeVariant` (+439 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 1155 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **84 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **302 isolated node(s):** `nextConfig`, `name`, `version`, `private`, `dev` (+297 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 967 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **62 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `upload_workbook()` connect `Community 42` to `Auth & Security`, `Community 38`?**
-  _High betweenness centrality (0.340) - this node is a cross-community bridge._
-- **Why does `ImportBatch` connect `Community 38` to `Community 16`, `Community 42`?**
-  _High betweenness centrality (0.340) - this node is a cross-community bridge._
-- **Why does `react` connect `Auth & Settings UI` to `Client UI Pages`, `Community 128`, `Community 129`, `Community 130`, `Community 131`, `Community 132`, `Community 133`, `Community 134`, `Prefix Tree UI`, `Community 135`, `Community 136`, `Table & List UI`, `Community 137`, `Community 138`, `Community 139`, `Community 15`, `Community 19`, `Community 21`, `Community 29`, `Community 32`, `Community 33`, `Community 50`, `Community 76`, `Community 86`, `Community 95`, `Community 96`, `Community 97`, `Community 98`, `Community 99`, `Community 124`, `Community 125`, `Community 126`, `Community 127`?**
-  _High betweenness centrality (0.093) - this node is a cross-community bridge._
-- **Are the 28 inferred relationships involving `User` (e.g. with `bulk_addresses()` and `auth_status()`) actually correct?**
-  _`User` has 28 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 38 inferred relationships involving `IPAMError` (e.g. with `create_address()` and `delete_address()`) actually correct?**
-  _`IPAMError` has 38 INFERRED edges - model-reasoned connections that need verification._
-- **What connects `ChartTheme`, `PrefixRow`, `VlanRow` to the rest of the system?**
-  _444 weakly-connected nodes found - possible documentation gaps or missing edges._
-- **Should `Client UI Pages` be split into smaller, more focused modules?**
-  _Cohesion score 0.05307346326836582 - nodes in this community are weakly interconnected._
+- **Why does `IPAddress` connect `IPAddress` to `services/backup.py`, `IPAMError`, `maintenance.py`, `prefixes.py`, `v1/search.py`, `_get_rack`, `worker.py`, `test_racks.py`, `addresses.py`, `v1/racks.py`, `entities.py`, `_mklist`, `reconcile`, `test_scanner.py`?**
+  _High betweenness centrality (0.030) - this node is a cross-community bridge._
+- **Why does `User` connect `User` to `services/backup.py`, `IPAMError`, `restore`, `maintenance.py`, `UserRole`, `v1/auth.py`, `test_ordering.py`, `test_colors.py`, `test_racks.py`, `addresses.py`, `users.py`, `restore_backup`, `imports.py`, `entities.py`?**
+  _High betweenness centrality (0.030) - this node is a cross-community bridge._
+- **Why does `react` connect `react` to `prefixes/[id]/page.tsx`, `prefixes/[id]/print/page.tsx`, `racks/[id]/page.tsx`, `cn`, `prefixes/page.tsx`, `list-client.tsx`, `label/page.tsx`, `racks/[id]/print/page.tsx`, `racks/page.tsx`, `scans/page.tsx`, `services/page.tsx`, `appearance/page.tsx`, `backup/page.tsx`, `color-rules/page.tsx`, `data/page.tsx`, `settings/page.tsx`, `scanning/page.tsx`, `security/page.tsx`, `users/page.tsx`, `command-palette.tsx`, `sites/page.tsx`, `tags/page.tsx`, `vlans/page.tsx`, `ip-drawer.tsx`, `useAsyncData`, `route-error.tsx`, `package.json`, `tree/page.tsx`, `rackula.ts`, `vrfs/page.tsx`, `import-client.tsx`, `index.ts`, `next`, `quick-scan.tsx`, `use-chart-theme.ts`, `login/page.tsx`, `setup/page.tsx`, `certificates/page.tsx`, `changelog/page.tsx`, `circuits/page.tsx`, `discovery/page.tsx`, `import/page.tsx`, `inventory/page.tsx`, `lists/page.tsx`, `lists/[slug]/page.tsx`, `app/page.tsx`?**
+  _High betweenness centrality (0.024) - this node is a cross-community bridge._
+- **Are the 58 inferred relationships involving `IPAMError` (e.g. with `create_address()` and `delete_address()`) actually correct?**
+  _`IPAMError` has 58 INFERRED edges - model-reasoned connections that need verification._
+- **What connects `nextConfig`, `name`, `version` to the rest of the system?**
+  _302 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Should `services/backup.py` be split into smaller, more focused modules?**
+  _Cohesion score 0.08612612612612612 - nodes in this community are weakly interconnected._
+- **Should `react` be split into smaller, more focused modules?**
+  _Cohesion score 0.07961904761904762 - nodes in this community are weakly interconnected._
