@@ -123,12 +123,17 @@ Rows match existing devices by `id` → `serial_number` → `mac_address` →
 preview shows each row's action with honest `{field: [old, new]}` diffs in
 update mode. Placement conflicts, unknown sites/racks/carriers and bad
 values are per-row errors that name the offender; `unracked_on_missing`
-salvages rows whose rack can't be resolved. Carrier trays and their
+salvages rows whose rack (or its rack_group qualifier) can't be resolved —
+they land as unracked inventory with a note, ambiguity still errors. Carrier trays and their
 children are handled two-pass — a file can mount children on a carrier it
 also creates, and children inherit rack/U/face. `ips` only ever links
 *existing* addresses (unknown tokens warn, never create). Commit is
 all-or-nothing unless `force` is on; every write goes through the normal
 device paths so the [changelog](/docs/history) records imported changes.
+
+The same importer runs inside [rack bundles](/docs/racks#export--import) —
+a `devices` sheet in a rack/group workbook follows these exact rules, with
+`name` matching scoped to the rack the row is being placed into.
 
 ## API sketch
 

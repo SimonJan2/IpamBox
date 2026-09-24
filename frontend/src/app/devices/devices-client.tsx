@@ -167,7 +167,7 @@ const IMPORT_OPTIONS: ImportOption[] = [
   {
     kind: "flag",
     param: "unracked_on_missing",
-    label: "Unracked when rack missing",
+    label: "Unracked when rack/group missing",
   },
   {
     kind: "flag",

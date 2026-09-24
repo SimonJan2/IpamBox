@@ -13,7 +13,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Boxes } from "lucide-react";
+import { ArrowLeft, Boxes, Download, FileUp } from "lucide-react";
 import {
   DndContext,
   PointerSensor,
@@ -42,6 +42,11 @@ import {
 } from "@/components/racks/rack-row";
 import { AsyncPanel } from "@/components/async-panel";
 import { DocsLink } from "@/components/docs/docs-link";
+import { SmartImportDialog } from "@/components/smart-import-dialog";
+import {
+  RACK_IMPORT_FIELDS,
+  RACK_IMPORT_OPTIONS,
+} from "@/lib/rack-import";
 import { Button } from "@/components/ui/button";
 
 const EDIT_KEY = "ipambox:rack-group-edit";
@@ -125,6 +130,7 @@ export default function GroupClient({ id }: { id: string }) {
   const [view, setView] = useState<"front" | "rear">("front");
   const [health, setHealth] = useState(true);
   const [edit, setEdit] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [drag, setDrag] = useState<DragSession | null>(null);
   const [announce, setAnnounce] = useState("");
   const queue = useRef<Promise<unknown>>(Promise.resolve());
@@ -278,6 +284,20 @@ export default function GroupClient({ id }: { id: string }) {
           <DocsLink slug="racks" />
         </h1>
         <div className="flex items-center gap-2">
+          <Button variant="secondary" size="sm" asChild>
+            <a href={`/api/v1/rack-groups/${id}/export.xlsx`} download>
+              <Download /> Export group
+            </a>
+          </Button>
+          {canWrite && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setImportOpen(true)}
+            >
+              <FileUp /> Import into this group
+            </Button>
+          )}
           <button
             type="button"
             aria-pressed={health}
@@ -409,6 +429,18 @@ export default function GroupClient({ id }: { id: string }) {
       <div aria-live="polite" className="sr-only">
         {announce}
       </div>
+
+      <SmartImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        endpoint="/api/v1/racks/import"
+        fields={RACK_IMPORT_FIELDS}
+        options={RACK_IMPORT_OPTIONS}
+        extraParams={{ group_id: id }}
+        title="Import into this group"
+        description="Upload a racks CSV or a multi-sheet bundle — every imported rack joins this group regardless of the file's group column."
+        onCommitted={() => void groupQ.reload()}
+      />
     </div>
   );
 }

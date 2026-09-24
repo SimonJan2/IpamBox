@@ -28,6 +28,7 @@ from app.schemas.rack import (
 from app.services.colors import stamp_colors
 from app.services.ipam import IPAMError, get_or_404
 from app.services.ordering import ordered, reorder
+from app.services.rack_io import bundle_sheets, workbook_response
 from app.services.racks import stamp_rack_stats
 
 router = APIRouter(prefix="/rack-groups", tags=["rack-groups"])
@@ -126,6 +127,27 @@ async def reorder_rack_groups(
         await reorder(session, RackGroup, body.ids)
     except IPAMError as e:
         raise HTTPException(e.status_code, str(e))
+
+
+@router.get("/{group_id}/export.xlsx")
+async def export_rack_group_xlsx(
+    group_id: int, session: AsyncSession = Depends(get_session)
+):
+    """The group file: group row + member racks in group_position order +
+    every device (+ wiring). Re-imports as the same tree."""
+    g = await _get_group(session, group_id)
+    racks = list(
+        (
+            await session.execute(
+                _ordered_racks(select(Rack).where(Rack.group_id == g.id))
+            )
+        ).scalars()
+    )
+    # the bundle's groups sheet holds exactly the groups these racks
+    # reference — for a group file that's this one.
+    return workbook_response(
+        f"{g.name}.xlsx", await bundle_sheets(session, racks)
+    )
 
 
 @router.get("/{group_id}", response_model=RackGroupDetail)

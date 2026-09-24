@@ -208,6 +208,11 @@ export default function RackDetailPage({ id }: { id: string }) {
               </a>
             </Button>
           )}
+          <Button variant="secondary" size="sm" asChild disabled={!rack}>
+            <a href={`/api/v1/racks/${id}/export.xlsx`} download>
+              <Download /> Export .xlsx
+            </a>
+          </Button>
           <Button variant="secondary" size="sm" onClick={downloadZip} disabled={!rack}>
             <Download /> .Rackula.zip
           </Button>

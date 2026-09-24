@@ -80,7 +80,14 @@ Scapy raw-socket scanning · Next.js 15 dark-mode UI
   QR labels. **Rack groups** render bayed rows — ordered racks side by side
   with per-rack and per-row U/power/weight rollups, and an edit mode for
   dragging devices across racks. A dashboard card charts fleet capacity.
-  Round-trips with a self-hosted
+  Racks and groups round-trip as **smart bundles**: the filtered rack view
+  exports a flat CSV or a multi-sheet XLSX (groups → racks → devices →
+  interfaces → cables, every reference by name), a group page exports the
+  whole row in one file, and the smart importer previews per-sheet actions
+  — sites/groups/racks match by name, devices follow the device importer's
+  rules, placement conflicts are reported never forced, and a group export
+  re-imported into an empty install rebuilds the identical tree. Round-trips
+  with a self-hosted
   [Rackula](https://github.com/RackulaLives/Rackula) instance via share URLs
   and `.Rackula.zip` archives for heavy editing.
 - **Hebrew data support**: final-letter folding in search (type

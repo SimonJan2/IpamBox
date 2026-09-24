@@ -451,6 +451,37 @@ async def test_import_unracked_on_missing(client: AsyncClient):
     d = (await client.get("/api/v1/devices")).json()["items"][0]
     assert d["rack_id"] is None
 
+    # a broken rack_group qualifier voids the placement claim — same
+    # salvage as a missing rack (the rack cell isn't trusted either)
+    payload = _csv("name,rack,rack_group,u_position\nu2,G1,NOGROUP,4\n")
+    resp = await _import(client, payload)
+    assert resp["rows"][0]["action"] == "error"
+    assert "rack_group" in resp["rows"][0]["detail"]
+    resp = await _import(client, payload, unracked_on_missing=True,
+                         dry_run=False)
+    assert resp["committed"] is True
+    assert "unracked" in resp["rows"][0]["detail"]
+    devs = {
+        x["name"]: x
+        for x in (await client.get("/api/v1/devices")).json()["items"]
+    }
+    assert devs["u2"]["rack_id"] is None
+
+    # pass B: a child row with a broken group still mounts — the carrier's
+    # own placement decides, the rack cell is just voided
+    rack = await _rack(client, name="RCY")
+    await _racked(client, rack["id"], name="tray2", u_position=5,
+                  slot_layout="halves")
+    payload = _csv("name,rack,rack_group,carrier,slot\nkid3,,NOGROUP,tray2,0\n")
+    resp = await _import(client, payload, unracked_on_missing=True,
+                         dry_run=False)
+    assert resp["committed"] is True, resp["rows"]
+    devs = {
+        x["name"]: x
+        for x in (await client.get("/api/v1/devices")).json()["items"]
+    }
+    assert devs["kid3"]["rack_id"] == rack["id"] and devs["kid3"]["slot"] == 0
+
 
 # ---------------------------------------------------------------- carriers
 
@@ -484,6 +515,43 @@ async def test_import_carrier_two_pass(client: AsyncClient):
     # missing carrier -> error row
     resp = await _import(client, _csv("name,carrier,slot\nk,NOPE,0\n"))
     assert resp["rows"][0]["action"] == "error"
+
+
+async def test_import_replaces_unracked_carrier_and_children(
+    client: AsyncClient,
+):
+    """Devices-first-then-racks flow: an unracked carrier + child already
+    in inventory must be placeable by a later import. on_match=update
+    re-racks the carrier and mounts the child; on_match=skip leaves both
+    untouched (the child reports skip, not a misleading not-found)."""
+    rack = await _rack(client, name="RL")
+    await _device(client, name="trayU", slot_layout="halves")
+    await _device(client, name="kidU")
+    payload = _csv(
+        "name,rack,u_position,slot_layout,carrier,slot\n"
+        "trayU,RL,7,halves,,\n"
+        "kidU,RL,,,trayU,1\n"
+    )
+
+    resp = await _import(client, payload, on_match="skip")
+    rows = {r["row"]: r for r in resp["rows"]}
+    assert rows[2]["action"] == "skip"
+    assert rows[3]["action"] == "skip" and "not racked" in rows[3]["detail"]
+
+    resp = await _import(client, payload, on_match="update", dry_run=False)
+    assert resp["committed"] is True, resp["rows"]
+    rows = {r["row"]: r for r in resp["rows"]}
+    assert rows[2]["action"] == "update"
+    assert rows[3]["action"] == "update"
+    devs = {
+        d["name"]: d
+        for d in (await client.get("/api/v1/devices")).json()["items"]
+    }
+    tray = devs["trayU"]
+    assert tray["rack_id"] == rack["id"] and tray["u_position"] == 7
+    assert devs["kidU"]["carrier_id"] == tray["id"]
+    assert devs["kidU"]["slot"] == 1
+    assert devs["kidU"]["rack_id"] == rack["id"]
 
 
 # --------------------------------------------------------------- ip links

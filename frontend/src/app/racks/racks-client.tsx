@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useMemo, useState } from "react";
 import Link from "next/link";
-import { Boxes, History, ListFilter, Pencil, Plus, SlidersHorizontal, Trash2 } from "lucide-react";
+import { Boxes, Download, FileUp, History, ListFilter, Pencil, Plus, SlidersHorizontal, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   flexRender,
@@ -37,6 +37,11 @@ import { SortHeader, columnAriaSort } from "@/components/sort-header";
 import { AsyncPanel } from "@/components/async-panel";
 import { DocsLink } from "@/components/docs/docs-link";
 import { HistoryDialog } from "@/components/history-panel";
+import { SmartImportDialog } from "@/components/smart-import-dialog";
+import {
+  RACK_IMPORT_FIELDS,
+  RACK_IMPORT_OPTIONS,
+} from "@/lib/rack-import";
 import { RowColorLegend, RowColorPicker } from "@/components/row-color";
 import { SavedViews } from "@/components/saved-views";
 import {
@@ -55,6 +60,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -101,6 +112,9 @@ const RACK_VIEWS: SavedView[] = [
   { name: "Nearly full", query: "occupancy=partial,full&max_free_u=4" },
   { name: "Empty", query: "occupancy=empty" },
 ];
+
+// Bundle-aware field union + mode options for the smart importer live in
+// @/lib/rack-import (shared with the group page's "import into this group").
 
 function GroupDialog({
   open,
@@ -244,6 +258,7 @@ export default function RacksPage() {
   const [deleting, setDeleting] = useState<Rack | null>(null);
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   const [editingGroup, setEditingGroup] = useState<RackGroup | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
   const [historyFor, setHistoryFor] = useState<{
     type: "Rack" | "RackGroup";
     id: number;
@@ -676,23 +691,59 @@ export default function RacksPage() {
     setForm({ ...form, [k]: e.target.value });
   const uid = useId();
 
+  // The export replays the CURRENT query string — a filtered view exports
+  // exactly the set it shows (CSV flat rows; XLSX the full bundle).
+  const qs = searchParams.toString();
+  const exportHref = (ext: "csv" | "xlsx") =>
+    `/api/v1/racks/export.${ext}${qs ? `?${qs}` : ""}`;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="flex items-center gap-1.5 text-xl font-semibold">
           Racks <DocsLink slug="racks" />
         </h1>
-        {canWrite && (
-          <Button
-            size="sm"
-            onClick={() => {
-              setEditing(null);
-              setDialogOpen(true);
-            }}
-          >
-            <Plus /> New rack
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" aria-label="Export racks">
+                <Download /> Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem asChild>
+                <a href={exportHref("csv")} download>
+                  CSV (this view)
+                </a>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <a href={exportHref("xlsx")} download>
+                  XLSX bundle (this view)
+                </a>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {canWrite && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setImportOpen(true)}
+              >
+                <FileUp /> Import
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setEditing(null);
+                  setDialogOpen(true);
+                }}
+              >
+                <Plus /> New rack
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="rounded-lg border">
@@ -1061,6 +1112,17 @@ export default function RacksPage() {
         objectType={historyFor?.type ?? null}
         objectId={historyFor?.id ?? null}
         title={historyFor?.title}
+      />
+
+      <SmartImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        endpoint="/api/v1/racks/import"
+        fields={RACK_IMPORT_FIELDS}
+        options={RACK_IMPORT_OPTIONS}
+        title="Import racks"
+        description="Upload a racks CSV or a multi-sheet bundle (groups → racks → devices → interfaces → cables). Sheets are detected by their headers; the dry-run previews every row's action per sheet, then commit applies the ok rows."
+        onCommitted={refresh}
       />
     </div>
   );
