@@ -557,3 +557,214 @@ def test_alembic_devices_data_migration():
             await conn.close()
 
     asyncio.run(_run())
+
+
+# ------------------------------------------------------------- list filters
+
+
+async def _site(client: AsyncClient, name: str = "Site A") -> dict:
+    r = await client.post("/api/v1/sites", json={"name": name})
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+async def _group(client: AsyncClient, **kw) -> dict:
+    body = {"name": "Row A", **kw}
+    r = await client.post("/api/v1/rack-groups", json=body)
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+async def _iface(client: AsyncClient, device_id: int, name: str) -> dict:
+    r = await client.post(
+        f"/api/v1/devices/{device_id}/interfaces", json={"name": name}
+    )
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+async def _cable(client: AsyncClient, a_id: int, b_id: int) -> None:
+    r = await client.post(
+        "/api/v1/cables",
+        json={"a_interface_id": a_id, "b_interface_id": b_id},
+    )
+    assert r.status_code == 201, r.text
+
+
+async def test_devices_list_facet_params(client: AsyncClient):
+    """Every /devices list param filters; all compose with AND semantics."""
+    s1 = await _site(client, "DC-East")
+    s2 = await _site(client, "DC-West")
+    g1 = await _group(client, name="Row A", site_id=s1["id"])
+    r1 = await _rack(
+        client, name="A-01", group_id=g1["id"], site_id=s1["id"]
+    )
+    r2 = await _rack(client, name="B-01", site_id=s2["id"])
+
+    # racked in r1 (group Row A) with a site link
+    sw = await _device(
+        client,
+        name="sw-a",
+        manufacturer="Dell",
+        model="R650",
+        category="network",
+        device_type="switch",
+        site_id=s1["id"],
+    )
+    r = await client.patch(
+        f"/api/v1/devices/{sw['id']}",
+        json={"rack_id": r1["id"], "u_position": 1, "face": "front"},
+    )
+    assert r.status_code == 200, r.text
+
+    # racked in r2 (no group), imported source, rear face — site link is a
+    # plain attribute patch (the rack-device create body has no site_id)
+    srv = await _racked(
+        client,
+        r2["id"],
+        name="srv-b",
+        u_position=1,
+        face="rear",
+        manufacturer="HPE",
+        source="rackula",
+    )
+    r = await client.patch(
+        f"/api/v1/devices/{srv['id']}", json={"site_id": s2["id"]}
+    )
+    assert r.status_code == 200, r.text
+
+    # unracked spare
+    await _device(
+        client, name="spare", manufacturer="Dell", device_type="server"
+    )
+
+    # carrier-mounted child in r1 — rack/face derive from the carrier
+    tray = await _racked(
+        client, r1["id"], name="tray", u_position=6, slot_layout="halves"
+    )
+    r = await client.post(
+        "/api/v1/devices",
+        json={"name": "kid", "carrier_id": tray["id"], "slot": 1},
+    )
+    assert r.status_code == 201, r.text
+
+    async def names(**params) -> set[str]:
+        page = (await client.get("/api/v1/devices", params=params)).json()
+        return {d["name"] for d in page["items"]}
+
+    assert await names() == {"sw-a", "srv-b", "spare", "tray", "kid"}
+
+    # unracked is tri-state: 1 = no rack, 0 = placed somewhere
+    assert await names(unracked=1) == {"spare"}
+    assert await names(unracked=0) == {"sw-a", "srv-b", "tray", "kid"}
+
+    # mounted = carrier children
+    assert await names(mounted=1) == {"kid"}
+    assert await names(mounted=0) == {"sw-a", "srv-b", "spare", "tray"}
+
+    # face — the kid inherits the carrier's front face
+    assert await names(face="front") == {"sw-a", "tray", "kid"}
+    assert await names(face="rear") == {"srv-b"}
+    assert await names(face="front,rear") == {
+        "sw-a", "srv-b", "tray", "kid",
+    }
+
+    # group_id resolves through the device's rack
+    assert await names(group_id=g1["id"]) == {"sw-a", "tray", "kid"}
+
+    # id params accept a single id or a CSV set
+    assert await names(site_id=s1["id"]) == {"sw-a"}
+    assert await names(site_id=f"{s1['id']},{s2['id']}") == {"sw-a", "srv-b"}
+    assert await names(rack_id=f"{r1['id']},{r2['id']}") == {
+        "sw-a", "srv-b", "tray", "kid",
+    }
+
+    # attribute facets are Hebrew-folded substrings, like q
+    assert await names(manufacturer="dell") == {"sw-a", "spare"}
+    assert await names(model="r65") == {"sw-a"}
+    assert await names(category="netw") == {"sw-a"}
+    assert await names(device_type="swit") == {"sw-a"}
+
+    # source is exact (CSV of exact values)
+    assert await names(source="rackula") == {"srv-b"}
+    assert await names(source="manual,rackula") == {
+        "sw-a", "srv-b", "spare", "tray", "kid",
+    }
+
+    # has_ip via EXISTS on ip_addresses.device_id
+    pid = await _prefix(client)
+    await _ip(client, pid, "10.50.0.70", device_id=sw["id"])
+    assert await names(has_ip=1) == {"sw-a"}
+    assert await names(has_ip=0) == {"srv-b", "spare", "tray", "kid"}
+
+    # AND composition across SQL + computed classes
+    assert await names(manufacturer="dell", unracked=1) == {"spare"}
+    assert await names(group_id=g1["id"], mounted=1) == {"kid"}
+    assert await names(site_id=s1["id"], unracked=0) == {"sw-a"}
+
+    # bad facet values fail loudly instead of silently filtering wrong
+    for bad in (
+        {"face": "side"},
+        {"wiring": "nope"},
+        {"site_id": "x"},
+        {"rack_id": "x"},
+        {"group_id": "x"},
+    ):
+        r = await client.get("/api/v1/devices", params=bad)
+        assert r.status_code == 422, bad
+
+
+async def test_devices_wiring_filter(client: AsyncClient):
+    """wiring= is a post-aggregate facet over interface_stats: a device with
+    zero interfaces is uncabled; `total` stays honest under limit/offset."""
+    full = await _device(client, name="full")
+    f1 = await _iface(client, full["id"], "p1")
+    f2 = await _iface(client, full["id"], "p2")
+    peer = await _iface(client, full["id"], "peer")
+    part = await _device(client, name="part")
+    p1 = await _iface(client, part["id"], "p1")
+    await _iface(client, part["id"], "p2")
+    none = await _device(client, name="none")
+    await _iface(client, none["id"], "n1")
+    await _iface(client, none["id"], "n2")
+    await _device(client, name="void")  # no interfaces at all
+
+    await _cable(client, f1["id"], f2["id"])  # full: all ports cabled
+    await _cable(client, p1["id"], peer["id"])  # part: 1 of 2 cabled
+
+    async def page(**params) -> dict:
+        return (await client.get("/api/v1/devices", params=params)).json()
+
+    def names(p: dict) -> set[str]:
+        return {d["name"] for d in p["items"]}
+
+    assert names(await page(wiring="cabled")) == {"full"}
+    assert names(await page(wiring="partial")) == {"part"}
+    assert names(await page(wiring="uncabled")) == {"none", "void"}
+    assert names(await page(wiring="cabled,partial")) == {"full", "part"}
+
+    # facet first, then slice — total counts the faceted set, not the page
+    p1 = await page(wiring="uncabled", limit=1)
+    assert p1["total"] == 2 and len(p1["items"]) == 1
+    p2 = await page(wiring="uncabled", limit=1, offset=1)
+    assert p2["total"] == 2 and len(p2["items"]) == 1
+    assert {p1["items"][0]["name"], p2["items"][0]["name"]} == {
+        "none",
+        "void",
+    }
+
+    # composing with a SQL facet still works
+    assert names(await page(wiring="uncabled", device_type="zzz")) == set()
+
+
+async def test_devices_list_filters_viewer(
+    client: AsyncClient, session: AsyncSession, auth_on
+):
+    """RBAC unchanged: the facet vocabulary stays DATA_READ."""
+    await _mkuser(session, "v", UserRole.VIEWER)
+    await _login(client, "v")
+    r = await client.get(
+        "/api/v1/devices",
+        params={"has_ip": 1, "wiring": "cabled", "mounted": 1},
+    )
+    assert r.status_code == 200

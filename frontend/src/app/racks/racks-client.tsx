@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useMemo, useState } from "react";
 import Link from "next/link";
-import { Boxes, History, ListFilter, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Boxes, History, ListFilter, Pencil, Plus, SlidersHorizontal, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   flexRender,
@@ -16,9 +16,13 @@ import { api } from "@/lib/api";
 import { useAsyncData } from "@/lib/use-async-data";
 import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
-import { cn, foldHebrew } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { formatKg, formatWatts } from "@/lib/rack-capacity";
-import { useUrlParam, useUrlSorting, useUrlText } from "@/lib/url-state";
+import {
+  useUrlParams,
+  useUrlSorting,
+} from "@/lib/url-state";
+import type { SavedView } from "@/lib/prefs";
 import { useRowNav } from "@/lib/row-nav";
 import { useRowColor, rowTintStyle } from "@/lib/row-color";
 import { useRowOrder } from "@/lib/row-order";
@@ -34,6 +38,13 @@ import { AsyncPanel } from "@/components/async-panel";
 import { DocsLink } from "@/components/docs/docs-link";
 import { HistoryDialog } from "@/components/history-panel";
 import { RowColorLegend, RowColorPicker } from "@/components/row-color";
+import { SavedViews } from "@/components/saved-views";
+import {
+  RackFilterPanel,
+  filterRacks,
+  useRackFilterState,
+} from "@/components/rack-filter-panel";
+import { FilterChip, chipSummary } from "@/components/filter-ui";
 import type { Page, Rack, RackGroup, Site } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -61,6 +72,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 
 const EMPTY = {
   name: "",
@@ -75,6 +93,14 @@ const EMPTY = {
 };
 
 type RackRow = Rack & { site_name: string };
+
+const RACK_VIEWS: SavedView[] = [
+  { name: "Ungrouped", query: "ungrouped=1" },
+  // "Nearly full" = occupied with ≤4U left — the "where can a 4U box NOT go"
+  // complement of min_free_u=4.
+  { name: "Nearly full", query: "occupancy=partial,full&max_free_u=4" },
+  { name: "Empty", query: "occupancy=empty" },
+];
 
 function GroupDialog({
   open,
@@ -193,15 +219,10 @@ export default function RacksPage() {
   const { can } = useAuth();
   const canWrite = can(PERM.DATA_WRITE);
   const canDelete = can(PERM.DATA_DELETE);
-  const [filterGroup, setFilterGroupRaw] = useUrlParam("group");
-  const setFilterGroup = (id: number | null) =>
-    setFilterGroupRaw(id === null ? "" : String(id));
-  const itemsQ = useAsyncData(
-    () =>
-      api.get<Page<Rack>>(
-        `/api/v1/racks${filterGroup ? `?group_id=${filterGroup}` : ""}`
-      ).then((p) => p.items),
-    [filterGroup]
+  const f = useRackFilterState();
+  const { searchParams, setParams } = useUrlParams();
+  const itemsQ = useAsyncData(() =>
+    api.get<Page<Rack>>("/api/v1/racks").then((p) => p.items)
   );
   const groupsQ = useAsyncData(async () => {
     try {
@@ -217,7 +238,6 @@ export default function RacksPage() {
       return [];
     }
   });
-  const [q, setQ] = useUrlText("q");
   const [sorting, setSorting] = useUrlSorting();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Rack | null>(null);
@@ -239,6 +259,21 @@ export default function RacksPage() {
     void itemsQ.reload();
     void groupsQ.reload();
   };
+
+  // Legacy `?group=N` (pre-facet vocabulary) — fold it into group_id once.
+  useEffect(() => {
+    const legacy = searchParams.get("group");
+    if (!legacy) return;
+    const merged = new Set(
+      [...(searchParams.get("group_id") ?? "").split(","), legacy].filter(
+        Boolean
+      )
+    );
+    setParams(
+      { group: null, group_id: [...merged].join(",") },
+      "replace"
+    );
+  }, [searchParams, setParams]);
 
   useEffect(() => {
     if (dialogOpen) {
@@ -312,6 +347,10 @@ export default function RacksPage() {
     () => Object.fromEntries(sites.map((s) => [s.id, s.name])),
     [sites]
   );
+  const groupName = useMemo(
+    () => Object.fromEntries(groups.map((g) => [g.id, g.name])),
+    [groups]
+  );
 
   const rows = useMemo<RackRow[]>(
     () =>
@@ -322,20 +361,12 @@ export default function RacksPage() {
     [items, siteName]
   );
 
-  const filtered = useMemo(() => {
-    const needle = foldHebrew(q.toLowerCase());
-    if (!needle) return rows;
-    return rows.filter((r) =>
-      [r.name, r.room, r.description, r.site_name].some(
-        (f) => f != null && foldHebrew(f.toLowerCase()).includes(needle)
-      )
-    );
-  }, [rows, q]);
+  const filtered = useMemo(() => filterRacks(rows, f), [rows, f]);
 
   const orderBlock = sorting.length
     ? "Row order is fixed while a column sort is on — clear the sort to drag."
-    : q
-      ? "Row order is fixed while searching — clear the search to drag."
+    : f.activeCount
+      ? "Row order is fixed while filtering — clear filters to drag."
       : null;
   const order = useRowOrder<Rack>({
     path: "/api/v1/racks",
@@ -356,7 +387,8 @@ export default function RacksPage() {
   const removeGroup = async (g: RackGroup) => {
     try {
       await api.del(`/api/v1/rack-groups/${g.id}`);
-      if (filterGroup === String(g.id)) setFilterGroup(null);
+      if (f.groupIds.has(String(g.id)))
+        f.setGroupIds(new Set([...f.groupIds].filter((id) => id !== String(g.id))));
       toast.success(`Deleted group ${g.name}`);
       refresh();
     } catch (e) {
@@ -558,6 +590,69 @@ export default function RacksPage() {
     [canWrite, canDelete, order.setPinned, orderBlock, setRowColor]
   );
 
+  // Toolbar chips — one per active facet; X clears just that facet.
+  const chips = useMemo(() => {
+    const t = f.texts;
+    const clear =
+      (patch: Record<string, string | null>) => () => f.setTextsNow(patch);
+    const c: { key: string; label: string; clear: () => void }[] = [];
+    if (t.q)
+      c.push({ key: "q", label: `Search: ${t.q}`, clear: clear({ q: null }) });
+    if (f.siteIds.size)
+      c.push({
+        key: "site_id",
+        label: `Site: ${chipSummary(
+          [...f.siteIds].map((id) => siteName[Number(id)] ?? `#${id}`)
+        )}`,
+        clear: clear({ site_id: null }),
+      });
+    if (f.groupIds.size)
+      c.push({
+        key: "group_id",
+        label: `Group: ${chipSummary(
+          [...f.groupIds].map((id) => groupName[Number(id)] ?? `#${id}`)
+        )}`,
+        clear: clear({ group_id: null }),
+      });
+    if (f.ungrouped)
+      c.push({
+        key: "ungrouped",
+        label: "Ungrouped",
+        clear: clear({ ungrouped: null }),
+      });
+    if (t.room)
+      c.push({
+        key: "room",
+        label: `Room: ${t.room}`,
+        clear: clear({ room: null }),
+      });
+    if (f.heights.size)
+      c.push({
+        key: "height_u",
+        label: `Height: ${chipSummary([...f.heights].map((h) => `${h}U`))}`,
+        clear: clear({ height_u: null }),
+      });
+    if (f.occupancy.size)
+      c.push({
+        key: "occupancy",
+        label: `Occupancy: ${chipSummary([...f.occupancy])}`,
+        clear: clear({ occupancy: null }),
+      });
+    if (t.min_free_u)
+      c.push({
+        key: "min_free_u",
+        label: `Free U ≥ ${t.min_free_u}`,
+        clear: clear({ min_free_u: null }),
+      });
+    if (t.max_free_u)
+      c.push({
+        key: "max_free_u",
+        label: `Free U ≤ ${t.max_free_u}`,
+        clear: clear({ max_free_u: null }),
+      });
+    return c;
+  }, [f, siteName, groupName]);
+
   const table = useReactTable({
     data: filtered,
     columns,
@@ -657,7 +752,7 @@ export default function RacksPage() {
                       size="icon"
                       aria-label={`Show racks in group ${g.name}`}
                       title="Show racks in group"
-                      onClick={() => setFilterGroup(g.id)}
+                      onClick={() => f.setGroupIds(new Set([String(g.id)]))}
                     >
                       <ListFilter className="h-4 w-4" />
                     </Button>
@@ -716,29 +811,39 @@ export default function RacksPage() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Input
-          placeholder="Search racks…"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          className="max-w-xs"
-        />
-        {filterGroup !== "" && (
-          <Badge variant="secondary" className="gap-1.5">
-            <span dir="auto">
-              Group: {groups.find((g) => g.id === Number(filterGroup))?.name ?? filterGroup}
-            </span>
-            <button
-              aria-label="Clear group filter"
-              onClick={() => setFilterGroup(null)}
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </Badge>
-        )}
+        <Sheet>
+          <SheetTrigger asChild>
+            <Button variant="outline" size="sm" aria-label="Open filters">
+              <SlidersHorizontal /> Filters
+              {f.activeCount > 0 && (
+                <Badge variant="secondary" className="px-1.5">
+                  {f.activeCount}
+                </Badge>
+              )}
+            </Button>
+          </SheetTrigger>
+          <SheetContent>
+            <SheetTitle className="sr-only">Rack filters</SheetTitle>
+            <SheetDescription className="sr-only">
+              Filter racks by site, group, room, height, and occupancy.
+            </SheetDescription>
+            <RackFilterPanel
+              f={f}
+              items={rows}
+              filtered={filtered}
+              sites={sites}
+              groups={groups}
+            />
+          </SheetContent>
+        </Sheet>
+        {chips.map((c) => (
+          <FilterChip key={c.key} label={c.label} onClear={c.clear} />
+        ))}
         <span className="ml-auto text-sm text-muted-foreground">
           {tableRows.length} of {items.length}
         </span>
         <RowColorLegend />
+        <SavedViews pageKey="racks" builtins={RACK_VIEWS} />
       </div>
 
       <div className="rounded-lg border">
