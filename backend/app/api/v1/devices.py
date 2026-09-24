@@ -8,11 +8,12 @@ Semantics: rack_id NULL = unracked inventory. PATCH rack_id=X places /
 re-homes (validated), PATCH rack_id=null unracks, DELETE removes the row
 for real (IPs unlink via SET NULL, carrier children unmount).
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.imports import MAX_IMPORT_BYTES
 from app.api.v1.list_params import (
     parse_enum_set,
     parse_int_set,
@@ -50,6 +51,18 @@ from app.services.cabling import (
     stamp_connected_ips,
 )
 from app.services.colors import stamp_colors
+from app.services.csv_export import csv_response
+from app.services.device_io import (
+    DEVICE_EXPORT_COLUMNS,
+    HEALTH_CLASSES,
+    apply_device_import,
+    apply_mapping_overrides,
+    auto_map_headers,
+    device_export_rows,
+    parse_device_sheet,
+    plan_device_import,
+    xlsx_response,
+)
 from app.services.devices import device_health, ips_by_device
 from app.services.ipam import IPAMError, get_or_404
 from app.services.ordering import ordered, reorder
@@ -153,49 +166,30 @@ def _wiring_class(interface_count: int, cabled_count: int) -> str:
     return "partial"
 
 
-@router.get("", response_model=Page[DeviceOut])
-async def list_devices(
+def _health_class(ips) -> str:
+    h = device_health(ips)
+    return h.value if h is not None else "unmonitored"
+
+
+def _devices_stmt(
+    *,
     q: str = "",
-    rack_id: str | None = Query(
-        default=None, description="rack id or comma-separated rack ids"
-    ),
-    site_id: str | None = Query(
-        default=None, description="site id or comma-separated site ids"
-    ),
-    group_id: str | None = Query(
-        default=None,
-        description="rack-group id(s) — resolves through the device's rack",
-    ),
+    rack_ids=None,
+    site_ids=None,
+    group_ids=None,
     unracked: bool | None = None,
-    mounted: bool | None = Query(
-        default=None, description="carrier_id IS (NOT) NULL — carrier children"
-    ),
-    face: str | None = Query(
-        default=None, description="front|rear|both or comma-separated set"
-    ),
+    mounted: bool | None = None,
+    faces=None,
     manufacturer: str = "",
     model: str = "",
     category: str = "",
     device_type: str = "",
-    source: str = "",
-    has_ip: bool | None = Query(
-        default=None, description="EXISTS / NOT EXISTS on ip_addresses.device_id"
-    ),
-    wiring: str | None = Query(
-        default=None,
-        description="cabled|partial|uncabled or CSV — post-aggregate filter",
-    ),
-    limit: int | None = Query(default=None, ge=1, le=20000),
-    offset: int = 0,
-    session: AsyncSession = Depends(get_session),
+    sources=None,
+    has_ip: bool | None = None,
 ):
-    rack_ids = parse_int_set(rack_id, "rack_id")
-    site_ids = parse_int_set(site_id, "site_id")
-    group_ids = parse_int_set(group_id, "group_id")
-    faces = parse_enum_set(face, "face", RackFace)
-    sources = parse_str_set(source)
-    wirings = parse_token_set(wiring, "wiring", _WIRING_CLASSES)
-
+    """The V5A filter vocabulary -> a Device select. Shared by the list
+    endpoint and both export formats so the exported set equals the
+    filtered set by construction — one builder, three consumers."""
     stmt = select(Device)
     if rack_ids:
         stmt = stmt.where(Device.rack_id.in_(rack_ids))
@@ -262,13 +256,88 @@ async def list_devices(
                 )
             )
         )
-    stmt = ordered(stmt, Device, Device.name, Device.id)
+    return ordered(stmt, Device, Device.name, Device.id)
 
-    # Computed-field filters (wiring today; health joins on the export side)
-    # apply after the aggregate pass — so when one is active the SQL page has
-    # to wait: fetch the full SQL-matching set, facet it, then slice. `total`
-    # stays the honest filtered count either way.
-    if wirings is None:
+
+async def _filtered_devices(
+    session: AsyncSession,
+    stmt,
+    *,
+    wirings,
+    healths,
+) -> list[Device]:
+    """Full filtered set (unpaginated) with the computed facets applied —
+    wiring over interface_stats, health over linked-IP worst status."""
+    rows = list((await session.execute(stmt)).scalars().all())
+    istats = await interface_stats(session, [d.id for d in rows])
+    if wirings is not None:
+        rows = [d for d in rows if _wiring_class(*istats[d.id]) in wirings]
+    if healths is not None:
+        ips = await ips_by_device(session, [d.id for d in rows])
+        rows = [d for d in rows if _health_class(ips[d.id]) in healths]
+    return rows
+
+
+@router.get("", response_model=Page[DeviceOut])
+async def list_devices(
+    q: str = "",
+    rack_id: str | None = Query(
+        default=None, description="rack id or comma-separated rack ids"
+    ),
+    site_id: str | None = Query(
+        default=None, description="site id or comma-separated site ids"
+    ),
+    group_id: str | None = Query(
+        default=None,
+        description="rack-group id(s) — resolves through the device's rack",
+    ),
+    unracked: bool | None = None,
+    mounted: bool | None = Query(
+        default=None, description="carrier_id IS (NOT) NULL — carrier children"
+    ),
+    face: str | None = Query(
+        default=None, description="front|rear|both or comma-separated set"
+    ),
+    manufacturer: str = "",
+    model: str = "",
+    category: str = "",
+    device_type: str = "",
+    source: str = "",
+    has_ip: bool | None = Query(
+        default=None, description="EXISTS / NOT EXISTS on ip_addresses.device_id"
+    ),
+    wiring: str | None = Query(
+        default=None,
+        description="cabled|partial|uncabled or CSV — post-aggregate filter",
+    ),
+    health: str | None = Query(
+        default=None,
+        description="worst linked-IP status or CSV — post-aggregate filter",
+    ),
+    limit: int | None = Query(default=None, ge=1, le=20000),
+    offset: int = 0,
+    session: AsyncSession = Depends(get_session),
+):
+    rack_ids = parse_int_set(rack_id, "rack_id")
+    site_ids = parse_int_set(site_id, "site_id")
+    group_ids = parse_int_set(group_id, "group_id")
+    faces = parse_enum_set(face, "face", RackFace)
+    sources = parse_str_set(source)
+    wirings = parse_token_set(wiring, "wiring", _WIRING_CLASSES)
+    healths = parse_token_set(health, "health", HEALTH_CLASSES)
+
+    stmt = _devices_stmt(
+        q=q, rack_ids=rack_ids, site_ids=site_ids, group_ids=group_ids,
+        unracked=unracked, mounted=mounted, faces=faces,
+        manufacturer=manufacturer, model=model, category=category,
+        device_type=device_type, sources=sources, has_ip=has_ip,
+    )
+
+    # Computed-field filters (wiring, health) apply after the aggregate
+    # pass — so when one is active the SQL page has to wait: fetch the full
+    # SQL-matching set, facet it, then slice. `total` stays the honest
+    # filtered count either way.
+    if wirings is None and healths is None:
         total = await session.scalar(
             select(func.count()).select_from(stmt.order_by(None).subquery())
         )
@@ -278,17 +347,15 @@ async def list_devices(
             .all()
         )
     else:
-        rows = list((await session.execute(stmt)).scalars().all())
-    istats = await interface_stats(session, [d.id for d in rows])
-    if wirings is not None:
-        rows = [
-            d for d in rows if _wiring_class(*istats[d.id]) in wirings
-        ]
+        rows = await _filtered_devices(
+            session, stmt, wirings=wirings, healths=healths
+        )
         total = len(rows)
         rows = rows[offset : offset + limit if limit else None]
     await stamp_colors(session, "devices", rows)
     # Health + counts in grouped queries — never per-row.
     ips = await ips_by_device(session, [d.id for d in rows])
+    istats = await interface_stats(session, [d.id for d in rows])
     items = []
     for d in rows:
         out = DeviceOut.model_validate(d)
@@ -366,6 +433,216 @@ async def reorder_devices(
         await reorder(session, Device, body.ids)
     except IPAMError as e:
         raise HTTPException(e.status_code, str(e))
+
+
+# ---------------------------------------------------------------------------
+# Smart export / import — V5B. The export endpoints accept every V5A filter
+# param the list takes, so a filtered view exports exactly what it shows;
+# the importer maps the same columns back (plus EN/HE/NetBox aliases) with
+# dry-run diff preview and match/update semantics.
+# ---------------------------------------------------------------------------
+
+async def _export_rows(
+    session: AsyncSession,
+    *,
+    q: str,
+    rack_id: str | None,
+    site_id: str | None,
+    group_id: str | None,
+    unracked: bool | None,
+    mounted: bool | None,
+    face: str | None,
+    manufacturer: str,
+    model: str,
+    category: str,
+    device_type: str,
+    source: str,
+    has_ip: bool | None,
+    wiring: str | None,
+    health: str | None,
+) -> list[Device]:
+    stmt = _devices_stmt(
+        q=q,
+        rack_ids=parse_int_set(rack_id, "rack_id"),
+        site_ids=parse_int_set(site_id, "site_id"),
+        group_ids=parse_int_set(group_id, "group_id"),
+        unracked=unracked,
+        mounted=mounted,
+        faces=parse_enum_set(face, "face", RackFace),
+        manufacturer=manufacturer,
+        model=model,
+        category=category,
+        device_type=device_type,
+        sources=parse_str_set(source),
+        has_ip=has_ip,
+    )
+    return await _filtered_devices(
+        session,
+        stmt,
+        wirings=parse_token_set(wiring, "wiring", _WIRING_CLASSES),
+        healths=parse_token_set(health, "health", HEALTH_CLASSES),
+    )
+
+
+def _export_name(ext: str, *params) -> str:
+    filtered = any(p not in (None, "") for p in params)
+    return f"devices{'-filtered' if filtered else ''}.{ext}"
+
+
+@router.get("/export.csv")
+async def export_devices_csv(
+    q: str = "",
+    rack_id: str | None = None,
+    site_id: str | None = None,
+    group_id: str | None = None,
+    unracked: bool | None = None,
+    mounted: bool | None = None,
+    face: str | None = None,
+    manufacturer: str = "",
+    model: str = "",
+    category: str = "",
+    device_type: str = "",
+    source: str = "",
+    has_ip: bool | None = None,
+    wiring: str | None = None,
+    health: str | None = None,
+    columns: str | None = Query(
+        default=None,
+        description="comma-separated column whitelist, in output order",
+    ),
+    session: AsyncSession = Depends(get_session),
+):
+    devices = await _export_rows(
+        session, q=q, rack_id=rack_id, site_id=site_id, group_id=group_id,
+        unracked=unracked, mounted=mounted, face=face,
+        manufacturer=manufacturer, model=model, category=category,
+        device_type=device_type, source=source, has_ip=has_ip,
+        wiring=wiring, health=health,
+    )
+    header = DEVICE_EXPORT_COLUMNS
+    if columns:
+        wanted = [c.strip() for c in columns.split(",") if c.strip()]
+        bad = [c for c in wanted if c not in DEVICE_EXPORT_COLUMNS]
+        if bad:
+            raise HTTPException(422, f"unknown columns: {', '.join(bad)}")
+        header = list(dict.fromkeys(wanted))
+    idx = [DEVICE_EXPORT_COLUMNS.index(c) for c in header]
+    rows = await device_export_rows(session, devices)
+    return csv_response(
+        _export_name(
+            "csv", q, rack_id, site_id, group_id, unracked, mounted, face,
+            manufacturer, model, category, device_type, source, has_ip,
+            wiring, health,
+        ),
+        header,
+        [[r[i] for i in idx] for r in rows],
+    )
+
+
+@router.get("/export.xlsx")
+async def export_devices_xlsx(
+    q: str = "",
+    rack_id: str | None = None,
+    site_id: str | None = None,
+    group_id: str | None = None,
+    unracked: bool | None = None,
+    mounted: bool | None = None,
+    face: str | None = None,
+    manufacturer: str = "",
+    model: str = "",
+    category: str = "",
+    device_type: str = "",
+    source: str = "",
+    has_ip: bool | None = None,
+    wiring: str | None = None,
+    health: str | None = None,
+    session: AsyncSession = Depends(get_session),
+):
+    devices = await _export_rows(
+        session, q=q, rack_id=rack_id, site_id=site_id, group_id=group_id,
+        unracked=unracked, mounted=mounted, face=face,
+        manufacturer=manufacturer, model=model, category=category,
+        device_type=device_type, source=source, has_ip=has_ip,
+        wiring=wiring, health=health,
+    )
+    rows = await device_export_rows(session, devices)
+    return xlsx_response(
+        _export_name(
+            "xlsx", q, rack_id, site_id, group_id, unracked, mounted, face,
+            manufacturer, model, category, device_type, source, has_ip,
+            wiring, health,
+        ),
+        DEVICE_EXPORT_COLUMNS,
+        rows,
+    )
+
+
+@router.post(
+    "/import",
+    dependencies=[Depends(require_perm(DATA_WRITE))],
+)
+async def import_devices(
+    request: Request,
+    filename: str = Query(default="devices.csv"),
+    dry_run: bool = Query(default=True),
+    on_match: str = Query(
+        default="skip", description="skip|update when a row matches an existing device"
+    ),
+    unracked_on_missing: bool = Query(default=False),
+    mapping: str | None = Query(
+        default=None, description="JSON {source_header: field} overrides"
+    ),
+    force: bool = Query(
+        default=False, description="commit ok rows even when error rows exist"
+    ),
+    detect: bool = Query(
+        default=False, description="header auto-map only — no row planning"
+    ),
+    session: AsyncSession = Depends(get_session),
+):
+    """Smart device import. Stateless — the file is posted twice: dry-run
+    preview first, commit (dry_run=0) after review. Errors refuse the whole
+    commit unless force=1, matching the addresses importer's convention."""
+    payload = await request.body()
+    if len(payload) > MAX_IMPORT_BYTES:
+        raise HTTPException(413, "file too large")
+    if on_match not in ("skip", "update"):
+        raise HTTPException(422, "on_match must be skip|update")
+
+    headers, frows = parse_device_sheet(payload, filename)
+    col_map, unmapped = auto_map_headers(headers)
+    col_map = apply_mapping_overrides(col_map, headers, mapping)
+    columns = [{"header": h, "field": col_map.get(h)} for h in headers]
+    if detect:
+        return {"columns": columns, "unmapped": unmapped,
+                "row_count": len(frows)}
+
+    planned = await plan_device_import(
+        session, frows, col_map,
+        on_match=on_match, unracked_on_missing=unracked_on_missing,
+    )
+    committed = False
+    if not dry_run and (force or all(p.ok for p in planned)):
+        try:
+            await apply_device_import(session, planned)
+            await session.commit()
+        except IntegrityError as e:
+            await session.rollback()
+            raise HTTPException(409, "duplicate or invalid value") from e
+        except IPAMError as e:
+            await session.rollback()
+            raise HTTPException(e.status_code, str(e)) from e
+        committed = True
+    counts = {"create": 0, "update": 0, "skip": 0, "error": 0}
+    for p in planned:
+        counts[p.action] += 1
+    return {
+        "counts": counts,
+        "rows": [p.out() for p in planned],
+        "columns": columns,
+        "unmapped": unmapped,
+        "committed": committed,
+    }
 
 
 @router.get("/{device_id}", response_model=DeviceDetail)

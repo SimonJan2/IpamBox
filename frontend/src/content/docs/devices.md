@@ -96,20 +96,59 @@ existing device (name/model/serial search) or use **+ create device from
 this IP** — it pre-fills the device from the address's hostname, MAC and
 vendor, then links the address on save.
 
+## Export & import
+
+The toolbar's **Export** dropdown downloads the *currently filtered* set —
+the URL's facet params are appended to the export URL, so a filtered view
+exports exactly what it shows (the filename marks it `devices-filtered.*`).
+
+- **CSV** — UTF-8 with BOM (opens cleanly in Excel, Hebrew included).
+  `columns=` whitelists columns for lean exports.
+- **XLSX** — a single `devices` sheet, plain values.
+
+Column order is the round-trip contract: `id, name, device_type,
+manufacturer, model, category, serial_number, mac_address, site, rack,
+rack_group, u_position, u_height, face, carrier, slot, slot_layout, watts,
+weight_kg, ips, ip_count, interface_count, cabled_count, source, notes,
+created_at`. Site/rack/rack-group/carrier export as **names**, `ips` as a
+space-separated address list, and `id` stays so re-import can pin exact
+rows for updates.
+
+**Import** (write permission) opens the smart-import dialog: pick a `.csv`
+or `.xlsx`, review the auto-mapped columns (English, Hebrew and NetBox
+headers all map — NetBox's `device_role`→device type, `device_type`→model,
+`position`→U), fix any flagged-unmapped column, then **Run preview**.
+Rows match existing devices by `id` → `serial_number` → `mac_address` →
+`name`+site (an ambiguous name is an error, never a coin flip), and the
+preview shows each row's action with honest `{field: [old, new]}` diffs in
+update mode. Placement conflicts, unknown sites/racks/carriers and bad
+values are per-row errors that name the offender; `unracked_on_missing`
+salvages rows whose rack can't be resolved. Carrier trays and their
+children are handled two-pass — a file can mount children on a carrier it
+also creates, and children inherit rack/U/face. `ips` only ever links
+*existing* addresses (unknown tokens warn, never create). Commit is
+all-or-nothing unless `force` is on; every write goes through the normal
+device paths so the [changelog](/docs/history) records imported changes.
+
 ## API sketch
 
 ```
 GET    /api/v1/devices?q=&rack_id=&site_id=&group_id=&unracked=&mounted=
        &face=&manufacturer=&model=&category=&device_type=&source=&has_ip=
-       &wiring=                    # every page facet is a param; CSV sets
+       &wiring=&health=            # every page facet is a param; CSV sets
                                    # (face=front,rear), AND semantics, 422
-                                   # on bad values; wiring facets after the
-                                   # interface aggregate so total stays honest
+                                   # on bad values; wiring/health facet after
+                                   # the aggregates so total stays honest
 POST   /api/v1/devices              # unracked or placed (rack_id + u_position)
 GET    /api/v1/devices/{id}         # detail: ips[], asset, rack, carrier, health
 PATCH  /api/v1/devices/{id}         # attrs + placement (rack_id=null unracks)
 DELETE /api/v1/devices/{id}         # real delete — IPs unlink
 POST   /api/v1/devices/reorder
+GET    /api/v1/devices/export.csv   # every list param + columns= whitelist
+GET    /api/v1/devices/export.xlsx  # same set, one 'devices' sheet
+POST   /api/v1/devices/import       # raw file + filename=; dry_run=1 (default),
+                                    # on_match=skip|update, unracked_on_missing,
+                                    # mapping={header:field}, force, detect
 PATCH  /api/v1/addresses/{id}       # device_id link/unlink lives here too
 ```
 

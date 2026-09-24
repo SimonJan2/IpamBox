@@ -53,7 +53,16 @@ Scapy raw-socket scanning · Next.js 15 dark-mode UI
 - **Devices**: first-class device inventory — a device owns many IPs
   (mgmt + service + iLO), links an asset and a site, and optionally sits
   in a rack. Health is the worst status across its linked IPs; unracked
-  devices are valid inventory.
+  devices are valid inventory. Smart file I/O: the **Export** dropdown
+  downloads the currently filtered set as CSV (UTF-8 BOM) or XLSX —
+  what the page shows is what exports. **Import** auto-maps headers
+  (canonical + English + Hebrew + NetBox shape), matches existing devices
+  by id → serial → MAC → name+site, previews every row's action with
+  honest diffs, validates placement against the batch and the DB,
+  two-passes carrier mounts, links existing IPs (never creates them),
+  and commits all-or-nothing (or `force` for the valid rows) — export
+  output re-imports cleanly, with `source="import"` provenance on new
+  rows.
 - **Cabling**: devices own **interfaces** (rj45/sfp/qsfp/console/patch/
   power) with one-click port generation — including patch-panel front+back
   pairs in a single call. **Cables** connect ports with one-cable-per-
