@@ -1860,10 +1860,10 @@
     "semantic_hash": "bcb0e5d7330d506268cb8d824f3b43e3"
   },
   "README.md": {
-    "mtime": 1790206932.6961613,
-    "seen": 1790212389.4976852,
-    "ast_hash": "938f8ef6a126df9b1b18eb8e2f33aaac",
-    "semantic_hash": "938f8ef6a126df9b1b18eb8e2f33aaac"
+    "mtime": 1790241574.5095751,
+    "seen": 1790241863.1955018,
+    "ast_hash": "50b3abff469dfc0425de3bd1f59683dc",
+    "semantic_hash": "50b3abff469dfc0425de3bd1f59683dc"
   },
   "SECURITY.md": {
     "mtime": 1789945388.9140284,
@@ -15240,10 +15240,10 @@
     "semantic_hash": "2e44942eabb5615fa145c2d69e95d0aa"
   },
   "backend/app/api/v1/devices.py": {
-    "mtime": 1790210527.3123403,
-    "seen": 1790212389.4884923,
-    "ast_hash": "98dc12e4da2d5ad9145c51027241542f",
-    "semantic_hash": "98dc12e4da2d5ad9145c51027241542f"
+    "mtime": 1790241103.102055,
+    "seen": 1790241863.195492,
+    "ast_hash": "c5d640bfcc46f9c2ad72e879aa8887ab",
+    "semantic_hash": "c5d640bfcc46f9c2ad72e879aa8887ab"
   },
   "backend/app/models/device.py": {
     "mtime": 1790206932.6978087,
@@ -15282,10 +15282,10 @@
     "semantic_hash": "60abbe8be7b765ec33eff977b67538a5"
   },
   "frontend/src/app/devices/devices-client.tsx": {
-    "mtime": 1790209991.1708758,
-    "seen": 1790212389.4926312,
-    "ast_hash": "15443508a91634a78e2a6a551b402c43",
-    "semantic_hash": "15443508a91634a78e2a6a551b402c43"
+    "mtime": 1790241103.1022704,
+    "seen": 1790241863.1954994,
+    "ast_hash": "86b6e3303b6b5371d395e869fe4be7f8",
+    "semantic_hash": "86b6e3303b6b5371d395e869fe4be7f8"
   },
   "frontend/src/app/devices/page.tsx": {
     "mtime": 1790199190.8198884,
@@ -15294,10 +15294,10 @@
     "semantic_hash": "279beb2d14accc8509085df92dd948a0"
   },
   "frontend/src/content/docs/devices.md": {
-    "mtime": 1790211916.5441236,
-    "seen": 1790212389.4979224,
-    "ast_hash": "10f519e0913881435e4790f8fd640c16",
-    "semantic_hash": "10f519e0913881435e4790f8fd640c16"
+    "mtime": 1790241565.5912786,
+    "seen": 1790241863.1955028,
+    "ast_hash": "82739a811fd088cefebd868497319026",
+    "semantic_hash": "82739a811fd088cefebd868497319026"
   },
   "backend/alembic/versions/0023_interfaces_cables.py": {
     "mtime": 1790206932.6961613,
@@ -15376,5 +15376,23 @@
     "seen": 1790212389.4960482,
     "ast_hash": "ef1788d649abc732600da6a33e3486ef",
     "semantic_hash": "ef1788d649abc732600da6a33e3486ef"
+  },
+  "backend/app/services/device_io.py": {
+    "mtime": 1790240675.72684,
+    "seen": 1790241863.1954958,
+    "ast_hash": "42694e10028cc1c9026e8bccec96d236",
+    "semantic_hash": "42694e10028cc1c9026e8bccec96d236"
+  },
+  "backend/tests/test_device_io.py": {
+    "mtime": 1790240694.8116715,
+    "seen": 1790241863.1954978,
+    "ast_hash": "affca787ddc917e2f48d4a67744285d1",
+    "semantic_hash": "affca787ddc917e2f48d4a67744285d1"
+  },
+  "frontend/src/components/smart-import-dialog.tsx": {
+    "mtime": 1790241381.6033294,
+    "seen": 1790241863.1955006,
+    "ast_hash": "5649fbe94e2a9b1918d706b03988fe93",
+    "semantic_hash": "5649fbe94e2a9b1918d706b03988fe93"
   }
 }

@@ -1,8 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
+  Download,
+  FileUp,
   History,
   Pencil,
   Plus,
@@ -40,6 +42,11 @@ import { AsyncPanel } from "@/components/async-panel";
 import { DocsLink } from "@/components/docs/docs-link";
 import { HistoryDialog } from "@/components/history-panel";
 import { InlineText } from "@/components/inline-edit";
+import {
+  SmartImportDialog,
+  type FieldOption,
+  type ImportOption,
+} from "@/components/smart-import-dialog";
 import { RowColorLegend, RowColorPicker } from "@/components/row-color";
 import { SavedViews } from "@/components/saved-views";
 import { IpStatusBadge } from "@/components/status-badge";
@@ -60,6 +67,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input, Textarea } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -114,8 +127,58 @@ const TEXT_CHIP_LABELS: [DeviceTextParam, string][] = [
   ["device_type", "Device type"],
 ];
 
+// Canonical fields the smart importer can write/match on — mirrors
+// DEVICE_IMPORT_FIELDS on the backend.
+const IMPORT_FIELDS: FieldOption[] = [
+  { value: "id", label: "ID (exact match)" },
+  { value: "name", label: "Name" },
+  { value: "device_type", label: "Device type" },
+  { value: "manufacturer", label: "Manufacturer" },
+  { value: "model", label: "Model" },
+  { value: "category", label: "Category" },
+  { value: "serial_number", label: "Serial number" },
+  { value: "mac_address", label: "MAC address" },
+  { value: "site", label: "Site" },
+  { value: "rack", label: "Rack" },
+  { value: "rack_group", label: "Rack group" },
+  { value: "u_position", label: "U position" },
+  { value: "u_height", label: "U height" },
+  { value: "face", label: "Face" },
+  { value: "carrier", label: "Carrier" },
+  { value: "slot", label: "Slot" },
+  { value: "slot_layout", label: "Slot layout" },
+  { value: "watts", label: "Watts" },
+  { value: "weight_kg", label: "Weight (kg)" },
+  { value: "ips", label: "IPs (space-separated)" },
+  { value: "notes", label: "Notes" },
+];
+
+const IMPORT_OPTIONS: ImportOption[] = [
+  {
+    kind: "select",
+    param: "on_match",
+    label: "When a row matches",
+    defaultValue: "skip",
+    choices: [
+      { value: "skip", label: "Skip existing" },
+      { value: "update", label: "Update matched" },
+    ],
+  },
+  {
+    kind: "flag",
+    param: "unracked_on_missing",
+    label: "Unracked when rack missing",
+  },
+  {
+    kind: "flag",
+    param: "force",
+    label: "Force (commit valid rows despite errors)",
+  },
+];
+
 export default function DevicesPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { can } = useAuth();
   const canWrite = can(PERM.DATA_WRITE);
   const canDelete = can(PERM.DATA_DELETE);
@@ -134,6 +197,7 @@ export default function DevicesPage() {
   const f = useDeviceFilterState();
   const [sorting, setSorting] = useUrlSorting();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [editing, setEditing] = useState<Device | null>(null);
   const [deleting, setDeleting] = useState<Device | null>(null);
   const [historyFor, setHistoryFor] = useState<Device | null>(null);
@@ -541,6 +605,12 @@ export default function DevicesPage() {
 
   const tableRows = table.getRowModel().rows;
   const visibleIds = tableRows.map((r) => r.original.id);
+
+  // The export replays the CURRENT query string — every V5A facet lives in
+  // the URL, so a filtered view downloads exactly the set it shows.
+  const qs = searchParams.toString();
+  const exportHref = (ext: "csv" | "xlsx") =>
+    `/api/v1/devices/export.${ext}${qs ? `?${qs}` : ""}`;
   const { rowProps, focusRow } = useRowNav({
     count: tableRows.length,
     onOpen: (i) => {
@@ -561,17 +631,47 @@ export default function DevicesPage() {
         <h1 className="flex items-center gap-1.5 text-xl font-semibold">
           Devices <DocsLink slug="devices" />
         </h1>
-        {canWrite && (
-          <Button
-            size="sm"
-            onClick={() => {
-              setEditing(null);
-              setDialogOpen(true);
-            }}
-          >
-            <Plus /> New device
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" aria-label="Export devices">
+                <Download /> Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem asChild>
+                <a href={exportHref("csv")} download>
+                  CSV
+                </a>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <a href={exportHref("xlsx")} download>
+                  XLSX
+                </a>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {canWrite && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setImportOpen(true)}
+              >
+                <FileUp /> Import
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setEditing(null);
+                  setDialogOpen(true);
+                }}
+              >
+                <Plus /> New device
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -828,6 +928,17 @@ export default function DevicesPage() {
         objectType="Device"
         objectId={historyFor?.id ?? null}
         title={historyFor?.name}
+      />
+
+      <SmartImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        endpoint="/api/v1/devices/import"
+        fields={IMPORT_FIELDS}
+        options={IMPORT_OPTIONS}
+        title="Import devices"
+        description="Upload a CSV or XLSX — headers auto-map (English, Hebrew, NetBox), the dry-run previews every row's action and diffs, then commit applies the ok rows."
+        onCommitted={refresh}
       />
     </div>
   );
