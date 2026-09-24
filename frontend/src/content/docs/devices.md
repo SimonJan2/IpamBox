@@ -12,11 +12,21 @@ carry many addresses.
 
 ## The list
 
-[Devices](/devices) works like the other entity pages: search (name, model,
-serial — Hebrew-folded), column sort, pin, drag to reorder, row colors,
-history. Each row shows the device's **placement** (rack + U range, or
-*unracked*), its **IP count**, and its **health rollup**. The **Unracked**
-filter button scopes the table to devices with no rack placement.
+[Devices](/devices) works like the other entity pages: column sort, pin,
+drag to reorder, row colors, history. Each row shows the device's
+**placement** (rack + U range, or *unracked*), its **IP count**, and its
+**health rollup**.
+
+The **Filters** button opens a faceted panel (a Sheet on narrow screens)
+with live counts — search on top, then facets for health (the five IP
+statuses + *unmonitored*), placement (racked / unracked / in-carrier), site,
+rack, rack group, manufacturer / model / category / device type (substring,
+Hebrew-folded, with datalists of values present), face, has-IP, and wiring
+(cabled / partial / uncabled — computed from the interface/cable rollup).
+Active facets render as removable chips in the toolbar, and every facet is a
+URL param (`?unracked=1&site_id=3&face=front&wiring=uncabled`), so a filtered
+view is bookmarkable, survives reload, and can be named via **Saved views**
+(built-ins: *Unracked inventory*, *Offline*, *No IP linked*).
 
 - **New device** creates unracked inventory — fill in placement later by
   patching `rack_id`/`u_position`, from the rack editor, or from the rack's
@@ -89,7 +99,12 @@ vendor, then links the address on save.
 ## API sketch
 
 ```
-GET    /api/v1/devices?q=&rack_id=&unracked=&site_id=
+GET    /api/v1/devices?q=&rack_id=&site_id=&group_id=&unracked=&mounted=
+       &face=&manufacturer=&model=&category=&device_type=&source=&has_ip=
+       &wiring=                    # every page facet is a param; CSV sets
+                                   # (face=front,rear), AND semantics, 422
+                                   # on bad values; wiring facets after the
+                                   # interface aggregate so total stays honest
 POST   /api/v1/devices              # unracked or placed (rack_id + u_position)
 GET    /api/v1/devices/{id}         # detail: ips[], asset, rack, carrier, health
 PATCH  /api/v1/devices/{id}         # attrs + placement (rack_id=null unracks)

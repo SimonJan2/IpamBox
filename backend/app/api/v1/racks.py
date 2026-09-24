@@ -17,12 +17,14 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.list_params import parse_int_set, parse_token_set
 from app.core.db import get_session
 from app.core.deps import DATA_DELETE, DATA_READ, DATA_WRITE, require_perm
 from app.models.asset import Asset
 from app.models.device import Device
 from app.models.ip_address import IPAddress
 from app.models.rack import Rack, RackFace, RackGroup
+from app.models.site import Site
 from app.schemas.common import Page, ReorderBody, ip_display
 from app.schemas.rack import (
     IpRef,
@@ -160,34 +162,124 @@ async def _link_single_ip(
             ip.device_id = device.id
 
 
+# occupancy facet classes — computed over used_u/height_u after the
+# aggregate pass (same class as devices' wiring filter).
+_OCCUPANCY_CLASSES = ("empty", "partial", "full")
+
+
+def _occupancy_class(rack: Rack) -> str:
+    if rack.used_u == 0:
+        return "empty"
+    if rack.used_u >= rack.height_u:
+        return "full"
+    return "partial"
+
+
 @router.get("", response_model=Page[RackOut])
 async def list_racks(
-    q: str = "",
-    site_id: int | None = None,
-    group_id: int | None = None,
+    q: str = Query(
+        default="",
+        description="name/room/description + site/group names (Hebrew-folded)",
+    ),
+    site_id: str | None = Query(
+        default=None, description="site id or comma-separated site ids"
+    ),
+    group_id: str | None = Query(
+        default=None, description="group id or comma-separated group ids"
+    ),
+    room: str = Query(default="", description="substring, Hebrew-folded"),
+    height_u: str | None = Query(
+        default=None, description="exact height or comma-separated heights"
+    ),
+    ungrouped: bool | None = Query(
+        default=None, description="group_id IS (NOT) NULL"
+    ),
+    occupancy: str | None = Query(
+        default=None,
+        description="empty|partial|full or CSV — post-aggregate filter",
+    ),
+    min_free_u: int | None = Query(
+        default=None, ge=0, description="height_u - used_u >= n"
+    ),
+    max_free_u: int | None = Query(
+        default=None, ge=0, description="height_u - used_u <= n"
+    ),
     limit: int | None = Query(default=None, ge=1, le=20000),
     offset: int = 0,
     session: AsyncSession = Depends(get_session),
 ):
+    site_ids = parse_int_set(site_id, "site_id")
+    group_ids = parse_int_set(group_id, "group_id")
+    heights = parse_int_set(height_u, "height_u")
+    occupancies = parse_token_set(occupancy, "occupancy", _OCCUPANCY_CLASSES)
+
     stmt = select(Rack)
-    if site_id is not None:
-        stmt = stmt.where(Rack.site_id == site_id)
-    if group_id is not None:
-        stmt = stmt.where(Rack.group_id == group_id)
+    if site_ids:
+        stmt = stmt.where(Rack.site_id.in_(site_ids))
+    if group_ids:
+        stmt = stmt.where(Rack.group_id.in_(group_ids))
+    if ungrouped is not None:
+        stmt = stmt.where(
+            Rack.group_id.is_(None) if ungrouped else Rack.group_id.isnot(None)
+        )
+    if heights:
+        stmt = stmt.where(Rack.height_u.in_(heights))
+    if room:
+        like = f"%{fold_hebrew(room)}%"
+        stmt = stmt.where(
+            func.translate(Rack.room, "םןץףך", "מנצפכ").ilike(like)
+        )
     if q:
         like = f"%{fold_hebrew(q)}%"
-        stmt = stmt.where(
-            or_(
-                func.translate(Rack.name, "םןץףך", "מנצפכ").ilike(like),
-                func.translate(Rack.room, "םןץףך", "מנצפכ").ilike(like),
+        stmt = (
+            stmt.outerjoin(Site, Rack.site_id == Site.id)
+            .outerjoin(RackGroup, Rack.group_id == RackGroup.id)
+            .where(
+                or_(
+                    func.translate(Rack.name, "םןץףך", "מנצפכ").ilike(like),
+                    func.translate(Rack.room, "םןץףך", "מנצפכ").ilike(like),
+                    func.translate(
+                        Rack.description, "םןץףך", "מנצפכ"
+                    ).ilike(like),
+                    func.translate(Site.name, "םןץףך", "מנצפכ").ilike(like),
+                    func.translate(
+                        RackGroup.name, "םןץףך", "מנצפכ"
+                    ).ilike(like),
+                )
             )
         )
     stmt = ordered(stmt, Rack, Rack.name, Rack.id)
-    total = await session.scalar(
-        select(func.count()).select_from(stmt.order_by(None).subquery())
+
+    # Computed-field filters (occupancy, free-U) run after the aggregate
+    # pass — with one active the SQL page has to wait: fetch the full
+    # SQL-matching set, stamp stats, facet, then slice. `total` stays the
+    # honest filtered count either way.
+    post = (
+        occupancies is not None
+        or min_free_u is not None
+        or max_free_u is not None
     )
-    rows = (await session.execute(stmt.limit(limit).offset(offset))).scalars().all()
-    await stamp_rack_stats(session, rows)
+    if not post:
+        total = await session.scalar(
+            select(func.count()).select_from(stmt.order_by(None).subquery())
+        )
+        rows = list(
+            (await session.execute(stmt.limit(limit).offset(offset)))
+            .scalars()
+            .all()
+        )
+        await stamp_rack_stats(session, rows)
+    else:
+        rows = list((await session.execute(stmt)).scalars().all())
+        await stamp_rack_stats(session, rows)
+        if occupancies is not None:
+            rows = [r for r in rows if _occupancy_class(r) in occupancies]
+        if min_free_u is not None:
+            rows = [r for r in rows if r.height_u - r.used_u >= min_free_u]
+        if max_free_u is not None:
+            rows = [r for r in rows if r.height_u - r.used_u <= max_free_u]
+        total = len(rows)
+        rows = rows[offset : offset + limit if limit else None]
     return Page(
         items=await stamp_colors(session, "racks", rows),
         total=total or 0,

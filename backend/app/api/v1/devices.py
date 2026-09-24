@@ -13,6 +13,12 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.list_params import (
+    parse_enum_set,
+    parse_int_set,
+    parse_str_set,
+    parse_token_set,
+)
 from app.core.db import get_session
 from app.core.deps import DATA_DELETE, DATA_WRITE, require_perm
 from app.models.asset import Asset
@@ -133,41 +139,156 @@ async def _detail(session: AsyncSession, device: Device) -> DeviceDetail:
     return out
 
 
+# wiring facet classes — computed over interface_stats after the aggregate
+# pass, same class as the health rollup. `uncabled` includes devices with no
+# interfaces at all (zero cabled ports is zero cabled ports).
+_WIRING_CLASSES = ("cabled", "partial", "uncabled")
+
+
+def _wiring_class(interface_count: int, cabled_count: int) -> str:
+    if cabled_count == 0:
+        return "uncabled"
+    if cabled_count >= interface_count:
+        return "cabled"
+    return "partial"
+
+
 @router.get("", response_model=Page[DeviceOut])
 async def list_devices(
     q: str = "",
-    rack_id: int | None = None,
-    site_id: int | None = None,
-    unracked: bool = False,
+    rack_id: str | None = Query(
+        default=None, description="rack id or comma-separated rack ids"
+    ),
+    site_id: str | None = Query(
+        default=None, description="site id or comma-separated site ids"
+    ),
+    group_id: str | None = Query(
+        default=None,
+        description="rack-group id(s) — resolves through the device's rack",
+    ),
+    unracked: bool | None = None,
+    mounted: bool | None = Query(
+        default=None, description="carrier_id IS (NOT) NULL — carrier children"
+    ),
+    face: str | None = Query(
+        default=None, description="front|rear|both or comma-separated set"
+    ),
+    manufacturer: str = "",
+    model: str = "",
+    category: str = "",
+    device_type: str = "",
+    source: str = "",
+    has_ip: bool | None = Query(
+        default=None, description="EXISTS / NOT EXISTS on ip_addresses.device_id"
+    ),
+    wiring: str | None = Query(
+        default=None,
+        description="cabled|partial|uncabled or CSV — post-aggregate filter",
+    ),
     limit: int | None = Query(default=None, ge=1, le=20000),
     offset: int = 0,
     session: AsyncSession = Depends(get_session),
 ):
+    rack_ids = parse_int_set(rack_id, "rack_id")
+    site_ids = parse_int_set(site_id, "site_id")
+    group_ids = parse_int_set(group_id, "group_id")
+    faces = parse_enum_set(face, "face", RackFace)
+    sources = parse_str_set(source)
+    wirings = parse_token_set(wiring, "wiring", _WIRING_CLASSES)
+
     stmt = select(Device)
-    if rack_id is not None:
-        stmt = stmt.where(Device.rack_id == rack_id)
-    if site_id is not None:
-        stmt = stmt.where(Device.site_id == site_id)
-    if unracked:
-        stmt = stmt.where(Device.rack_id.is_(None))
-    if q:
-        like = f"%{fold_hebrew(q)}%"
+    if rack_ids:
+        stmt = stmt.where(Device.rack_id.in_(rack_ids))
+    if site_ids:
+        stmt = stmt.where(Device.site_id.in_(site_ids))
+    if group_ids:
         stmt = stmt.where(
-            or_(
-                func.translate(Device.name, "םןץףך", "מנצפכ").ilike(like),
-                func.translate(Device.model, "םןץףך", "מנצפכ").ilike(like),
-                func.translate(Device.serial_number, "םןץףך", "מנצפכ").ilike(like),
+            Device.rack_id.in_(
+                select(Rack.id).where(Rack.group_id.in_(group_ids))
+            )
+        )
+    if unracked is not None:
+        stmt = stmt.where(
+            Device.rack_id.is_(None) if unracked else Device.rack_id.isnot(None)
+        )
+    if mounted is not None:
+        stmt = stmt.where(
+            Device.carrier_id.isnot(None)
+            if mounted
+            else Device.carrier_id.is_(None)
+        )
+    if faces:
+        # face defaults to FRONT even when unracked — the facet means
+        # "placement face", so it only applies to placed devices.
+        stmt = stmt.where(
+            Device.rack_id.isnot(None), Device.face.in_(faces)
+        )
+    for col, val in (
+        (Device.manufacturer, manufacturer),
+        (Device.model, model),
+        (Device.category, category),
+        (Device.device_type, device_type),
+    ):
+        if val:
+            like = f"%{fold_hebrew(val)}%"
+            stmt = stmt.where(
+                func.translate(col, "םןץףך", "מנצפכ").ilike(like)
+            )
+    if sources:
+        stmt = stmt.where(Device.source.in_(sources))
+    if has_ip is not None:
+        stmt = stmt.where(
+            Device.ips.any() if has_ip else ~Device.ips.any()
+        )
+    if q:
+        # Same haystack as the page's client-side q: device fields plus the
+        # rack/site names, so V5B exports replay the identical set.
+        like = f"%{fold_hebrew(q)}%"
+        stmt = (
+            stmt.outerjoin(Rack, Device.rack_id == Rack.id)
+            .outerjoin(Site, Device.site_id == Site.id)
+            .where(
+                or_(
+                    func.translate(Device.name, "םןץףך", "מנצפכ").ilike(like),
+                    func.translate(Device.device_type, "םןץףך", "מנצפכ").ilike(like),
+                    func.translate(Device.serial_number, "םןץףך", "מנצפכ").ilike(like),
+                    func.translate(Device.manufacturer, "םןץףך", "מנצפכ").ilike(like),
+                    func.translate(Device.model, "םןץףך", "מנצפכ").ilike(like),
+                    func.translate(Device.mac_address, "םןץףך", "מנצפכ").ilike(like),
+                    func.translate(Device.category, "םןץףך", "מנצפכ").ilike(like),
+                    func.translate(Device.notes, "םןץףך", "מנצפכ").ilike(like),
+                    func.translate(Rack.name, "םןץףך", "מנצפכ").ilike(like),
+                    func.translate(Site.name, "םןץףך", "מנצפכ").ilike(like),
+                )
             )
         )
     stmt = ordered(stmt, Device, Device.name, Device.id)
-    total = await session.scalar(
-        select(func.count()).select_from(stmt.order_by(None).subquery())
-    )
-    rows = (await session.execute(stmt.limit(limit).offset(offset))).scalars().all()
+
+    # Computed-field filters (wiring today; health joins on the export side)
+    # apply after the aggregate pass — so when one is active the SQL page has
+    # to wait: fetch the full SQL-matching set, facet it, then slice. `total`
+    # stays the honest filtered count either way.
+    if wirings is None:
+        total = await session.scalar(
+            select(func.count()).select_from(stmt.order_by(None).subquery())
+        )
+        rows = list(
+            (await session.execute(stmt.limit(limit).offset(offset)))
+            .scalars()
+            .all()
+        )
+    else:
+        rows = list((await session.execute(stmt)).scalars().all())
+    istats = await interface_stats(session, [d.id for d in rows])
+    if wirings is not None:
+        rows = [
+            d for d in rows if _wiring_class(*istats[d.id]) in wirings
+        ]
+        total = len(rows)
+        rows = rows[offset : offset + limit if limit else None]
     await stamp_colors(session, "devices", rows)
     # Health + counts in grouped queries — never per-row.
     ips = await ips_by_device(session, [d.id for d in rows])
-    istats = await interface_stats(session, [d.id for d in rows])
     items = []
     for d in rows:
         out = DeviceOut.model_validate(d)

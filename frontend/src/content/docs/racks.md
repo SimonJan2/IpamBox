@@ -4,11 +4,23 @@ Physical rack elevations — which devices sit in which U slots, on which face.
 
 ## The list
 
-[Racks](/racks) works like the other entity pages: search, column sort, pin,
-drag to reorder, row colors, history. Each row shows the device count and a
-used-U bar (`used_u / height_u` — front and rear gear sharing a U counts once),
-plus a **Capacity** column summing device `watts`/`weight_kg` (dashes when no
-device supplies a value).
+[Racks](/racks) works like the other entity pages: column sort, pin, drag
+to reorder, row colors, history. Each row shows the device count and a
+used-U bar (`used_u / height_u` — front and rear gear sharing a U counts
+once), plus a **Capacity** column summing device `watts`/`weight_kg` (dashes
+when no device supplies a value).
+
+The **Filters** button opens a faceted panel (a Sheet on narrow screens)
+with live counts — search on top (name, room, description, site and group
+names — Hebrew-folded), then facets for site, group (with an *ungrouped*
+entry), room, height (distinct values present), occupancy (empty / partial /
+full over the used-U rollup), and a free-U range. Active facets render as
+removable chips in the toolbar, and every facet is a URL param
+(`?site_id=58&occupancy=partial&min_free_u=4`), so a filtered view is
+bookmarkable, survives reload, and can be named via **Saved views**
+(built-ins: *Ungrouped*, *Nearly full*, *Empty*). `min_free_u=4` is the
+"where can this 4U box go" query — it facets on the computed
+`height_u − used_u` aggregate.
 
 ## Rack groups (bayed rows)
 
@@ -24,7 +36,7 @@ horizontally for wide rows; the header rolls up group totals (U used/free,
   **Position** (left-to-right; blank appends at the row's right end). Setting
   the group back to *None* removes it.
 - Group rows filter like VLAN groups: the filter button on a group row
-  scopes the rack table to its members.
+  scopes the rack table to its members (sets the `group_id` facet).
 - With write access, the row view's **Edit** toggle lets you drag a device
   sideways onto another rack's U row — a real cross-rack move validated by
   the API. A mounted child dropped on a U row unmounts; a carrier carries
@@ -128,7 +140,20 @@ The header shows a **next free U** hint for a 1U front device. In the
 add/edit device dialog, **Find free U** next to the U position field asks the
 API for the *lowest* or *highest* contiguous span that fits the entered
 height on the chosen face — face-aware, so a front device may legally sit
-opposite rear gear in the same U.
+opposite rear gear in the same U. To find a rack for the device rather than
+a slot in a rack, the list's **Free U** filter (`min_free_u`) facets racks
+by remaining capacity.
+
+## API sketch
+
+```
+GET    /api/v1/racks?q=&site_id=&group_id=&ungrouped=&room=&height_u=
+       &occupancy=&min_free_u=&max_free_u=
+                                   # every page facet is a param; CSV sets
+                                   # (height_u=42,24), AND semantics, 422 on
+                                   # bad values; occupancy/free-U facet after
+                                   # the used_u aggregate so total stays honest
+```
 
 ## Placement rules
 

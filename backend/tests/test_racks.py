@@ -1357,3 +1357,139 @@ def test_alembic_rack_groups_roundtrip():
             await conn.close()
 
     asyncio.run(_run())
+
+
+# ------------------------------------------------------------- list filters
+
+
+async def _site(client: AsyncClient, name: str = "Site A") -> dict:
+    r = await client.post("/api/v1/sites", json={"name": name})
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+async def test_racks_list_facet_params(client: AsyncClient):
+    """Every /racks list param filters; all compose with AND semantics."""
+    s1 = await _site(client, "DC-East")
+    s2 = await _site(client, "DC-West")
+    g1 = await _group(client, name="Row A", site_id=s1["id"])
+    g2 = await _group(client, name="Row B")
+    await _rack(
+        client, name="A-01", site_id=s1["id"], group_id=g1["id"],
+        room="Hall 1", height_u=42,
+    )
+    await _rack(client, name="B-01", site_id=s2["id"], room="Hall 2", height_u=24)
+    await _rack(
+        client, name="C-01", group_id=g2["id"], height_u=42,
+        description="spine row",
+    )
+
+    async def names(**params) -> set[str]:
+        page = (await client.get("/api/v1/racks", params=params)).json()
+        return {r["name"] for r in page["items"]}
+
+    assert await names() == {"A-01", "B-01", "C-01"}
+
+    # q folds over name/room/description plus site + group names via joins
+    assert await names(q="east") == {"A-01"}
+    assert await names(q="row b") == {"C-01"}
+    assert await names(q="hall 2") == {"B-01"}
+    assert await names(q="spine") == {"C-01"}
+
+    # room is a substring facet
+    assert await names(room="hall") == {"A-01", "B-01"}
+    assert await names(room="hall 1") == {"A-01"}
+
+    # id params accept a single id or a CSV set
+    assert await names(site_id=s1["id"]) == {"A-01"}
+    assert await names(site_id=f"{s1['id']},{s2['id']}") == {"A-01", "B-01"}
+    assert await names(group_id=g1["id"]) == {"A-01"}
+    assert await names(group_id=f"{g1['id']},{g2['id']}") == {"A-01", "C-01"}
+
+    # ungrouped is tri-state: 1 = no group, 0 = in a group
+    assert await names(ungrouped=1) == {"B-01"}
+    assert await names(ungrouped=0) == {"A-01", "C-01"}
+
+    # height_u is exact (CSV allowed)
+    assert await names(height_u=42) == {"A-01", "C-01"}
+    assert await names(height_u="24,42") == {"A-01", "B-01", "C-01"}
+
+    # AND composition
+    assert await names(site_id=s1["id"], height_u=42) == {"A-01"}
+    assert await names(ungrouped=1, height_u=42) == set()
+    assert await names(q="hall", site_id=s2["id"]) == {"B-01"}
+
+    # bad facet values fail loudly instead of silently filtering wrong
+    for bad in (
+        {"occupancy": "half"},
+        {"site_id": "x"},
+        {"group_id": "x"},
+        {"height_u": "tall"},
+    ):
+        r = await client.get("/api/v1/racks", params=bad)
+        assert r.status_code == 422, bad
+
+
+async def test_racks_occupancy_and_free_u(client: AsyncClient):
+    """occupancy + free-U run after the aggregate pass (they read used_u) —
+    and `total` stays honest when limit/offset slice the faceted set."""
+    full = await _rack(client, name="full", height_u=2)
+    await _dev(client, full["id"], name="a", u_position=1, u_height=2)
+    part = await _rack(client, name="part", height_u=12)
+    await _dev(client, part["id"], name="b", u_position=1)
+    await _rack(client, name="empty", height_u=12)
+
+    async def page(**params) -> dict:
+        return (await client.get("/api/v1/racks", params=params)).json()
+
+    def names(p: dict) -> set[str]:
+        return {r["name"] for r in p["items"]}
+
+    assert names(await page(occupancy="empty")) == {"empty"}
+    assert names(await page(occupancy="partial")) == {"part"}
+    assert names(await page(occupancy="full")) == {"full"}
+    assert names(await page(occupancy="empty,partial")) == {"empty", "part"}
+
+    # free U: full=0, part=11, empty=12 — "where can a 4U box go" is
+    # min_free_u=4
+    assert names(await page(min_free_u=4)) == {"part", "empty"}
+    assert names(await page(min_free_u=11)) == {"part", "empty"}
+    assert names(await page(min_free_u=12)) == {"empty"}
+    assert names(await page(max_free_u=0)) == {"full"}
+    assert names(await page(max_free_u=11)) == {"full", "part"}
+
+    # post-aggregate facet first, slice second: total counts the faceted set
+    p1 = await page(occupancy="empty,partial", limit=1)
+    assert p1["total"] == 2 and len(p1["items"]) == 1
+    p2 = await page(occupancy="empty,partial", limit=1, offset=1)
+    assert p2["total"] == 2 and len(p2["items"]) == 1
+    assert {p1["items"][0]["name"], p2["items"][0]["name"]} == {
+        "empty",
+        "part",
+    }
+
+    # composing a SQL facet with a computed one still works
+    assert names(await page(occupancy="partial", height_u=12)) == {"part"}
+
+
+async def test_racks_list_filters_viewer(
+    client: AsyncClient, session: AsyncSession, auth_on
+):
+    """RBAC unchanged: the facet vocabulary stays DATA_READ."""
+    session.add(
+        User(
+            username="v",
+            password_hash=hash_password(PASSWORD),
+            role=UserRole.VIEWER,
+        )
+    )
+    await session.commit()
+    r = await client.post(
+        "/api/v1/auth/login", json={"username": "v", "password": PASSWORD}
+    )
+    assert r.status_code == 200
+    r = await client.get(
+        "/api/v1/racks",
+        params={"occupancy": "empty", "min_free_u": 4, "ungrouped": 1},
+    )
+    assert r.status_code == 200

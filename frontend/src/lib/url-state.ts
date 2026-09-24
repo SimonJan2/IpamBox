@@ -111,6 +111,101 @@ export function useUrlText(
   return [value, set, setNow];
 }
 
+/** Multi-key variant of useUrlText: several debounced text params share one
+ *  hook, so a combined clear (or a chip X) can't be resurrected by a pending
+ *  per-key timer. `keys` must be a stable module-level list — identity is
+ *  taken by content, not reference. `setNow` writes an arbitrary patch in a
+ *  single navigation and cancels every pending debounce. */
+export function useUrlTexts<K extends string>(
+  keys: readonly K[],
+  debounceMs = 250
+): [
+  Record<K, string>,
+  (key: K, v: string) => void,
+  (patch: Record<string, string | null>) => void,
+] {
+  const { searchParams, setParams } = useUrlParams();
+  const keysKey = keys.join("");
+  const urlVals = useMemo(() => {
+    const out = {} as Record<K, string>;
+    for (const k of keys) out[k] = searchParams.get(k) ?? "";
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keysKey proxies keys
+  }, [searchParams, keysKey]);
+  const [values, setValues] = useState(urlVals);
+  const pending = useRef<Partial<Record<K, string>>>({});
+  const timers = useRef<Partial<Record<K, ReturnType<typeof setTimeout>>>>({});
+
+  useEffect(() => {
+    // External navigation (Back/Forward, shared link, clear-all) — adopt the
+    // URL value per key, except keys with an own write still in flight.
+    setValues((cur) => {
+      const next = { ...cur };
+      let changed = false;
+      for (const k of keys) {
+        if (k in pending.current) {
+          if (urlVals[k] === pending.current[k]) delete pending.current[k];
+          else continue;
+        }
+        if (next[k] !== urlVals[k]) {
+          next[k] = urlVals[k];
+          changed = true;
+        }
+      }
+      return changed ? next : cur;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keysKey proxies keys
+  }, [urlVals, keysKey]);
+
+  useEffect(
+    () => () => {
+      for (const k of keys) {
+        const t = timers.current[k];
+        if (t) clearTimeout(t);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keysKey proxies keys
+    [keysKey]
+  );
+
+  const set = useCallback(
+    (key: K, v: string) => {
+      setValues((cur) => ({ ...cur, [key]: v }));
+      pending.current[key] = v;
+      if (timers.current[key]) clearTimeout(timers.current[key]);
+      timers.current[key] = setTimeout(
+        () => setParams({ [key]: v || null }),
+        debounceMs
+      );
+    },
+    [debounceMs, setParams]
+  );
+
+  const setNow = useCallback(
+    (patch: Record<string, string | null>) => {
+      for (const k of keys) {
+        const t = timers.current[k];
+        if (t) clearTimeout(t);
+      }
+      timers.current = {};
+      pending.current = {};
+      const keySet = new Set<string>(keys);
+      setValues((cur) => {
+        const next = { ...cur };
+        for (const [k, v] of Object.entries(patch)) {
+          if (keySet.has(k)) next[k as K] = v ?? "";
+        }
+        return next;
+      });
+      setParams(patch);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keysKey proxies keys
+    [setParams, keysKey]
+  );
+
+  return [values, set, setNow];
+}
+
 export function parseCsvSet<T extends string>(raw: string | null): Set<T> {
   return new Set((raw ?? "").split(",").filter(Boolean) as T[]);
 }

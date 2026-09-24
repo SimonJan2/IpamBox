@@ -2,7 +2,13 @@
 
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { History, Pencil, Plus, Trash2 } from "lucide-react";
+import {
+  History,
+  Pencil,
+  Plus,
+  SlidersHorizontal,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 import {
   flexRender,
@@ -16,8 +22,9 @@ import { api } from "@/lib/api";
 import { useAsyncData } from "@/lib/use-async-data";
 import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
-import { cn, foldHebrew } from "@/lib/utils";
-import { useUrlFlag, useUrlSorting, useUrlText } from "@/lib/url-state";
+import { cn } from "@/lib/utils";
+import { useUrlSorting } from "@/lib/url-state";
+import type { SavedView } from "@/lib/prefs";
 import { useRowNav } from "@/lib/row-nav";
 import { useRowColor, rowTintStyle } from "@/lib/row-color";
 import { useRowOrder } from "@/lib/row-order";
@@ -36,7 +43,14 @@ import { InlineText } from "@/components/inline-edit";
 import { RowColorLegend, RowColorPicker } from "@/components/row-color";
 import { SavedViews } from "@/components/saved-views";
 import { IpStatusBadge } from "@/components/status-badge";
-import type { Device, Page, Rack, Site } from "@/types";
+import {
+  DeviceFilterPanel,
+  filterDevices,
+  useDeviceFilterState,
+  type DeviceTextParam,
+} from "@/components/device-filter-panel";
+import { FilterChip, chipSummary } from "@/components/filter-ui";
+import type { Device, Page, Rack, RackGroup, Site } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -63,6 +77,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 
 const EMPTY = {
   name: "",
@@ -80,6 +101,19 @@ const EMPTY = {
 // row — lookups resolved inside the cell would go stale).
 type DeviceRow = Device & { rack_name: string; site_name: string };
 
+const DEVICE_VIEWS: SavedView[] = [
+  { name: "Unracked inventory", query: "unracked=1" },
+  { name: "Offline", query: "health=offline" },
+  { name: "No IP linked", query: "has_ip=0" },
+];
+
+const TEXT_CHIP_LABELS: [DeviceTextParam, string][] = [
+  ["manufacturer", "Manufacturer"],
+  ["model", "Model"],
+  ["category", "Category"],
+  ["device_type", "Device type"],
+];
+
 export default function DevicesPage() {
   const router = useRouter();
   const { can } = useAuth();
@@ -94,8 +128,10 @@ export default function DevicesPage() {
   const sitesQ = useAsyncData(() =>
     api.get<Page<Site>>("/api/v1/sites").then((p) => p.items).catch(() => [])
   );
-  const [q, setQ] = useUrlText("q");
-  const [unracked, setUnracked] = useUrlFlag("unracked");
+  const groupsQ = useAsyncData(() =>
+    api.get<RackGroup[]>("/api/v1/rack-groups").catch(() => [])
+  );
+  const f = useDeviceFilterState();
   const [sorting, setSorting] = useUrlSorting();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Device | null>(null);
@@ -107,6 +143,7 @@ export default function DevicesPage() {
   const items = itemsQ.data ?? [];
   const racks = racksQ.data ?? [];
   const sites = sitesQ.data ?? [];
+  const groups = groupsQ.data ?? [];
   const refresh = () => void itemsQ.reload();
 
   useEffect(() => {
@@ -175,6 +212,16 @@ export default function DevicesPage() {
     () => Object.fromEntries(sites.map((s) => [s.id, s.name])),
     [sites]
   );
+  const groupName = useMemo(
+    () => Object.fromEntries(groups.map((g) => [g.id, g.name])),
+    [groups]
+  );
+  /** rack_id -> group_id — the device "rack group" facet joins through the
+   *  device's rack, same as the backend's group_id param. */
+  const rackGroup = useMemo(
+    () => new Map(racks.map((r) => [r.id, r.group_id] as const)),
+    [racks]
+  );
 
   const saveField = useCallback(
     async (id: number, field: "notes", value: string | null) => {
@@ -208,30 +255,14 @@ export default function DevicesPage() {
     [items, rackName, siteName]
   );
 
-  const filtered = useMemo(() => {
-    let out = rows;
-    if (unracked) out = out.filter((d) => d.rack_id == null);
-    if (!q) return out;
-    const needle = foldHebrew(q.toLowerCase());
-    return out.filter((d) =>
-      [
-        d.name,
-        d.device_type,
-        d.serial_number,
-        d.manufacturer,
-        d.model,
-        d.mac_address,
-        d.category,
-        d.rack_name,
-        d.site_name,
-        d.notes,
-      ].some((f) => f != null && foldHebrew(f.toLowerCase()).includes(needle))
-    );
-  }, [rows, q, unracked]);
+  const filtered = useMemo(
+    () => filterDevices(rows, f, rackGroup),
+    [rows, f, rackGroup]
+  );
 
   const orderBlock = sorting.length
     ? "Row order is fixed while a column sort is on — clear the sort to drag."
-    : q || unracked
+    : f.activeCount
       ? "Row order is fixed while filtering — clear filters to drag."
       : null;
   const order = useRowOrder<Device>({
@@ -426,6 +457,79 @@ export default function DevicesPage() {
     [canWrite, canDelete, saveField, order.setPinned, orderBlock, setRowColor]
   );
 
+  // Toolbar chips — one per active facet; X clears just that facet. Text
+  // params clear via setTextsNow so a pending debounce can't resurrect them.
+  const chips = useMemo(() => {
+    const t = f.texts;
+    const clear =
+      (patch: Record<string, string | null>) => () => f.setTextsNow(patch);
+    const c: { key: string; label: string; clear: () => void }[] = [];
+    if (t.q)
+      c.push({ key: "q", label: `Search: ${t.q}`, clear: clear({ q: null }) });
+    if (f.health.size)
+      c.push({
+        key: "health",
+        label: `Health: ${chipSummary([...f.health])}`,
+        clear: clear({ health: null }),
+      });
+    if (f.unracked === "1")
+      c.push({ key: "unracked", label: "Unracked", clear: clear({ unracked: null }) });
+    else if (f.unracked === "0")
+      c.push({ key: "racked", label: "Racked", clear: clear({ unracked: null }) });
+    if (f.mounted)
+      c.push({ key: "mounted", label: "In carrier", clear: clear({ mounted: null }) });
+    if (f.siteIds.size)
+      c.push({
+        key: "site_id",
+        label: `Site: ${chipSummary(
+          [...f.siteIds].map((id) => siteName[Number(id)] ?? `#${id}`)
+        )}`,
+        clear: clear({ site_id: null }),
+      });
+    if (f.rackIds.size)
+      c.push({
+        key: "rack_id",
+        label: `Rack: ${chipSummary(
+          [...f.rackIds].map((id) => rackName[Number(id)] ?? `#${id}`)
+        )}`,
+        clear: clear({ rack_id: null }),
+      });
+    if (f.groupIds.size)
+      c.push({
+        key: "group_id",
+        label: `Group: ${chipSummary(
+          [...f.groupIds].map((id) => groupName[Number(id)] ?? `#${id}`)
+        )}`,
+        clear: clear({ group_id: null }),
+      });
+    for (const [k, label] of TEXT_CHIP_LABELS)
+      if (t[k])
+        c.push({ key: k, label: `${label}: ${t[k]}`, clear: clear({ [k]: null }) });
+    if (f.sources.size)
+      c.push({
+        key: "source",
+        label: `Source: ${chipSummary([...f.sources])}`,
+        clear: clear({ source: null }),
+      });
+    if (f.faces.size)
+      c.push({
+        key: "face",
+        label: `Face: ${chipSummary([...f.faces])}`,
+        clear: clear({ face: null }),
+      });
+    if (f.hasIp === "1")
+      c.push({ key: "has_ip", label: "Has IPs", clear: clear({ has_ip: null }) });
+    else if (f.hasIp === "0")
+      c.push({ key: "has_ip", label: "No IPs", clear: clear({ has_ip: null }) });
+    if (f.wiring.size)
+      c.push({
+        key: "wiring",
+        label: `Wiring: ${chipSummary([...f.wiring])}`,
+        clear: clear({ wiring: null }),
+      });
+    return c;
+  }, [f, siteName, rackName, groupName]);
+
   const table = useReactTable({
     data: filtered,
     columns,
@@ -471,24 +575,41 @@ export default function DevicesPage() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Input
-          placeholder="Search devices…"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          className="max-w-xs"
-        />
-        <Button
-          variant={unracked ? "secondary" : "outline"}
-          size="sm"
-          onClick={() => setUnracked(!unracked)}
-        >
-          Unracked
-        </Button>
+        <Sheet>
+          <SheetTrigger asChild>
+            <Button variant="outline" size="sm" aria-label="Open filters">
+              <SlidersHorizontal /> Filters
+              {f.activeCount > 0 && (
+                <Badge variant="secondary" className="px-1.5">
+                  {f.activeCount}
+                </Badge>
+              )}
+            </Button>
+          </SheetTrigger>
+          <SheetContent>
+            <SheetTitle className="sr-only">Device filters</SheetTitle>
+            <SheetDescription className="sr-only">
+              Filter devices by health, placement, site, rack, and attributes.
+            </SheetDescription>
+            <DeviceFilterPanel
+              f={f}
+              items={rows}
+              filtered={filtered}
+              sites={sites}
+              racks={racks}
+              groups={groups}
+              rackGroup={rackGroup}
+            />
+          </SheetContent>
+        </Sheet>
+        {chips.map((c) => (
+          <FilterChip key={c.key} label={c.label} onClear={c.clear} />
+        ))}
         <span className="ml-auto text-sm text-muted-foreground">
           {tableRows.length} of {items.length}
         </span>
         <RowColorLegend />
-        <SavedViews pageKey="devices" />
+        <SavedViews pageKey="devices" builtins={DEVICE_VIEWS} />
       </div>
 
       <div className="rounded-lg border">
