@@ -19,6 +19,7 @@ ip_addresses rows — import never creates addresses.
 import io
 import ipaddress
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 import openpyxl
@@ -292,34 +293,34 @@ def _alias_to_field() -> dict[str, str]:
     return out
 
 
-def auto_map_headers(
+def auto_map_fields(
     headers: list[str],
+    alias_to_field: dict[str, str],
+    ignored: set[str] | frozenset[str] = frozenset(),
+    remap=None,
 ) -> tuple[dict[str, str | None], list[str]]:
     """header -> canonical field (None = skip). Unmapped columns are
     reported, never guessed into a field. First column wins on duplicate
-    field claims — later duplicates surface as unmapped."""
-    alias_to_field = _alias_to_field()
+    field claims — later duplicates surface as unmapped.
+
+    Shared by every sheet family (devices, racks, groups, interfaces,
+    cables): `alias_to_field` maps normalized headers to the family's
+    canonical fields, `ignored` holds export-only headers that map to
+    None without an unmapped flag, and `remap(field, norm, normed)` may
+    redirect a mapped field (the NetBox shape rule)."""
     normed = [norm_header(h) for h in headers]
-    # NetBox shape: a role column with no explicit `model` column means
-    # `device_type` carries NetBox's model slug, not our type.
-    netbox_shape = (
-        any(n in _NETBOX_ROLE_HEADERS for n in normed)
-        and "model" not in normed
-    )
     mapping: dict[str, str | None] = {}
     unmapped: list[str] = []
     claimed: set[str] = set()
     for h, n in zip(headers, normed):
         if not n:
             continue
-        if n in _IGNORED_HEADERS:
+        if n in ignored:
             mapping[h] = None
             continue
         f = alias_to_field.get(n)
-        if netbox_shape and f == "device_type" and n in (
-            "device_type", "device type"
-        ):
-            f = "model"
+        if remap is not None:
+            f = remap(f, n, normed)
         if f is None:
             mapping[h] = None
             unmapped.append(h)
@@ -332,13 +333,41 @@ def auto_map_headers(
     return mapping, unmapped
 
 
+def auto_map_headers(
+    headers: list[str],
+) -> tuple[dict[str, str | None], list[str]]:
+    """Device-sheet auto-map — auto_map_fields with the device alias table
+    and the NetBox shape rule (a role column with no explicit `model`
+    column means `device_type` carries NetBox's model slug, not our type)."""
+    def remap(field, n, normed):
+        netbox_shape = (
+            any(x in _NETBOX_ROLE_HEADERS for x in normed)
+            and "model" not in normed
+        )
+        if netbox_shape and field == "device_type" and n in (
+            "device_type", "device type"
+        ):
+            return "model"
+        return field
+
+    return auto_map_fields(
+        headers, _alias_to_field(), _IGNORED_HEADERS, remap
+    )
+
+
 def apply_mapping_overrides(
     mapping: dict[str, str | None],
     headers: list[str],
     raw: str | None,
+    fields: list[str] | None = None,
+    union_headers: list[str] | None = None,
 ) -> dict[str, str | None]:
     """User {source_header: field} overrides on top of the auto-map.
-    field "" / null explicitly unmaps a column."""
+    field "" / null explicitly unmaps a column; a field outside `fields`
+    (default DEVICE_IMPORT_FIELDS) leaves the header untouched — per-sheet
+    families only take overrides they understand. `union_headers` (bundle
+    imports) validates each source against every sheet's headers combined —
+    a source living in a different sheet is skipped here rather than 422."""
     if not raw:
         return mapping
     try:
@@ -347,21 +376,54 @@ def apply_mapping_overrides(
         raise HTTPException(422, "bad mapping JSON — expected {header: field}")
     if not isinstance(overrides, dict):
         raise HTTPException(422, "bad mapping JSON — expected {header: field}")
+    valid = fields if fields is not None else DEVICE_IMPORT_FIELDS
+    known = union_headers if union_headers is not None else headers
+    known_exact = set(known)
+    known_norm = {norm_header(h) for h in known}
     by_norm = {norm_header(h): h for h in headers}
     by_exact = {h: h for h in headers}
     for src, field in overrides.items():
-        h = by_exact.get(src) or by_norm.get(norm_header(src))
-        if h is None:
+        if src not in known_exact and norm_header(src) not in known_norm:
             raise HTTPException(
                 422, f"mapping source {src!r} is not a column in the file"
             )
+        h = by_exact.get(src) or by_norm.get(norm_header(src))
+        if h is None:
+            continue
         if field in (None, ""):
             mapping[h] = None
             continue
-        if field not in DEVICE_IMPORT_FIELDS:
-            raise HTTPException(422, f"unknown import field {field!r}")
+        if field not in valid:
+            continue
         mapping[h] = field
     return mapping
+
+
+def sheet_rows(
+    sheet,
+) -> tuple[list[str], list[tuple[int, dict[str, str]]]]:
+    """One SheetMatrix -> (headers, [(row_no, {header: str})]).
+
+    Row numbers are the file's (header = row 1). Unnamed interior columns
+    still surface — their data is reportable rather than silently dropped.
+    Shared by the single-sheet device importer and the multi-sheet rack
+    bundle importer."""
+    if not sheet.rows:
+        raise HTTPException(422, "empty file or missing header row")
+    raw_headers = sheet.rows[0]
+    headers = [clean(h) for h in raw_headers]
+    if not any(headers):
+        raise HTTPException(422, "empty file or missing header row")
+    headers = [h or f"column {i + 1}" for i, h in enumerate(headers)]
+    rows: list[tuple[int, dict[str, str]]] = []
+    for i, raw in enumerate(sheet.rows[1:], start=2):
+        row: dict[str, str] = {}
+        for h, v in zip(headers, raw):
+            if h not in row:  # first column wins on duplicate header names
+                row[h] = clean(v)
+        if any(row.values()):
+            rows.append((i, row))
+    return headers, rows
 
 
 def parse_device_sheet(
@@ -371,30 +433,14 @@ def parse_device_sheet(
 
     xlsx is detected by zipfile magic inside load_upload; everything else
     is parsed as CSV (utf-8-sig, cp1255 fallback for Hebrew ANSI saves).
-    Row numbers are the file's (header = row 1).
     """
     try:
         sheets = load_upload(payload, filename)
     except Exception as e:
         raise HTTPException(422, f"cannot parse file: {e}")
-    if not sheets or not sheets[0].rows:
+    if not sheets:
         raise HTTPException(422, "empty file or missing header row")
-    raw_headers = sheets[0].rows[0]
-    headers = [clean(h) for h in raw_headers]
-    if not any(headers):
-        raise HTTPException(422, "empty file or missing header row")
-    # Unnamed interior columns still surface — their data is reportable
-    # rather than silently dropped.
-    headers = [h or f"column {i + 1}" for i, h in enumerate(headers)]
-    rows: list[tuple[int, dict[str, str]]] = []
-    for i, raw in enumerate(sheets[0].rows[1:], start=2):
-        row: dict[str, str] = {}
-        for h, v in zip(headers, raw):
-            if h not in row:  # first column wins on duplicate header names
-                row[h] = clean(v)
-        if any(row.values()):
-            rows.append((i, row))
-    return headers, rows
+    return sheet_rows(sheets[0])
 
 
 # ---------------------------------------------------------------------------
@@ -497,10 +543,19 @@ def _name_map(rows) -> dict[str, list]:
 
 
 async def _load_refs(
-    session: AsyncSession, frows: list[tuple[int, dict[str, str]]]
+    session: AsyncSession,
+    frows: list[tuple[int, dict[str, str]]],
+    *,
+    extra_sites: Iterable[Site] = (),
+    extra_groups: Iterable[RackGroup] = (),
+    extra_racks: Iterable[Rack] = (),
 ) -> _Refs:
     """One-shot reference load keyed by what the file actually mentions —
-    the addresses importer's O(table)-per-row bug must not come back."""
+    the addresses importer's O(table)-per-row bug must not come back.
+
+    The extra_* iterables carry transient rows planned by an enclosing
+    bundle import (negative temp ids) so the file can name sites/groups/
+    racks it creates itself."""
     ids: set[int] = set()
     serials: set[str] = set()
     macs: set[str] = set()
@@ -527,9 +582,15 @@ async def _load_refs(
             else:
                 names.add(_fold(v))  # carriers resolve by name too
 
-    sites = list((await session.execute(select(Site))).scalars())
-    groups = list((await session.execute(select(RackGroup))).scalars())
-    racks = list((await session.execute(select(Rack))).scalars())
+    sites = list((await session.execute(select(Site))).scalars()) + list(
+        extra_sites
+    )
+    groups = list((await session.execute(select(RackGroup))).scalars()) + list(
+        extra_groups
+    )
+    racks = list((await session.execute(select(Rack))).scalars()) + list(
+        extra_racks
+    )
 
     # Rack-name candidates decide which racks' occupants to pull.
     racks_by_name = _name_map(racks)
@@ -714,10 +775,16 @@ def _float_field(v: str | None, name: str) -> tuple[float | None, str | None]:
 
 
 def _match(
-    fields: dict[str, str], site_id: int | None, refs: _Refs
+    fields: dict[str, str],
+    site_id: int | None,
+    refs: _Refs,
+    rack_id: int | None = None,
 ) -> tuple[Device | None, str | None, str | None]:
     """Precedence id -> serial -> mac -> name+site. Returns (device, how,
-    error); ambiguity is an error row, never a coin flip."""
+    error); ambiguity is an error row, never a coin flip. `rack_id` scopes
+    the name match to the rack the row is being placed into first (a
+    same-named device elsewhere is then picked up by the global rules —
+    the file moves it, same as serial/mac/id)."""
     if rid := _parse_id(fields.get("id")):
         if d := refs.devices_by_id.get(rid):
             return d, "id", None
@@ -735,6 +802,15 @@ def _match(
             return c[0], "mac_address", None
     if n := (fields.get("name") or "").strip():
         cands = refs.devices_by_name.get(_fold(n)) or []
+        if rack_id is not None:
+            scoped = [d for d in cands if d.rack_id == rack_id]
+            if len(scoped) > 1:
+                return None, None, (
+                    f"name '{n}' is ambiguous within rack "
+                    f"({len(scoped)} devices — use #id)"
+                )
+            if scoped:
+                return scoped[0], "name+rack", None
         if site_id is not None:
             scoped = [d for d in cands if d.site_id == site_id]
             if len(scoped) > 1:
@@ -765,9 +841,27 @@ async def plan_device_import(
     *,
     on_match: str,
     unracked_on_missing: bool,
+    extra_sites: Iterable[Site] = (),
+    extra_groups: Iterable[RackGroup] = (),
+    extra_racks: Iterable[Rack] = (),
+    skipped_rack_ids: frozenset[int] = frozenset(),
+    replace_rack_ids: frozenset[int] = frozenset(),
+    scope_names_to_rack: bool = False,
 ) -> list[Planned]:
     """Validate every row against the DB + earlier batch rows. Pure —
-    writes nothing (dry_run and commit share this plan)."""
+    writes nothing (dry_run and commit share this plan).
+
+    Bundle-import knobs (all no-ops for the standalone device importer):
+    - extra_*: transient rows the bundle plans create (negative temp ids)
+      so the devices sheet can name sites/groups/racks built by the file.
+    - skipped_rack_ids: racks an enclosing on_existing=skip froze — rows
+      landing there report skip, nothing is placed or unmounted.
+    - replace_rack_ids: racks whose rack-level occupants the commit
+      unracks first (replace_devices) — the simulation drops them so
+      incoming rows see the emptied rack; carrier children keep their
+      mount (unracking a carrier never unmounts its tray).
+    - scope_names_to_rack: name matching prefers the target rack's own
+      occupants before the site/global rules."""
     # canonical field -> raw cell text per row
     field_rows = [
         (
@@ -780,9 +874,20 @@ async def plan_device_import(
         )
         for num, row in frows
     ]
-    refs = await _load_refs(session, field_rows)
+    refs = await _load_refs(
+        session, field_rows,
+        extra_sites=extra_sites, extra_groups=extra_groups,
+        extra_racks=extra_racks,
+    )
     occ = _Occupancy(
-        [d for d in refs.devices_by_id.values() if d.rack_id is not None]
+        [
+            d
+            for d in refs.devices_by_id.values()
+            if d.rack_id is not None
+            and not (
+                d.rack_id in replace_rack_ids and d.carrier_id is None
+            )
+        ]
     )
     # (rack_id, folded name) -> pending carrier plan for pass-B resolution
     pending_carriers: dict[tuple[int, str], Planned] = {}
@@ -792,22 +897,40 @@ async def plan_device_import(
         if (fields.get("carrier") or "").strip():
             deferred.append((num, fields))
             continue
-        p = _plan_rack_level(num, fields, refs, occ, on_match, unracked_on_missing)
+        p = _plan_rack_level(
+            num, fields, refs, occ, on_match, unracked_on_missing,
+            skipped_rack_ids=skipped_rack_ids,
+            replace_rack_ids=replace_rack_ids,
+            scope_names_to_rack=scope_names_to_rack,
+        )
         results.append(p)
+        if not p.ok:
+            continue
         if (
-            p.ok
-            and p.create_data
+            p.create_data
             and p.create_data.get("slot_layout")
             and p.create_data.get("rack_id") is not None
         ):
             pending_carriers[
                 (p.create_data["rack_id"], _fold(p.create_data["name"]))
             ] = p
+        elif p.patch is not None and p.device is not None:
+            # A matched carrier that stays/lands racked is also resolvable
+            # by pass-B children — key it by its post-patch rack + name.
+            layout = p.patch.get("slot_layout", p.device.slot_layout)
+            rid = p.patch.get("rack_id", p.device.rack_id)
+            if layout and rid is not None:
+                pending_carriers[
+                    (rid, _fold(p.patch.get("name") or p.device.name or ""))
+                ] = p
     for num, fields in deferred:
         results.append(
             _plan_child(
                 num, fields, refs, occ, on_match,
                 unracked_on_missing, pending_carriers,
+                skipped_rack_ids=skipped_rack_ids,
+                replace_rack_ids=replace_rack_ids,
+                scope_names_to_rack=scope_names_to_rack,
             )
         )
     results.sort(key=lambda p: p.row)
@@ -953,6 +1076,10 @@ def _plan_rack_level(
     occ: _Occupancy,
     on_match: str,
     unracked_on_missing: bool,
+    *,
+    skipped_rack_ids: frozenset[int] = frozenset(),
+    replace_rack_ids: frozenset[int] = frozenset(),
+    scope_names_to_rack: bool = False,
 ) -> Planned:
     """Pass A: rows without a `carrier` value — rack-level devices,
     unracked inventory, and carrier trays."""
@@ -966,20 +1093,27 @@ def _plan_rack_level(
         site_id = site.id
     else:
         site_id = None
+    group_broken = ""
     if "rack_group" in fields and (fields["rack_group"] or "").strip():
         group, err = _resolve_named(
             fields["rack_group"], refs.groups_by_id, refs.groups_by_name,
             "rack_group",
         )
         if err:
-            return _err(num, err)
-        group_id = group.id
+            if not (unracked_on_missing and "ambiguous" not in err):
+                return _err(num, err)
+            # The qualifier is broken — the whole placement claim is void,
+            # so the rack cell isn't trusted either: unracked inventory.
+            group_broken = err
+            group_id = None
+        else:
+            group_id = group.id
     else:
         group_id = None
 
     rack: Rack | None = None
-    rack_note = ""
-    if "rack" in fields:
+    rack_note = f"{group_broken} — unracked" if group_broken else ""
+    if "rack" in fields and not group_broken:  # group_broken: chain void → unracked
         v = (fields["rack"] or "").strip()
         if v:
             rack, err = _resolve_rack(v, site_id, group_id, refs)
@@ -990,6 +1124,14 @@ def _plan_rack_level(
                     return _err(num, err)
         # blank cell = explicit unrack (update) / unracked inventory (create)
 
+    # A rack frozen by the enclosing bundle's on_existing=skip swallows
+    # every row aimed at it — the whole subtree stays untouched.
+    if rack is not None and rack.id in skipped_rack_ids:
+        return Planned(
+            row=num, ok=True, action="skip",
+            detail=f"rack '{rack.name}' untouched (on_existing=skip)",
+        )
+
     scalars, err = _scalars(fields)
     if err:
         return _err(num, err)
@@ -998,7 +1140,10 @@ def _plan_rack_level(
         scalars.pop("u_position", None)
         scalars.pop("slot", None)
 
-    device, how, merr = _match(fields, site_id, refs)
+    device, how, merr = _match(
+        fields, site_id, refs,
+        rack.id if scope_names_to_rack and rack is not None else None,
+    )
     if merr:
         return _err(num, merr)
 
@@ -1006,23 +1151,43 @@ def _plan_rack_level(
 
     # ---- matched row: skip or update --------------------------------
     if device is not None:
-        if on_match == "skip":
+        # replace_devices unracks this rack's occupants at commit — a
+        # matched occupant row must re-place it or it would land as
+        # unracked inventory even under on_match=skip.
+        replaced = (
+            device.carrier_id is None
+            and device.rack_id in replace_rack_ids
+        )
+        if on_match == "skip" and not replaced:
             return Planned(
                 row=num, ok=True, action="skip",
                 detail=f"exists (matched by {how})", device=device,
             )
-        patch: dict = dict(scalars)
-        if name:
-            patch["name"] = name
-        if "site" in fields:
-            patch["site_id"] = site_id
-        if "rack" in fields:
-            patch["rack_id"] = rack.id if rack else None
-        # carrier column present-but-blank unmounts; carrier-with-value
-        # rows never reach pass A.
-        if "carrier" in fields and not (fields["carrier"] or "").strip():
-            patch["carrier_id"] = None
-            patch["slot"] = None
+        if on_match == "skip":
+            # placement-only patch: attributes stay untouched (skip), the
+            # file's placement cells re-rack the device.
+            patch = {}
+            if "rack" in fields:
+                patch["rack_id"] = rack.id if rack else None
+                for k in ("u_position", "u_height", "face"):
+                    if k in scalars:
+                        patch[k] = scalars[k]
+                if "carrier" in fields:
+                    patch["carrier_id"] = None
+                    patch["slot"] = None
+        else:
+            patch = dict(scalars)
+            if name:
+                patch["name"] = name
+            if "site" in fields:
+                patch["site_id"] = site_id
+            if "rack" in fields:
+                patch["rack_id"] = rack.id if rack else None
+            # carrier column present-but-blank unmounts; carrier-with-value
+            # rows never reach pass A.
+            if "carrier" in fields and not (fields["carrier"] or "").strip():
+                patch["carrier_id"] = None
+                patch["slot"] = None
         diff = _update_diff(device, patch, refs)
         ip_rows, ip_warns, ip_diff = _resolve_ips(
             fields, device.id, refs.device_ips.get(device.id, []), refs
@@ -1030,19 +1195,29 @@ def _plan_rack_level(
         if ip_diff:
             diff["ips"] = ip_diff
         detail = f"update (matched by {how})" if diff else f"identical (matched by {how})"
+        if replaced and not diff:
+            detail = (
+                "re-placed after replace_devices unrack"
+                if patch.get("rack_id") is not None
+                else "unracked by replace_devices"
+            )
         if rack_note:
             detail += f" — {rack_note}"
         if ip_warns:
             detail += "; " + "; ".join(ip_warns)
         p = Planned(
             row=num, ok=True,
-            action="update" if diff else "skip",
+            action="update"
+            if (diff or (replaced and patch.get("rack_id") is not None))
+            else "skip",
             detail=detail, diff=diff or None,
-            device=device, patch=patch, ip_rows=ip_rows,
+            device=device, patch=patch or None, ip_rows=ip_rows,
         )
         # Simulate the placement consequence for later rows + validation.
-        if patch.keys() & _PLACEMENT_KEYS or "slot_layout" in patch:
-            if not _sim_update_placement(p, patch, device, occ, refs):
+        if p.patch and (
+            p.patch.keys() & _PLACEMENT_KEYS or "slot_layout" in p.patch
+        ):
+            if not _sim_update_placement(p, p.patch, device, occ, refs):
                 return p
         return p
 
@@ -1139,6 +1314,9 @@ def _sim_update_placement(
         p.ok, p.action, p.detail = False, "error", f"Rack {target_rack_id} not found"
         return False
     cand = _placement_candidate(device_fields(device), patch, rack.id)
+    # _DEVICE_FIELD_NAMES has no id — keep it so carrier children resolve
+    # the moved carrier (and occ bookkeeping keys on the real id).
+    cand.id = device.id
     if cand.u_position is None and cand.carrier_id is None:
         p.ok, p.action, p.detail = (
             False, "error",
@@ -1216,8 +1394,110 @@ def _find_carrier(
         return None, f"carrier '{v}' is ambiguous — use #id"
     if cands:
         return None, f"'{v}' is not a carrier"
+    if rack is not None:
+        # Occupancy missed the name — the carrier may still be stored in
+        # this rack but dropped from the simulation because the enclosing
+        # bundle's replace_devices unracks it. Resolve it so _plan_child
+        # can report that honestly instead of a bare "not found".
+        stored = [
+            d
+            for d in refs.devices_by_id.values()
+            if _fold(d.name or "") == _fold(v)
+            and d.rack_id == rack.id
+            and d.slot_layout is not None
+        ]
+        if len(stored) == 1:
+            return stored[0], None
+        if len(stored) > 1:
+            return None, f"carrier '{v}' is ambiguous — use #id"
+        # Not in this rack — maybe it exists unracked (a skipped/frozen
+        # row, or an earlier unracked salvage). Returning it lets the
+        # caller report the honest "is not racked" instead of "not found".
+        unracked = [
+            d
+            for d in refs.devices_by_id.values()
+            if _fold(d.name or "") == _fold(v)
+            and d.rack_id is None
+            and d.slot_layout is not None
+        ]
+        if len(unracked) == 1:
+            return unracked[0], None
+        if len(unracked) > 1:
+            return None, f"carrier '{v}' is ambiguous — use #id"
     return None, f"carrier '{v}' not found" + (
         " in this rack" if rack is not None else ""
+    )
+
+
+def _plan_unracked_child(
+    num: int,
+    fields: dict[str, str],
+    site_id: int | None,
+    refs: _Refs,
+    on_match: str,
+    note: str,
+) -> Planned:
+    """unracked_on_missing salvage for a carrier row whose mount is void
+    (carrier missing / unracked): the device lands as unracked inventory —
+    same shape as pass A's unracked path."""
+    scalars, serr = _scalars(fields)
+    if serr:
+        return _err(num, serr)
+    scalars.pop("u_position", None)
+    scalars.pop("slot", None)
+    device, how, merr = _match(fields, site_id, refs, None)
+    if merr:
+        return _err(num, merr)
+    name = (fields.get("name") or "").strip()
+    if device is not None:
+        if on_match == "skip":
+            return Planned(
+                row=num, ok=True, action="skip",
+                detail=f"exists (matched by {how})", device=device,
+            )
+        patch = dict(scalars)
+        if name:
+            patch["name"] = name
+        if "site" in fields:
+            patch["site_id"] = site_id
+        patch["rack_id"] = None
+        patch["carrier_id"] = None
+        patch["slot"] = None
+        diff = _update_diff(device, patch, refs)
+        ip_rows, ip_warns, ip_diff = _resolve_ips(
+            fields, device.id, refs.device_ips.get(device.id, []), refs
+        )
+        if ip_diff:
+            diff["ips"] = ip_diff
+        detail = (
+            f"update (matched by {how})" if diff
+            else f"identical (matched by {how})"
+        ) + f" — {note}"
+        if ip_warns:
+            detail += "; " + "; ".join(ip_warns)
+        return Planned(
+            row=num, ok=True,
+            action="update" if diff else "skip",
+            detail=detail, diff=diff or None,
+            device=device, patch=patch or None, ip_rows=ip_rows,
+        )
+    if not name:
+        return _err(num, "name required")
+    create = dict(scalars)
+    create["name"] = name
+    create["site_id"] = site_id
+    create["rack_id"] = None
+    create["carrier_id"] = None
+    create["slot"] = None
+    create["u_height"] = scalars.get("u_height") or 1
+    create["face"] = scalars.get("face") or RackFace.FRONT
+    ip_rows, ip_warns, _ = _resolve_ips(fields, None, [], refs)
+    detail = f"create '{name}' — {note}"
+    if ip_warns:
+        detail += "; " + "; ".join(ip_warns)
+    return Planned(
+        row=num, ok=True, action="create", detail=detail,
+        create_data=create, ip_rows=ip_rows,
     )
 
 
@@ -1229,6 +1509,10 @@ def _plan_child(
     on_match: str,
     unracked_on_missing: bool,
     pending_carriers: dict[tuple[int, str], Planned],
+    *,
+    skipped_rack_ids: frozenset[int] = frozenset(),
+    replace_rack_ids: frozenset[int] = frozenset(),
+    scope_names_to_rack: bool = False,
 ) -> Planned:
     """Pass B: rows with a `carrier` value — mount into a carrier slot.
     Children inherit rack/u/face from the carrier; rack on the row must
@@ -1242,19 +1526,30 @@ def _plan_child(
         site_id = site.id
     else:
         site_id = None
+    group_broken = False
     if "rack_group" in fields and (fields["rack_group"] or "").strip():
         group, err = _resolve_named(
             fields["rack_group"], refs.groups_by_id, refs.groups_by_name,
             "rack_group",
         )
         if err:
-            return _err(num, err)
-        group_id = group.id
+            if not (unracked_on_missing and "ambiguous" not in err):
+                return _err(num, err)
+            # Broken qualifier — void the rack cell too; the carrier's own
+            # placement decides where the child lands.
+            group_broken = True
+            group_id = None
+        else:
+            group_id = group.id
     else:
         group_id = None
 
     rack: Rack | None = None
-    if "rack" in fields and (fields["rack"] or "").strip():
+    if (
+        "rack" in fields
+        and not group_broken
+        and (fields["rack"] or "").strip()
+    ):
         rack, err = _resolve_rack(fields["rack"], site_id, group_id, refs)
         if err:
             if unracked_on_missing and "ambiguous" not in err:
@@ -1262,27 +1557,84 @@ def _plan_child(
             else:
                 return _err(num, err)
 
+    # Frozen racks swallow mount attempts too — the subtree stays put.
+    if rack is not None and rack.id in skipped_rack_ids:
+        return Planned(
+            row=num, ok=True, action="skip",
+            detail=f"rack '{rack.name}' untouched (on_existing=skip)",
+        )
+
     carrier, err = _find_carrier(
         fields["carrier"], rack, occ, pending_carriers, refs
     )
     if err:
+        if unracked_on_missing and "ambiguous" not in err:
+            # mount is void — the child lands as unracked inventory
+            return _plan_unracked_child(
+                num, fields, site_id, refs, on_match, f"{err} — unracked",
+            )
         return _err(num, err)
-    # Resolved carrier (DB row or a pending pass-A create).
+    # Resolved carrier (DB row or a pending pass-A create/update).
     if isinstance(carrier, Planned):
         carrier_row = carrier.device  # set post-commit; None in plan
-        c_rack_id = carrier.create_data["rack_id"]
-        c_u = carrier.create_data.get("u_position")
-        c_face = carrier.create_data.get("face") or RackFace.FRONT
-        c_layout = carrier.create_data.get("slot_layout")
-        c_temp_id = -carrier.row
+        if carrier.create_data is not None:
+            c_rack_id = carrier.create_data["rack_id"]
+            c_u = carrier.create_data.get("u_position")
+            c_face = carrier.create_data.get("face") or RackFace.FRONT
+            c_layout = carrier.create_data.get("slot_layout")
+            c_u_height = carrier.create_data.get("u_height") or 1
+            c_temp_id = -carrier.row
+        else:  # matched carrier whose own row re-places it (update)
+            base = carrier.device
+            patch = carrier.patch or {}
+            c_rack_id = patch.get("rack_id", base.rack_id)
+            c_u = patch.get("u_position", base.u_position)
+            c_face = patch.get("face", base.face) or RackFace.FRONT
+            c_layout = patch.get("slot_layout", base.slot_layout)
+            c_u_height = patch.get("u_height", base.u_height) or 1
+            c_temp_id = base.id
     else:
         carrier_row = carrier
         c_rack_id = carrier.rack_id
         c_u = carrier.u_position
         c_face = carrier.face or RackFace.FRONT
         c_layout = carrier.slot_layout
+        c_u_height = carrier.u_height or 1
         c_temp_id = carrier.id
+        if (
+            c_rack_id in replace_rack_ids
+            and carrier.id not in occ.current
+        ):
+            return _err(
+                num,
+                f"carrier '{fields['carrier'].strip()}' is unracked by "
+                "replace_devices — its row must re-place it first",
+            )
+    if c_rack_id in skipped_rack_ids:
+        return Planned(
+            row=num, ok=True, action="skip",
+            detail=f"rack '{_rack_diff_name(refs, c_rack_id)}' untouched "
+            "(on_existing=skip)",
+        )
     if c_rack_id is None:
+        if unracked_on_missing:
+            return _plan_unracked_child(
+                num, fields, site_id, refs, on_match,
+                f"carrier '{fields['carrier'].strip()}' is not racked — "
+                "unracked",
+            )
+        if on_match == "skip":
+            # The carrier stays unracked (skipped/frozen) — but if the
+            # child itself already exists, the row is a skip like any
+            # other matched row under on_match=skip.
+            device, how, merr = _match(fields, site_id, refs)
+            if merr is None and device is not None:
+                return Planned(
+                    row=num, ok=True, action="skip",
+                    detail=f"exists (matched by {how}) — carrier not "
+                    "racked, untouched",
+                    device=device,
+                )
         return _err(num, f"carrier '{fields['carrier'].strip()}' is not racked")
     if rack is not None and rack.id != c_rack_id:
         return _err(
@@ -1307,13 +1659,13 @@ def _plan_child(
         return _err(num, err)
     if scalars.get("slot_layout"):
         return _err(num, "a carrier can't mount inside another carrier")
-    if scalars.get("u_height") and scalars["u_height"] > (
-        carrier.create_data.get("u_height", 1) if isinstance(carrier, Planned)
-        else (carrier.u_height or 1)
-    ):
+    if scalars.get("u_height") and scalars["u_height"] > c_u_height:
         return _err(num, "child is taller than its carrier")
 
-    device, how, merr = _match(fields, site_id, refs)
+    device, how, merr = _match(
+        fields, site_id, refs,
+        rack.id if scope_names_to_rack else None,
+    )
     if merr:
         return _err(num, merr)
     name = (fields.get("name") or "").strip()
@@ -1399,20 +1751,37 @@ def _plan_child(
 
 
 async def apply_device_import(
-    session: AsyncSession, planned: list[Planned]
+    session: AsyncSession,
+    planned: list[Planned],
+    *,
+    rack_ids: dict[int, int] | None = None,
+    site_ids: dict[int, int] | None = None,
 ) -> None:
     """Write the ok rows in one transaction. Creates go through the create
     path's check_placement; updates through apply_device_patch — the
     changelog then covers imports for free. Raises IPAMError on a
     commit-time conflict (the caller turns it into an error row count or
-    rolls everything back)."""
+    rolls everything back).
+
+    rack_ids/site_ids translate negative temp ids a bundle import staged
+    for rows it created earlier in the same transaction."""
     temp_ids: dict[int, Device] = {}  # plan row -> flushed carrier/device
+    rack_ids = rack_ids or {}
+    site_ids = site_ids or {}
 
     def _carrier_id(p: Planned, raw: int | None) -> int | None:
         if raw is None or raw >= 0:
             return raw
         parent = temp_ids.get(-raw)
         return parent.id if parent is not None else raw
+
+    def _translate(d: dict) -> dict:
+        d = dict(d)
+        if d.get("rack_id") in rack_ids:
+            d["rack_id"] = rack_ids[d["rack_id"]]
+        if d.get("site_id") in site_ids:
+            d["site_id"] = site_ids[d["site_id"]]
+        return d
 
     # Pass A first — carriers get real ids before children mount.
     order = sorted(planned, key=lambda p: p.row)
@@ -1422,7 +1791,7 @@ async def apply_device_import(
         if p.carrier_parent is not None:
             continue  # pass B
         if p.create_data is not None:
-            data = dict(p.create_data)
+            data = _translate(p.create_data)
             data["carrier_id"] = _carrier_id(p, data.get("carrier_id"))
             d = Device(**data, source="import")
             if d.rack_id is not None:
@@ -1431,7 +1800,7 @@ async def apply_device_import(
             session.add(d)
             p.device = d
         elif p.patch is not None and p.device is not None:
-            patch = dict(p.patch)
+            patch = _translate(p.patch)
             patch["carrier_id"] = _carrier_id(p, patch.get("carrier_id"))
             await apply_device_patch(session, p.device, patch)
         await session.flush()
@@ -1440,7 +1809,7 @@ async def apply_device_import(
         if not p.ok or p.action == "skip" or p.carrier_parent is None:
             continue
         if p.create_data is not None:
-            data = dict(p.create_data)
+            data = _translate(p.create_data)
             data["carrier_id"] = _carrier_id(p, data.get("carrier_id"))
             d = Device(**data, source="import")
             rack = await session.get(Rack, d.rack_id)
@@ -1448,7 +1817,7 @@ async def apply_device_import(
             session.add(d)
             p.device = d
         elif p.patch is not None and p.device is not None:
-            patch = dict(p.patch)
+            patch = _translate(p.patch)
             patch["carrier_id"] = _carrier_id(p, patch.get("carrier_id"))
             await apply_device_patch(session, p.device, patch)
         await session.flush()

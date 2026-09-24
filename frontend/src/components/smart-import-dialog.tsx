@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useRef, useState } from "react";
+import { Fragment, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ChevronRight,
@@ -74,12 +74,16 @@ interface RowResult {
   action: "create" | "update" | "skip" | "error" | string;
   detail: string;
   diff?: Record<string, [unknown, unknown]>;
+  /** Bundle imports tag each row with the sheet it came from (V5C). */
+  sheet?: string;
 }
 
 interface DetectResp {
   columns: ColumnMap[];
   unmapped: string[];
   row_count: number;
+  warnings?: string[];
+  sheets?: { name: string; family: string | null; row_count: number }[];
 }
 
 interface ImportResp {
@@ -88,6 +92,7 @@ interface ImportResp {
   columns: ColumnMap[];
   unmapped: string[];
   committed: boolean;
+  warnings?: string[];
 }
 
 export interface SmartImportDialogProps {
@@ -102,6 +107,8 @@ export interface SmartImportDialogProps {
   description?: string;
   /** Endpoint-specific mode radios (on_match, unracked_on_missing, ...). */
   options?: ImportOption[];
+  /** Constant query params appended to every request (e.g. group_id). */
+  extraParams?: Record<string, string>;
   /** Called after a successful commit — reload the page's data here. */
   onCommitted?: () => void;
 }
@@ -140,7 +147,23 @@ function CountCards({ counts }: { counts: Record<string, number> }) {
 }
 
 function ResultRows({ rows }: { rows: RowResult[] }) {
-  const [open, setOpen] = useState<Set<number>>(new Set());
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  // Bundle imports (V5C) tag rows with their sheet — group the preview so
+  // group/rack/device/interface/cable verdicts stay readable.
+  const sections = useMemo(() => {
+    const order: string[] = [];
+    const by: Record<string, RowResult[]> = {};
+    for (const r of rows) {
+      const s = r.sheet ?? "";
+      if (!(s in by)) {
+        by[s] = [];
+        order.push(s);
+      }
+      by[s].push(r);
+    }
+    return order.map((s) => [s, by[s]] as const);
+  }, [rows]);
+  const grouped = sections.some(([s]) => s !== "");
   return (
     <div className="max-h-72 overflow-auto rounded-lg border">
       <Table>
@@ -152,18 +175,37 @@ function ResultRows({ rows }: { rows: RowResult[] }) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.slice(0, ROW_CAP).map((r) => {
+          {(() => {
+            let shown = 0;
+            return sections.flatMap(([sheet, srows]) => {
+              const visible = srows.slice(0, Math.max(0, ROW_CAP - shown));
+              shown += srows.length;
+              return [
+            ...(grouped
+              ? [
+                  <TableRow key={`s-${sheet}`} className="bg-muted/40">
+                    <TableCell
+                      colSpan={3}
+                      className="py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground"
+                    >
+                      {sheet || "rows"}
+                    </TableCell>
+                  </TableRow>,
+                ]
+              : []),
+            ...visible.map((r) => {
+            const rowKey = `${sheet}-${r.row}`;
             const hasDiff = r.diff && Object.keys(r.diff).length > 0;
-            const isOpen = open.has(r.row);
+            const isOpen = open.has(rowKey);
             return (
-              <Fragment key={r.row}>
+              <Fragment key={rowKey}>
                 <TableRow
                   className={hasDiff ? "cursor-pointer" : undefined}
                   onClick={() => {
                     if (!hasDiff) return;
                     const next = new Set(open);
-                    if (isOpen) next.delete(r.row);
-                    else next.add(r.row);
+                    if (isOpen) next.delete(rowKey);
+                    else next.add(rowKey);
                     setOpen(next);
                   }}
                 >
@@ -208,7 +250,10 @@ function ResultRows({ rows }: { rows: RowResult[] }) {
                 )}
               </Fragment>
             );
-          })}
+            }),
+              ];
+            });
+          })()}
           {rows.length === 0 && (
             <TableRow>
               <TableCell
@@ -238,12 +283,15 @@ export function SmartImportDialog({
   title = "Import",
   description = "Upload a CSV or XLSX file — headers are auto-mapped, then a dry-run preview shows every row's action before anything is written.",
   options = [],
+  extraParams,
   onCommitted,
 }: SmartImportDialogProps) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [columns, setColumns] = useState<ColumnMap[]>([]);
   const [unmapped, setUnmapped] = useState<string[]>([]);
+  const [sheetsFound, setSheetsFound] = useState<DetectResp["sheets"]>([]);
+  const [warnings, setWarnings] = useState<string[]>([]);
   const [result, setResult] = useState<ImportResp | null>(null);
   const [committed, setCommitted] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -261,7 +309,7 @@ export function SmartImportDialog({
     opts: Record<string, string | boolean>,
     extra: Record<string, string>
   ) => {
-    const p = new URLSearchParams(extra);
+    const p = new URLSearchParams({ ...extraParams, ...extra });
     for (const o of options) {
       const v = opts[o.param];
       p.set(o.param, o.kind === "flag" ? (v ? "1" : "0") : String(v));
@@ -289,12 +337,17 @@ export function SmartImportDialog({
     setCommitted(false);
     try {
       const r = await api.upload<DetectResp>(
-        `${endpoint}?filename=${encodeURIComponent(f.name)}&detect=1`,
+        `${endpoint}?${queryFor(optValues, {
+          filename: f.name,
+          detect: "1",
+        })}`,
         f,
         "application/octet-stream"
       );
       setColumns(r.columns);
       setUnmapped(r.unmapped);
+      setSheetsFound(r.sheets ?? []);
+      setWarnings(r.warnings ?? []);
     } catch (e) {
       toast.error("Could not read file", { description: String(e) });
       setFile(null);
@@ -347,6 +400,7 @@ export function SmartImportDialog({
         "application/octet-stream"
       );
       setResult(r);
+      if (r.warnings?.length) setWarnings(r.warnings);
       setCommitted(false);
     } catch (e) {
       toast.error("Preview failed", { description: String(e) });
@@ -359,6 +413,8 @@ export function SmartImportDialog({
     setFile(null);
     setColumns([]);
     setUnmapped([]);
+    setSheetsFound([]);
+    setWarnings([]);
     setResult(null);
     setCommitted(false);
   };
@@ -408,7 +464,8 @@ export function SmartImportDialog({
             )}
             <span className="font-medium">Choose a .csv or .xlsx file</span>
             <span className="text-sm text-muted-foreground">
-              First sheet only; export files from this app re-import cleanly.
+              CSV or multi-sheet XLSX; export files from this app re-import
+              cleanly.
             </span>
           </button>
         ) : (
@@ -426,6 +483,32 @@ export function SmartImportDialog({
                 <Upload className="h-3.5 w-3.5" /> Change file
               </Button>
             </div>
+
+            {sheetsFound && sheetsFound.length > 1 && (
+              <p className="text-xs text-muted-foreground">
+                Sheets:{" "}
+                {sheetsFound
+                  .map((s) =>
+                    s.family
+                      ? `${s.name} (${s.row_count})`
+                      : `${s.name} — ignored`
+                  )
+                  .join(" · ")}
+              </p>
+            )}
+            {warnings.length > 0 && (
+              <div className="space-y-1">
+                {warnings.map((w) => (
+                  <p
+                    key={w}
+                    className="flex items-center gap-1.5 text-xs text-amber-400"
+                  >
+                    <AlertTriangle className="h-3 w-3" />
+                    {w}
+                  </p>
+                ))}
+              </div>
+            )}
 
             {columns.length > 0 && (
               <div className="space-y-1.5">

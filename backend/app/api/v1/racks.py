@@ -12,11 +12,12 @@ inventory instead of cascading them away.
 """
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.imports import MAX_IMPORT_BYTES
 from app.api.v1.list_params import parse_int_set, parse_token_set
 from app.core.db import get_session
 from app.core.deps import DATA_DELETE, DATA_READ, DATA_WRITE, require_perm
@@ -44,9 +45,21 @@ from app.schemas.rack import (
 )
 from app.services.cabling import interface_stats
 from app.services.colors import stamp_colors
+from app.services.csv_export import csv_response
+from app.services.device_io import apply_mapping_overrides
 from app.services.devices import health_ip, ips_by_device
 from app.services.ipam import IPAMError, get_or_404
 from app.services.ordering import ordered, reorder
+from app.services.rack_io import (
+    _FAMILY_FIELDS,
+    RACK_EXPORT_COLUMNS,
+    apply_bundle,
+    bundle_sheets,
+    parse_bundle,
+    plan_bundle,
+    rack_export_rows,
+    workbook_response,
+)
 from app.services.racks import (
     apply_device_patch,
     check_placement,
@@ -175,6 +188,76 @@ def _occupancy_class(rack: Rack) -> str:
     return "partial"
 
 
+def _racks_stmt(
+    *,
+    q: str,
+    site_ids,
+    group_ids,
+    room: str,
+    heights,
+    ungrouped: bool | None,
+):
+    """Every SQL-side filter the rack list + exports share — filter parity
+    is the contract, so both build from this one statement."""
+    stmt = select(Rack)
+    if site_ids:
+        stmt = stmt.where(Rack.site_id.in_(site_ids))
+    if group_ids:
+        stmt = stmt.where(Rack.group_id.in_(group_ids))
+    if ungrouped is not None:
+        stmt = stmt.where(
+            Rack.group_id.is_(None) if ungrouped else Rack.group_id.isnot(None)
+        )
+    if heights:
+        stmt = stmt.where(Rack.height_u.in_(heights))
+    if room:
+        like = f"%{fold_hebrew(room)}%"
+        stmt = stmt.where(
+            func.translate(Rack.room, "םןץףך", "מנצפכ").ilike(like)
+        )
+    if q:
+        like = f"%{fold_hebrew(q)}%"
+        stmt = (
+            stmt.outerjoin(Site, Rack.site_id == Site.id)
+            .outerjoin(RackGroup, Rack.group_id == RackGroup.id)
+            .where(
+                or_(
+                    func.translate(Rack.name, "םןץףך", "מנצפכ").ilike(like),
+                    func.translate(Rack.room, "םןץףך", "מנצפכ").ilike(like),
+                    func.translate(
+                        Rack.description, "םןץףך", "מנצפכ"
+                    ).ilike(like),
+                    func.translate(Site.name, "םןץףך", "מנצפכ").ilike(like),
+                    func.translate(
+                        RackGroup.name, "םןץףך", "מנצפכ"
+                    ).ilike(like),
+                )
+            )
+        )
+    return ordered(stmt, Rack, Rack.name, Rack.id)
+
+
+async def _filtered_racks(
+    session: AsyncSession,
+    stmt,
+    *,
+    occupancies,
+    min_free_u: int | None,
+    max_free_u: int | None,
+) -> list[Rack]:
+    """SQL set + computed-field facets (occupancy, free-U) run after the
+    aggregate pass — stats are stamped either way."""
+    rows = list((await session.execute(stmt)).scalars().all())
+    await stamp_rack_stats(session, rows)
+    if occupancies is not None:
+        rows = [r for r in rows if _occupancy_class(r) in occupancies]
+    if min_free_u is not None:
+        rows = [r for r in rows if r.height_u - r.used_u >= min_free_u]
+    if max_free_u is not None:
+        rows = [r for r in rows if r.height_u - r.used_u <= max_free_u]
+    return rows
+
+
 @router.get("", response_model=Page[RackOut])
 async def list_racks(
     q: str = Query(
@@ -212,43 +295,10 @@ async def list_racks(
     group_ids = parse_int_set(group_id, "group_id")
     heights = parse_int_set(height_u, "height_u")
     occupancies = parse_token_set(occupancy, "occupancy", _OCCUPANCY_CLASSES)
-
-    stmt = select(Rack)
-    if site_ids:
-        stmt = stmt.where(Rack.site_id.in_(site_ids))
-    if group_ids:
-        stmt = stmt.where(Rack.group_id.in_(group_ids))
-    if ungrouped is not None:
-        stmt = stmt.where(
-            Rack.group_id.is_(None) if ungrouped else Rack.group_id.isnot(None)
-        )
-    if heights:
-        stmt = stmt.where(Rack.height_u.in_(heights))
-    if room:
-        like = f"%{fold_hebrew(room)}%"
-        stmt = stmt.where(
-            func.translate(Rack.room, "םןץףך", "מנצפכ").ilike(like)
-        )
-    if q:
-        like = f"%{fold_hebrew(q)}%"
-        stmt = (
-            stmt.outerjoin(Site, Rack.site_id == Site.id)
-            .outerjoin(RackGroup, Rack.group_id == RackGroup.id)
-            .where(
-                or_(
-                    func.translate(Rack.name, "םןץףך", "מנצפכ").ilike(like),
-                    func.translate(Rack.room, "םןץףך", "מנצפכ").ilike(like),
-                    func.translate(
-                        Rack.description, "םןץףך", "מנצפכ"
-                    ).ilike(like),
-                    func.translate(Site.name, "םןץףך", "מנצפכ").ilike(like),
-                    func.translate(
-                        RackGroup.name, "םןץףך", "מנצפכ"
-                    ).ilike(like),
-                )
-            )
-        )
-    stmt = ordered(stmt, Rack, Rack.name, Rack.id)
+    stmt = _racks_stmt(
+        q=q, site_ids=site_ids, group_ids=group_ids, room=room,
+        heights=heights, ungrouped=ungrouped,
+    )
 
     # Computed-field filters (occupancy, free-U) run after the aggregate
     # pass — with one active the SQL page has to wait: fetch the full
@@ -270,14 +320,11 @@ async def list_racks(
         )
         await stamp_rack_stats(session, rows)
     else:
-        rows = list((await session.execute(stmt)).scalars().all())
-        await stamp_rack_stats(session, rows)
-        if occupancies is not None:
-            rows = [r for r in rows if _occupancy_class(r) in occupancies]
-        if min_free_u is not None:
-            rows = [r for r in rows if r.height_u - r.used_u >= min_free_u]
-        if max_free_u is not None:
-            rows = [r for r in rows if r.height_u - r.used_u <= max_free_u]
+        rows = await _filtered_racks(
+            session, stmt,
+            occupancies=occupancies, min_free_u=min_free_u,
+            max_free_u=max_free_u,
+        )
         total = len(rows)
         rows = rows[offset : offset + limit if limit else None]
     return Page(
@@ -285,6 +332,248 @@ async def list_racks(
         total=total or 0,
         limit=limit,
         offset=offset,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Smart export / import — V5C. The flat CSV carries the filtered rack list;
+# the .xlsx bundle carries the whole tree (groups -> racks -> devices ->
+# interfaces -> cables) so a group/row/site-buildout round-trips losslessly.
+# Declared before /{rack_id} so the literal paths can't be shadowed.
+# ---------------------------------------------------------------------------
+
+
+def _export_name(ext: str, *params) -> str:
+    filtered = any(p not in (None, "") for p in params)
+    return f"racks{'-filtered' if filtered else ''}.{ext}"
+
+
+async def _export_racks(
+    session: AsyncSession,
+    *,
+    q: str,
+    site_id: str | None,
+    group_id: str | None,
+    room: str,
+    height_u: str | None,
+    ungrouped: bool | None,
+    occupancy: str | None,
+    min_free_u: int | None,
+    max_free_u: int | None,
+) -> list[Rack]:
+    stmt = _racks_stmt(
+        q=q,
+        site_ids=parse_int_set(site_id, "site_id"),
+        group_ids=parse_int_set(group_id, "group_id"),
+        room=room,
+        heights=parse_int_set(height_u, "height_u"),
+        ungrouped=ungrouped,
+    )
+    return await _filtered_racks(
+        session,
+        stmt,
+        occupancies=parse_token_set(occupancy, "occupancy", _OCCUPANCY_CLASSES),
+        min_free_u=min_free_u,
+        max_free_u=max_free_u,
+    )
+
+
+@router.get("/export.csv")
+async def export_racks_csv(
+    q: str = "",
+    site_id: str | None = None,
+    group_id: str | None = None,
+    room: str = "",
+    height_u: str | None = None,
+    ungrouped: bool | None = None,
+    occupancy: str | None = None,
+    min_free_u: int | None = Query(default=None, ge=0),
+    max_free_u: int | None = Query(default=None, ge=0),
+    columns: str | None = Query(
+        default=None,
+        description="comma-separated column whitelist, in output order",
+    ),
+    session: AsyncSession = Depends(get_session),
+):
+    """Flat rack rows — same filter params as the list; a filtered view
+    exports exactly what it shows."""
+    racks = await _export_racks(
+        session, q=q, site_id=site_id, group_id=group_id, room=room,
+        height_u=height_u, ungrouped=ungrouped, occupancy=occupancy,
+        min_free_u=min_free_u, max_free_u=max_free_u,
+    )
+    header = RACK_EXPORT_COLUMNS
+    if columns:
+        wanted = [c.strip() for c in columns.split(",") if c.strip()]
+        bad = [c for c in wanted if c not in RACK_EXPORT_COLUMNS]
+        if bad:
+            raise HTTPException(422, f"unknown columns: {', '.join(bad)}")
+        header = list(dict.fromkeys(wanted))
+    idx = [RACK_EXPORT_COLUMNS.index(c) for c in header]
+    rows = await rack_export_rows(session, racks)
+    return csv_response(
+        _export_name(
+            "csv", q, site_id, group_id, room, height_u, ungrouped,
+            occupancy, min_free_u, max_free_u,
+        ),
+        header,
+        [[r[i] for i in idx] for r in rows],
+    )
+
+
+@router.get("/export.xlsx")
+async def export_racks_xlsx(
+    q: str = "",
+    site_id: str | None = None,
+    group_id: str | None = None,
+    room: str = "",
+    height_u: str | None = None,
+    ungrouped: bool | None = None,
+    occupancy: str | None = None,
+    min_free_u: int | None = Query(default=None, ge=0),
+    max_free_u: int | None = Query(default=None, ge=0),
+    session: AsyncSession = Depends(get_session),
+):
+    """The bundle: groups/racks/devices (+ interfaces/cables when the
+    devices have any) for exactly the filtered set."""
+    racks = await _export_racks(
+        session, q=q, site_id=site_id, group_id=group_id, room=room,
+        height_u=height_u, ungrouped=ungrouped, occupancy=occupancy,
+        min_free_u=min_free_u, max_free_u=max_free_u,
+    )
+    sheets = await bundle_sheets(session, racks)
+    return workbook_response(
+        _export_name(
+            "xlsx", q, site_id, group_id, room, height_u, ungrouped,
+            occupancy, min_free_u, max_free_u,
+        ),
+        sheets,
+    )
+
+
+@router.post(
+    "/import",
+    dependencies=[Depends(require_perm(DATA_WRITE))],
+)
+async def import_racks(
+    request: Request,
+    filename: str = Query(default="racks.xlsx"),
+    dry_run: bool = Query(default=True),
+    on_existing: str = Query(
+        default="skip",
+        description="skip|update|merge when a rack row matches an existing rack",
+    ),
+    replace_devices: bool = Query(
+        default=False,
+        description="un-rack current occupants first (they survive unracked)",
+    ),
+    group_id: int | None = Query(
+        default=None, description="import every rack INTO this group"
+    ),
+    mapping: str | None = Query(
+        default=None, description="JSON {source_header: field} overrides"
+    ),
+    force: bool = Query(
+        default=False, description="commit ok rows even when error rows exist"
+    ),
+    detect: bool = Query(
+        default=False, description="header auto-map only — no row planning"
+    ),
+    session: AsyncSession = Depends(get_session),
+):
+    """Smart rack/group bundle import — V5B's stateless flow for whole
+    trees. Sheets are detected by header signature (a flat racks CSV works
+    too); unknown sheets warn and are ignored."""
+    payload = await request.body()
+    if len(payload) > MAX_IMPORT_BYTES:
+        raise HTTPException(413, "file too large")
+    if on_existing not in ("skip", "update", "merge"):
+        raise HTTPException(422, "on_existing must be skip|update|merge")
+    group_override = None
+    if group_id is not None:
+        try:
+            group_override = await get_or_404(session, RackGroup, group_id)
+        except IPAMError as e:
+            raise HTTPException(e.status_code, str(e))
+
+    sheets = parse_bundle(payload, filename)
+    # The dialog's mapping is bundle-level (a source header may live on any
+    # sheet) — validate against the union, apply only where the header exists.
+    union_headers = [h for s in sheets for h in s.headers]
+    for sheet in sheets:
+        if sheet.family is None:
+            continue
+        sheet.col_map = apply_mapping_overrides(
+            sheet.col_map, sheet.headers, mapping,
+            fields=_FAMILY_FIELDS[sheet.family],
+            union_headers=union_headers,
+        )
+        # explicit overrides can rescue a column the auto-map flagged
+        sheet.unmapped = [
+            h for h in sheet.unmapped if sheet.col_map.get(h) is None
+        ]
+    if detect:
+        seen: set[str] = set()
+        columns: list[dict] = []
+        unmapped: list[str] = []
+        for s in sheets:
+            for h in s.headers:
+                if h not in seen:
+                    seen.add(h)
+                    columns.append({"header": h, "field": s.col_map.get(h)})
+            unmapped += [u for u in s.unmapped if u not in unmapped]
+        return {
+            "columns": columns,
+            "unmapped": unmapped,
+            "sheets": [
+                {
+                    "name": s.name,
+                    "family": s.family,
+                    "row_count": len(s.rows),
+                    "columns": [
+                        {"header": h, "field": s.col_map.get(h)}
+                        for h in s.headers
+                    ],
+                    "unmapped": s.unmapped,
+                    **({"warning": s.warning} if s.warning else {}),
+                }
+                for s in sheets
+            ],
+            "warnings": [s.warning for s in sheets if s.warning],
+            "row_count": sum(len(s.rows) for s in sheets),
+        }
+
+    plan = await plan_bundle(
+        session, sheets,
+        on_existing=on_existing, replace_devices=replace_devices,
+        group_override=group_override,
+    )
+    committed = False
+    if not dry_run and (force or all(r["ok"] for r in plan.rows)):
+        try:
+            await apply_bundle(session, plan)
+            await session.commit()
+        except IntegrityError as e:
+            await session.rollback()
+            raise HTTPException(409, "duplicate or invalid value") from e
+        except IPAMError as e:
+            await session.rollback()
+            raise HTTPException(e.status_code, str(e)) from e
+        committed = True
+    return plan.out(committed)
+
+
+@router.get("/{rack_id}/export.xlsx")
+async def export_rack_xlsx(
+    rack_id: int, session: AsyncSession = Depends(get_session)
+):
+    """Single-rack bundle — includes its group row so the file re-imports
+    cleanly into another install."""
+    rack = await _get_rack(session, rack_id)
+    sheets = await bundle_sheets(session, [rack])
+    return workbook_response(
+        f"{rack.name}.xlsx",
+        sheets,
     )
 
 

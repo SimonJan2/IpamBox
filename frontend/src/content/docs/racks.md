@@ -144,6 +144,53 @@ opposite rear gear in the same U. To find a rack for the device rather than
 a slot in a rack, the list's **Free U** filter (`min_free_u`) facets racks
 by remaining capacity.
 
+## Export & import
+
+A rack isn't a row — it's a tree: group → racks → devices (→ carriers →
+children → interfaces → cables). The toolbar's **Export** dropdown covers
+both shapes:
+
+- **CSV (this view)** — flat rack rows for the *currently filtered* set
+  (the URL's facet params ride along, so a filtered view exports exactly
+  what it shows; the filename marks it `racks-filtered.csv`). Columns:
+  `id, name, site, group, group_position, room, height_u, width,
+  device_count, used_u, free_u, power_w, weight_kg, description, notes,
+  created_at` — `columns=` whitelists them for lean exports.
+- **XLSX bundle (this view)** — a multi-sheet workbook carrying the whole
+  tree: `groups` (only the groups the exported racks reference), `racks`
+  (the flat set above), `devices` (the device export column set — rack,
+  site and carrier all by **name**), plus `interfaces` and `cables` when
+  the devices have any (cable endpoints addressed by device + interface
+  names — ids are meaningless across installs).
+
+The rack detail header's **Export .xlsx** downloads a single-rack bundle
+(including its group row so it re-imports cleanly); a group page's
+**Export group** downloads the whole row — group, member racks in
+position order, every device and its wiring — as `{group}.xlsx`.
+
+**Import** (write permission) reuses the smart-import dialog: pick a flat
+racks CSV or a bundle workbook — sheets are detected by their header
+signature (unknown sheets warn and are ignored; English/Hebrew aliases
+map on every sheet). **Run preview** shows each row's action grouped per
+sheet — sites referenced by the bundle are created when missing, groups
+match/create by name, racks by `name`+`site` (name alone when
+unambiguous), devices per the device importer's rules with names scoped
+to the target rack, interfaces by device+name, cables by resolved
+endpoint pair. Placement conflicts, ambiguous names and unresolvable
+endpoints are error rows — never silently resolved. **When a rack
+matches**: `skip` touches nothing in its subtree, `update` patches rack
+fields then applies the device rows, `merge` keeps occupants and only
+adds devices into free U slots. Matched *devices* follow the same mode —
+`update` re-places them per the file (unracked inventory included), while
+`skip`/`merge` leave them where they are; a carrier child whose tray
+isn't racked then reports skip rather than an error. **Replace devices** unracks a matched
+rack's current occupants first — they survive as unracked inventory,
+never deleted. Commit is one transaction; `force` commits the valid rows
+despite error rows. A group page's **Import into this group** posts the
+same dialog with `?group_id=` — every imported rack joins that group
+regardless of the file's group column. A group export re-imported into an
+empty install rebuilds the identical tree.
+
 ## API sketch
 
 ```
@@ -153,6 +200,15 @@ GET    /api/v1/racks?q=&site_id=&group_id=&ungrouped=&room=&height_u=
                                    # (height_u=42,24), AND semantics, 422 on
                                    # bad values; occupancy/free-U facet after
                                    # the used_u aggregate so total stays honest
+GET    /api/v1/racks/export.csv     # same params + columns= whitelist
+GET    /api/v1/racks/export.xlsx    # same params -> groups/racks/devices
+                                    #   (+interfaces/cables) bundle
+GET    /api/v1/racks/{id}/export.xlsx          # single-rack bundle
+GET    /api/v1/rack-groups/{id}/export.xlsx    # the group file
+POST   /api/v1/racks/import         # raw file + filename=; dry_run=1 (default),
+                                    # on_existing=skip|update|merge,
+                                    # replace_devices, group_id=, mapping=,
+                                    # force, detect
 ```
 
 ## Placement rules
