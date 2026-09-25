@@ -954,3 +954,447 @@ async def test_snmp_endpoints_require_write_perm(
             async for k in r.scan_iter(pattern):
                 await r.delete(k)
         await r.aclose()
+
+
+# --- V8.1 trap receiver ----------------------------------------------------------
+
+from app.worker import traps as trap_rx  # noqa: E402
+
+
+def _wire_traps(monkeypatch, sf):
+    """Point the trap handler at the test DB and capture side effects."""
+    monkeypatch.setattr(trap_rx, "SessionLocal", sf)
+    trap_rx._FLAGGED.clear()
+    trap_rx._AUTH_NOTIFIED.clear()
+    emitted = []
+
+    async def _emit(etype, summary, payload=None):
+        emitted.append((etype, summary, payload))
+        return 0
+
+    monkeypatch.setattr(trap_rx.notify, "emit", _emit)
+    enqueued = []
+
+    class _Pool:
+        async def enqueue_job(self, name, *a, _job_id=None, **kw):
+            enqueued.append((name, a, _job_id))
+            return object()
+
+    async def _pool():
+        return _Pool()
+
+    monkeypatch.setattr(trap_rx, "get_arq_pool", _pool)
+    return emitted, enqueued
+
+
+def _link_binds(trap_oid: str, if_index: int = 7):
+    """Canned v2-style varbinds — plain (oid, value) pairs; _decode takes
+    them through the same coercion the real pysnmp objects get."""
+    return [
+        ("1.3.6.1.2.1.1.3.0", 12345),  # sysUpTime
+        (trap_rx.OID_TRAP_ID, trap_oid),
+        (f"{trap_rx.OID_IF_INDEX}.{if_index}", if_index),
+    ]
+
+
+async def _iface(session, device_id: int, name: str, if_index: int, oper="up"):
+    """An interface already learned by a poll — traps never create rows."""
+    i = DeviceInterface(
+        device_id=device_id,
+        name=name,
+        if_index=if_index,
+        source="snmp",
+        oper_status=oper,
+    )
+    session.add(i)
+    await session.commit()
+    return i
+
+
+async def test_trap_linkdown_flips_interface_and_emits(
+    client, session, sf, key, monkeypatch
+):
+    emitted, _ = _wire_traps(monkeypatch, sf)
+    d = await _device(client)
+    await _enable(client, d["id"])
+    pid = await _prefix(client)
+    await _ip(client, pid, "10.80.0.5", device_id=d["id"])
+    iface = await _iface(session, d["id"], "Gi0/7", 7)
+
+    res = await trap_rx.handle_trap(
+        "10.80.0.5", "public", _link_binds(trap_rx.TRAP_LINK_DOWN)
+    )
+    assert res == {"resolved": True, "trap": "link_down"}
+    await session.refresh(iface)
+    assert iface.oper_status == "down"
+    assert iface.snmp_seen_at is not None
+    dev = await _orm_device(session, d["id"])
+    await session.refresh(dev)
+    assert dev.snmp_last_trap_at is not None
+    assert dev.snmp_last_ok_at is not None
+    assert [e[0] for e in emitted] == ["link.down"]
+    assert emitted[0][2]["if_index"] == 7
+    assert emitted[0][2]["interface_id"] == iface.id
+
+
+async def test_trap_linkup_recovery_emits_only_from_down(
+    client, session, sf, key, monkeypatch
+):
+    emitted, _ = _wire_traps(monkeypatch, sf)
+    d = await _device(client)
+    await _enable(client, d["id"])
+    pid = await _prefix(client)
+    await _ip(client, pid, "10.80.0.5", device_id=d["id"])
+    iface = await _iface(session, d["id"], "Gi0/7", 7, oper="down")
+
+    res = await trap_rx.handle_trap(
+        "10.80.0.5", "public", _link_binds(trap_rx.TRAP_LINK_UP)
+    )
+    assert res["resolved"] is True
+    await session.refresh(iface)
+    assert iface.oper_status == "up"
+    assert [e[0] for e in emitted] == ["link.up"]
+
+    # a second linkUp (already up) — not a recovery, no new event
+    await trap_rx.handle_trap(
+        "10.80.0.5", "public", _link_binds(trap_rx.TRAP_LINK_UP)
+    )
+    assert [e[0] for e in emitted] == ["link.up"]
+
+    # and up -> up from a fresh observation is silent too
+    iface2 = await _iface(session, d["id"], "Gi0/8", 8, oper="up")
+    await trap_rx.handle_trap(
+        "10.80.0.5", "public", _link_binds(trap_rx.TRAP_LINK_UP, 8)
+    )
+    await session.refresh(iface2)
+    assert iface2.oper_status == "up"
+    assert [e[0] for e in emitted] == ["link.up"]
+
+
+async def test_trap_repeated_down_notifies_once(
+    client, session, sf, key, monkeypatch
+):
+    emitted, _ = _wire_traps(monkeypatch, sf)
+    d = await _device(client)
+    await _enable(client, d["id"])
+    pid = await _prefix(client)
+    await _ip(client, pid, "10.80.0.5", device_id=d["id"])
+    await _iface(session, d["id"], "Gi0/7", 7)
+
+    for _ in range(3):
+        await trap_rx.handle_trap(
+            "10.80.0.5", "public", _link_binds(trap_rx.TRAP_LINK_DOWN)
+        )
+    assert [e[0] for e in emitted] == ["link.down"]
+
+
+async def test_trap_writes_no_changelog(client, session, sf, key, monkeypatch):
+    _wire_traps(monkeypatch, sf)
+    d = await _device(client)
+    await _enable(client, d["id"])
+    pid = await _prefix(client)
+    await _ip(client, pid, "10.80.0.5", device_id=d["id"])
+    await _iface(session, d["id"], "Gi0/7", 7)
+
+    # clear the setup's create/update rows — only trap writes are counted
+    await session.execute(ChangeLog.__table__.delete())
+    await session.commit()
+
+    await trap_rx.handle_trap(
+        "10.80.0.5", "public", _link_binds(trap_rx.TRAP_LINK_DOWN)
+    )
+    await trap_rx.handle_trap(
+        "10.80.0.5", "public", _link_binds(trap_rx.TRAP_LINK_UP)
+    )
+    logs = (await session.execute(select(ChangeLog))).scalars().all()
+    assert logs == []
+
+
+async def test_trap_unknown_source_flags_review(
+    client, session, sf, key, monkeypatch
+):
+    _wire_traps(monkeypatch, sf)
+    pid = await _prefix(client)
+    row = await _ip(client, pid, "10.80.0.77")  # documented, no device
+
+    res = await trap_rx.handle_trap(
+        "10.80.0.77", "somecomm",
+        _link_binds(trap_rx.TRAP_LINK_DOWN),
+    )
+    assert res == {
+        "resolved": False, "trap": "link_down", "flagged": True
+    }
+    ip = await session.get(IPAddress, row["id"])
+    flag = (ip.custom_fields or {}).get("snmp_unmanaged")
+    assert flag and flag["trap"] == "link_down"
+    assert "somecomm" not in str(ip.custom_fields)  # community never stored
+
+    # the review center surfaces it
+    from app.services import review
+
+    built = await review.build_review(session)
+    sec = next(s for s in built["sections"] if s["key"] == "snmp_unmanaged")
+    assert sec["count"] == 1
+    assert sec["items"][0]["label"] == "10.80.0.77"
+
+    # an undocumented source is dropped with no flag
+    res = await trap_rx.handle_trap(
+        "192.0.2.99", "somecomm", _link_binds(trap_rx.TRAP_LINK_DOWN)
+    )
+    assert res["flagged"] is False
+
+
+async def test_trap_community_picks_right_device(
+    client, session, sf, key, monkeypatch
+):
+    """Two devices, distinct communities — the community alone resolves."""
+    _wire_traps(monkeypatch, sf)
+    a = await _device(client, name="sw-a")
+    await _enable(client, a["id"], snmp_cred={"community": "comm-a"})
+    b = await _device(client, name="sw-b")
+    await _enable(client, b["id"], snmp_cred={"community": "comm-b"})
+    pid = await _prefix(client)
+    await _ip(client, pid, "10.80.0.5", device_id=a["id"])
+    await _ip(client, pid, "10.80.0.6", device_id=b["id"])
+    ia = await _iface(session, a["id"], "Gi0/7", 7)
+    ib = await _iface(session, b["id"], "Gi0/7", 7)
+
+    # b's community, source = b's ip -> b's interface flips
+    await trap_rx.handle_trap(
+        "10.80.0.6", "comm-b", _link_binds(trap_rx.TRAP_LINK_DOWN)
+    )
+    await session.refresh(ia)
+    await session.refresh(ib)
+    assert ia.oper_status == "up"  # untouched
+    assert ib.oper_status == "down"
+
+
+async def test_trap_source_ip_disambiguates_shared_community(
+    client, session, sf, key, monkeypatch
+):
+    """Same community on two devices — source IP decides."""
+    _wire_traps(monkeypatch, sf)
+    a = await _device(client, name="sw-a")
+    await _enable(client, a["id"], snmp_cred={"community": "shared"})
+    b = await _device(client, name="sw-b")
+    await _enable(client, b["id"], snmp_cred={"community": "shared"})
+    pid = await _prefix(client)
+    await _ip(client, pid, "10.80.0.5", device_id=a["id"])
+    await _ip(client, pid, "10.80.0.6", device_id=b["id"])
+    ia = await _iface(session, a["id"], "Gi0/7", 7)
+    ib = await _iface(session, b["id"], "Gi0/7", 7)
+
+    await trap_rx.handle_trap(
+        "10.80.0.6", "shared", _link_binds(trap_rx.TRAP_LINK_DOWN)
+    )
+    await session.refresh(ia)
+    await session.refresh(ib)
+    assert ia.oper_status == "up"
+    assert ib.oper_status == "down"
+
+    # a source that matches NEITHER candidate drops as unmanaged-ish:
+    # the community was real, but no candidate owns the sender address
+    res = await trap_rx.handle_trap(
+        "10.80.0.9", "shared", _link_binds(trap_rx.TRAP_LINK_DOWN)
+    )
+    assert res["resolved"] is False
+
+
+async def test_trap_wrong_community_does_not_flag_credentialed(
+    client, session, sf, key, monkeypatch
+):
+    """Credentialed device sending a wrong community is a config problem
+    on the sender — logged, not review-flagged as unmanaged."""
+    _wire_traps(monkeypatch, sf)
+    d = await _device(client)
+    await _enable(client, d["id"])
+    pid = await _prefix(client)
+    row = await _ip(client, pid, "10.80.0.5", device_id=d["id"])
+
+    res = await trap_rx.handle_trap(
+        "10.80.0.5", "not-the-community",
+        _link_binds(trap_rx.TRAP_LINK_DOWN),
+    )
+    assert res["resolved"] is False
+    assert res["flagged"] is False
+    ip = await session.get(IPAddress, row["id"])
+    assert "snmp_unmanaged" not in (ip.custom_fields or {})
+
+
+async def test_trap_garbage_and_unknown_drops_cleanly(
+    client, session, sf, key, monkeypatch
+):
+    _wire_traps(monkeypatch, sf)
+    # not even varbind-shaped
+    res = await trap_rx.handle_trap("10.0.0.1", "x", [(None, None)])
+    assert res["drop"] == "unknown"
+    # unknown trap oid
+    res = await trap_rx.handle_trap(
+        "10.0.0.1", "public",
+        [(trap_rx.OID_TRAP_ID, "1.3.6.1.4.1.9.9.999")],
+    )
+    assert res["drop"] == "unknown"
+    # missing trap oid entirely
+    res = await trap_rx.handle_trap(
+        "10.0.0.1", "public", [("1.3.6.1.2.1.1.3.0", 5)]
+    )
+    assert res["drop"] == "unknown"
+
+
+async def test_trap_coldstart_clears_error_and_enqueues(
+    client, session, sf, key, monkeypatch
+):
+    _, enqueued = _wire_traps(monkeypatch, sf)
+    d = await _device(client)
+    await _enable(client, d["id"])
+    pid = await _prefix(client)
+    await _ip(client, pid, "10.80.0.5", device_id=d["id"])
+    dev = await _orm_device(session, d["id"])
+    dev.snmp_last_error = "requestTimedOut"
+    await session.commit()
+
+    binds = [
+        ("1.3.6.1.2.1.1.3.0", 42),
+        (trap_rx.OID_TRAP_ID, trap_rx.TRAP_COLD_START),
+    ]
+    res = await trap_rx.handle_trap("10.80.0.5", "public", binds)
+    assert res == {"resolved": True, "trap": "cold_start"}
+    await session.refresh(dev)
+    assert dev.snmp_last_error is None
+    assert dev.snmp_last_trap_at is not None
+    assert enqueued == [
+        ("run_snmp_poll", ([d["id"]],), "snmp-poll")
+    ]
+
+    # a second coldStart right after — device was just stamped ok, so it
+    # isn't "due-ish" and no new poll is queued
+    dev.snmp_last_ok_at = datetime.now(timezone.utc)
+    await session.commit()
+    await trap_rx.handle_trap("10.80.0.5", "public", binds)
+    assert len(enqueued) == 1
+
+
+async def test_trap_auth_failure_notifies_debounced(
+    client, session, sf, key, monkeypatch
+):
+    emitted, _ = _wire_traps(monkeypatch, sf)
+    d = await _device(client)
+    await _enable(client, d["id"])
+    pid = await _prefix(client)
+    await _ip(client, pid, "10.80.0.5", device_id=d["id"])
+
+    binds = [
+        ("1.3.6.1.2.1.1.3.0", 7),
+        (trap_rx.OID_TRAP_ID, trap_rx.TRAP_AUTH_FAILURE),
+    ]
+    await trap_rx.handle_trap("10.80.0.5", "public", binds)
+    await trap_rx.handle_trap("10.80.0.5", "public", binds)
+    assert [e[0] for e in emitted] == ["snmp.auth_failure"]
+
+
+async def test_trap_listener_binds_releases_and_eats_garbage(sf, monkeypatch):
+    """The opt-in socket: ensure(False) is a clean no-op, ensure(True, 0)
+    binds an ephemeral port, ensure(False) releases it — and a garbage
+    datagram doesn't take the listener down."""
+    monkeypatch.setattr(trap_rx, "SessionLocal", sf)
+    trap_rx.stop()  # bleed-proof in case another test left one bound
+    try:
+        assert await trap_rx.ensure(False, 0) is False
+        assert trap_rx._listener is None
+
+        assert await trap_rx.ensure(True, 0) is True
+        port = trap_rx._listener.port
+        assert port > 0
+
+        # garbage + truncated frames — listener survives
+        import asyncio
+        import socket
+
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.sendto(b"\xde\xad\xbe\xef" * 4, ("127.0.0.1", port))
+        s.sendto(b"\x30", ("127.0.0.1", port))
+        s.close()
+        await asyncio.sleep(0.1)
+        assert trap_rx._listener is not None
+
+        # toggle off -> released
+        assert await trap_rx.ensure(False, port) is False
+        assert trap_rx._listener is None
+    finally:
+        trap_rx.stop()
+
+
+async def test_trap_bind_failure_logs_once_and_stays_off(monkeypatch):
+    """A port that's already taken must fail cleanly — one log, no loop."""
+    import socket as sk
+
+    # held socket occupies the wildcard port — our bind must EADDRINUSE
+    held = sk.socket(sk.AF_INET, sk.SOCK_DGRAM)
+    held.bind(("0.0.0.0", 0))
+    port = held.getsockname()[1]
+    try:
+        assert await trap_rx.ensure(True, port) is False
+        assert await trap_rx.ensure(True, port) is False  # silent retry
+        assert trap_rx._listener is None
+    finally:
+        held.close()
+        trap_rx.stop()
+
+
+async def test_trap_end_to_end_udp(client, session, sf, key, monkeypatch):
+    """A real v2c datagram through the live listener: pysnmp decode ->
+    sentinel rewrite -> handler -> interface flips."""
+    import asyncio
+
+    from pysnmp.hlapi.v3arch.asyncio import (
+        CommunityData,
+        ContextData,
+        Integer,
+        ObjectIdentifier,
+        ObjectIdentity,
+        ObjectType,
+        SnmpEngine,
+        UdpTransportTarget,
+        send_notification,
+    )
+
+    emitted, _ = _wire_traps(monkeypatch, sf)
+    d = await _device(client)
+    await _enable(client, d["id"])
+    # single community match resolves without an address-row check —
+    # the datagram's 127.0.0.1 source needs no inventory row here
+    iface = await _iface(session, d["id"], "Gi0/7", 7)
+
+    lis = trap_rx.TrapListener(0, host="127.0.0.1")
+    eng = SnmpEngine()
+    try:
+        tr = await UdpTransportTarget.create(
+            ("127.0.0.1", lis.port), timeout=2, retries=0
+        )
+        await send_notification(
+            eng,
+            CommunityData("public"),
+            tr,
+            ContextData(),
+            "trap",
+            ObjectType(
+                ObjectIdentity("1.3.6.1.2.1.1.3.0"), Integer(999)
+            ),
+            ObjectType(
+                ObjectIdentity(trap_rx.OID_TRAP_ID),
+                ObjectIdentifier(trap_rx.TRAP_LINK_DOWN),
+            ),
+            ObjectType(
+                ObjectIdentity(f"{trap_rx.OID_IF_INDEX}.7"), Integer(7)
+            ),
+        )
+        for _ in range(50):  # the handler runs as a task — yield to it
+            await session.refresh(iface)
+            if iface.oper_status == "down":
+                break
+            await asyncio.sleep(0.05)
+        assert iface.oper_status == "down"
+        assert [e[0] for e in emitted] == ["link.down"]
+    finally:
+        eng.close_dispatcher()
+        lis.close()

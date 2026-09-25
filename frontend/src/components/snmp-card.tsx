@@ -434,6 +434,10 @@ export function SnmpCard({
             )}
             last ok:{" "}
             {device.snmp_last_ok_at ? timeAgo(device.snmp_last_ok_at) : "never"}
+            {" · "}last trap:{" "}
+            {device.snmp_last_trap_at
+              ? timeAgo(device.snmp_last_trap_at)
+              : "never"}
           </div>
           {device.snmp_last_error && (
             <div

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
+  Antenna,
   Check,
   ChevronDown,
   ClipboardCheck,
@@ -66,6 +67,7 @@ const SECTION_ICONS: Record<string, React.ElementType> = {
   offline: WifiOff,
   cert_expiry: ShieldAlert,
   unmatched_switch: Unplug,
+  snmp_unmanaged: Antenna,
   uncabled: Unplug,
   unracked: Container,
 };
@@ -159,6 +161,16 @@ function WhyCell({ kind, item }: { kind: string; item: ReviewItem }) {
       return (
         <span className="text-muted-foreground">
           free text never matched an interface — run the resolver
+        </span>
+      );
+    case "snmp_unmanaged":
+      return (
+        <span className="text-muted-foreground">
+          sent a {String(d.trap ?? "trap")} trap
+          {d.device_id
+            ? " · linked device has no SNMP credential"
+            : " · no credentialed device"}
+          — add SNMP creds to manage it
         </span>
       );
     case "uncabled":

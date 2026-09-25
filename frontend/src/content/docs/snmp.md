@@ -92,10 +92,61 @@ Settings → **Features → SNMP enrichment**:
 | Per-device timeout | 2 s | SNMP request timeout — a dead device costs only this. |
 | Learn interfaces | on | Off = collect but don't create/update ports. |
 | Fill connected IP | on | Off = collect MACs but don't write links. |
+| Trap receiver | off | Worker opens a UDP trap listener (below). |
+| Trap listen port | 162 | UDP port the receiver binds — privileged under 1024. |
 
 Polls run on the worker's own lane — one job per minute that iterates the
 due set under a small semaphore, so a fleet of dead devices can't starve
 scans or monitoring.
+
+## Trap receiver — near-realtime link state
+
+Polling is on a schedule; a `linkDown` shouldn't wait for the next
+interval. Enabling the trap receiver makes the worker open a UDP listener
+(default **port 162** — the standard trap port, privileged, so the
+container needs to run rootful — pick a higher port like 1162 otherwise)
+and turn traps into interface state in seconds.
+
+The scanner container runs `network_mode: host`, so the listener binds
+the host's UDP port directly — there is no `ports:` mapping to publish,
+just open the firewall for inbound UDP to the port you configured.
+
+**Point devices at it** — one line per vendor family:
+
+| Family | Config sketch |
+|---|---|
+| Cisco IOS / NX-OS | `snmp-server host <ipambox> version 2c <community>` + `snmp-server enable traps snmp linkdown linkup coldstart warmstart` |
+| Arista EOS | `snmp-server host <ipambox> version 2c <community>` + `snmp-server enable traps` |
+| Juniper JunOS | `set snmp trap-group rackpad targets <ipambox>` + `set snmp trap-group rackpad categories link` |
+| MikroTik RouterOS | `/snmp set trap-target=<ipambox> trap-community=<community> trap-version=2` |
+| net-snmp (Linux) | `trap2sink <ipambox> <community>` in `snmpd.conf` |
+| Quick test | `snmptrap -v2c -c <community> <ipambox> '' 1.3.6.1.6.3.1.1.5.3 1.3.6.1.2.1.2.2.1.1.2 i 2` (a linkDown for ifIndex 2) |
+
+**Attribution:** the trap's community string is matched against the
+stored v1/v2c credentials of SNMP-enabled devices; when several devices
+share one community, the trap's *source IP* is compared to each
+candidate's linked IP addresses. A trap that resolves flips the
+interface's `oper_status`, stamps `snmp_last_trap_at`/`snmp_last_ok_at`
+on the device (visible as "last trap" on the SNMP card), and emits
+`link.down`/`link.up` notifications on real transitions only.
+
+**Traps handled:** `linkDown`, `linkUp`, `coldStart`/`warmStart` (clear
+the last-error stamp and trigger a refresh poll when due),
+`authenticationFailure` (a `snmp.auth_failure` notification, debounced).
+Anything else is decoded then dropped.
+
+**Unmanaged senders:** a trap from an IP that has an `ip_addresses` row
+but no SNMP-credentialed device lands in **Review → Unmanaged SNMP
+senders** — IpamBox's version of "device auto-learn", pointed at a queue
+for human triage instead of silently creating devices. Traps from
+undocumented sources are only logged.
+
+**Limits:** SNMPv1 and v2c only — v3 traps need the sender's engineID to
+localize keys, which devices don't report, so v3 packets are dropped at
+the security layer (the poll lane's v3 support is unaffected — outbound
+auth knows the engineID after discovery). Malformed datagrams are dropped
+with a debug log — a bad packet can never crash the worker. SNMP informs
+are acknowledged by the receiver but processed like plain traps.
 
 ## Vendor notes
 

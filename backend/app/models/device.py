@@ -107,6 +107,9 @@ class Device(Base):
     snmp_last_ok_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )
+    snmp_last_trap_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
     snmp_last_error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

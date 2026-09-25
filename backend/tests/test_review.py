@@ -117,6 +117,7 @@ ALL_KEYS = {
     "offline",
     "cert_expiry",
     "unmatched_switch",
+    "snmp_unmanaged",
     "uncabled",
     "unracked",
 }
@@ -126,7 +127,7 @@ ALL_KEYS = {
 
 
 async def test_empty_state(client: AsyncClient):
-    """Empty inventory → eight zero-count sections, no errors."""
+    """Empty inventory → nine zero-count sections, no errors."""
     secs = {s["key"]: s for s in (await _review(client))["sections"]}
     assert set(secs) == ALL_KEYS
     for s in secs.values():

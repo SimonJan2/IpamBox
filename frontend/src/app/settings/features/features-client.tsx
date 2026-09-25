@@ -210,6 +210,19 @@ const GROUPS: {
         label: "Fill connected IP from bridge MACs",
         hint: "Default on: learned bridge-MAC entries resolve known IPs to the port they're behind (connected_interface_id). Off = collect MACs but don't write links. Manual links always win.",
       },
+      {
+        key: "snmp_traps_enabled",
+        label: "SNMP trap receiver",
+        hint: "Default off: the worker opens a UDP listener and applies v1/v2c traps (link up/down, cold/warm start, auth failure) as observed state within seconds. The scanner is host-networked, so the port binds on the host directly.",
+      },
+      {
+        key: "snmp_trap_port",
+        label: "Trap listen port (UDP)",
+        type: "int",
+        min: 1,
+        max: 65535,
+        hint: "Default 162 — the standard trap port. Privileged (<1024) ports need a rootful container; point devices' trap targets at this host:port. Applies on the next minute tick.",
+      },
     ],
   },
   {

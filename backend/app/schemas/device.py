@@ -172,6 +172,7 @@ class DeviceOut(BaseModel):
     snmp_sys_name: str | None
     snmp_sys_descr: str | None
     snmp_last_ok_at: datetime | None
+    snmp_last_trap_at: datetime | None
     snmp_last_error: str | None
     snmp_cred_set: bool = False
     created_at: datetime

@@ -361,6 +361,52 @@ async def _unmatched_switch_items(session: AsyncSession) -> list[dict]:
     ]
 
 
+async def _snmp_unmanaged_items(session: AsyncSession) -> list[dict]:
+    """Trap senders with an ip_addresses row but no credentialed device.
+
+    The trap receiver stamps ``custom_fields.snmp_unmanaged`` when a trap
+    arrives from a documented address that doesn't resolve to an
+    SNMP-enabled device — the auto-learn announcement pointed at review
+    instead of silent row creation. Rows whose linked device later gains
+    credentials (or the flag) drop out of the section automatically."""
+    rows = (
+        (
+            await session.execute(
+                select(IPAddress, Device)
+                .outerjoin(Device, IPAddress.device_id == Device.id)
+                .where(
+                    IPAddress.custom_fields.has_key("snmp_unmanaged")  # noqa: W601
+                )
+                .order_by(IPAddress.address_int)
+            )
+        )
+        .all()
+    )
+    items = []
+    for r, dev in rows:
+        if dev is not None and dev.snmp_enabled and dev.snmp_cred_enc:
+            continue  # credentialed now — the flag self-clears on traps
+        flag = (r.custom_fields or {}).get("snmp_unmanaged") or {}
+        items.append(
+            _item(
+                "ip_address",
+                r.id,
+                ip_display(r.address) or str(r.address),
+                sub=dev.name if dev is not None else r.hostname,
+                detail={
+                    "trap": flag.get("trap"),
+                    "device_id": r.device_id,
+                    "prefix_id": r.prefix_id,
+                },
+                flagged_at=flag.get("at") or _iso(r.updated_at),
+                # identity = the sender address — a dismissal survives
+                # re-flags from the same source
+                fingerprint=ip_display(r.address) or str(r.address),
+            )
+        )
+    return items
+
+
 async def _uncabled_items(session: AsyncSession) -> list[dict]:
     """Devices that have interfaces but zero cables (wiring='uncabled')."""
     with_ifaces = [
@@ -473,6 +519,12 @@ async def build_review(session: AsyncSession) -> dict:
                 "unmatched_switch",
                 "Unmatched switch refs",
                 await _unmatched_switch_items(session),
+                dismissed,
+            ),
+            _emit(
+                "snmp_unmanaged",
+                "Unmanaged SNMP senders",
+                await _snmp_unmanaged_items(session),
                 dismissed,
             ),
             _emit(

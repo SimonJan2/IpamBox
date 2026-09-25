@@ -471,6 +471,9 @@ export interface SettingsValues {
   snmp_timeout: number;
   snmp_learns_interfaces: boolean;
   snmp_fills_connected: boolean;
+  // SNMP trap receiver (V8.1)
+  snmp_traps_enabled: boolean;
+  snmp_trap_port: number;
 }
 
 export interface SettingsOut {
@@ -931,6 +934,7 @@ export interface Device {
   snmp_sys_name: string | null;
   snmp_sys_descr: string | null;
   snmp_last_ok_at: string | null;
+  snmp_last_trap_at: string | null;
   snmp_last_error: string | null;
   // API-stamped transients — not columns.
   display_color: string | null;
