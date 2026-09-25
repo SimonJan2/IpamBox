@@ -148,6 +148,9 @@ export interface IpAddress {
   counter_location: string | null;
   custom_fields: Record<string, unknown> | null;
   import_batch_id: number | null;
+  /** Provenance — who created/maintains the row:
+   *  manual | import | scan | snmp | integration. */
+  source: string;
   last_seen: string | null;
   notes: string | null;
   row_color: string | null;
@@ -394,6 +397,7 @@ export interface SettingsOut {
     ipambox_allow_insecure: boolean;
     ipambox_cookie_secure: boolean;
     ipambox_password_set: boolean;
+    secret_key_configured: boolean;
     backup_dir: string;
   };
   system: SystemInfo;

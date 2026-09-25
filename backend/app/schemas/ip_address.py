@@ -115,6 +115,7 @@ class IPAddressOut(BaseModel):
     counter_location: str | None
     custom_fields: dict | None
     import_batch_id: int | None
+    source: str
     last_seen: datetime | None
     notes: str | None
     row_color: str | None

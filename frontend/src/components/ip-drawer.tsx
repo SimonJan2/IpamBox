@@ -21,6 +21,7 @@ import type {
 import { HistoryPanel } from "@/components/history-panel";
 import { IpStatusBadge } from "@/components/status-badge";
 import { TagChip, TagPicker } from "@/components/tag-picker";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -301,6 +302,13 @@ export function IpDrawer({
             {addr ? (
               <span className="flex items-center gap-2">
                 Current status <IpStatusBadge s={addr.status} />
+                <Badge
+                  variant="outline"
+                  className="border-muted-foreground/30 font-normal text-muted-foreground"
+                  title="Provenance — which writer created this row"
+                >
+                  {addr.source}
+                </Badge>
               </span>
             ) : (
               "Free address — fill in to reserve it"

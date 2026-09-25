@@ -26,6 +26,34 @@ class ConflictError(IPAMError):
     status_code = 409
 
 
+# Provenance vocabulary for ip_addresses.source (enum-by-convention, same
+# as devices.source), ranked least → most authoritative. A writer may only
+# overwrite a row whose stored source ranks lower than or equal to its own:
+# scan observations (0) never overwrite imported or manually curated data;
+# manual (4) is never rewritten by automation.
+SOURCE_RANK = {
+    "scan": 0,
+    "snmp": 1,
+    "integration": 2,
+    "import": 3,
+    "manual": 4,
+}
+
+
+def may_write(stored: str | None, incoming: str) -> bool:
+    """Field-ownership check for source-stamped rows (ip_addresses et al.).
+
+    True when a writer tagged `incoming` may overwrite data on a row whose
+    stored source is `stored` — i.e. the incoming source ranks at least as
+    high in SOURCE_RANK. Fails closed both ways: an unknown stored value is
+    treated as 'manual' (protected), and an unknown incoming tag ranks -1
+    so it never wins. Writers call this before overwriting fields they did
+    not create (v8 SNMP, v12 controller sync).
+    """
+    stored_rank = SOURCE_RANK.get(stored or "", SOURCE_RANK["manual"])
+    return SOURCE_RANK.get(incoming, -1) >= stored_rank
+
+
 async def get_or_404(session: AsyncSession, model, obj_id: int):
     obj = await session.get(model, obj_id)
     if obj is None:
@@ -141,6 +169,7 @@ async def reserve_next_available(
         hostname=hostname,
         status=status,
         notes=notes,
+        source="manual",
     )
     session.add(row)
     await session.flush()

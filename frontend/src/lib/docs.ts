@@ -9,6 +9,7 @@ import {
   HardDrive,
   History,
   Inbox,
+  KeyRound,
   LayoutDashboard,
   ListOrdered,
   Network,
@@ -238,6 +239,14 @@ export const DOC_ARTICLES: DocArticle[] = [
     category: "system",
     icon: Settings,
     keywords: ["config", "preferences", "administration", "options"],
+  },
+  {
+    slug: "secrets",
+    title: "Secrets at Rest",
+    description: "The master key that encrypts stored credentials — setup and rotation.",
+    category: "system",
+    icon: KeyRound,
+    keywords: ["secret", "encrypt", "credential", "password", "key", "snmp", "smtp", "oidc"],
   },
   {
     slug: "row-colors",

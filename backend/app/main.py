@@ -1,7 +1,7 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy import func, select, text
@@ -26,6 +26,7 @@ from app.models.tag import Tag
 from app.models.user import User
 from app.models.vlan import VLAN
 from app.models.vrf import VRF
+from app.services.secrets import SecretsNotConfigured
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -52,6 +53,18 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="IpamBox", version=APP_VERSION, docs_url="/docs", lifespan=lifespan)
+
+
+@app.exception_handler(SecretsNotConfigured)
+async def _secrets_not_configured(_req: Request, _exc: SecretsNotConfigured):
+    # A credential feature ran without IPAMBOX_SECRET_KEY — clean 503, no
+    # traceback, no secret material in the body.
+    return JSONResponse(
+        {"detail": "secrets not configured — set IPAMBOX_SECRET_KEY "
+                   "(or IPAMBOX_SECRET_KEY_FILE) and restart"},
+        status_code=503,
+    )
+
 
 app.add_middleware(
     CORSMiddleware,

@@ -158,6 +158,10 @@ export default function SettingsPage() {
             k="Password provisioned"
             v={settings ? String(settings.env.ipambox_password_set) : "…"}
           />
+          <Row
+            k="Secrets key configured"
+            v={settings ? String(settings.env.secret_key_configured) : "…"}
+          />
           </AsyncPanel>
         </CardContent>
       </Card>
