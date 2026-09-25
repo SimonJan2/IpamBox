@@ -74,7 +74,8 @@ async def session(engine, sf):
                 "certificates, assets, services, color_rules, "
                 "custom_list_rows, custom_lists, cables, device_interfaces, "
                 "devices, racks, rack_groups, monitor_targets, "
-                "notification_channels, notification_log RESTART IDENTITY CASCADE"
+                "notification_channels, notification_log, "
+                "review_dismissals RESTART IDENTITY CASCADE"
             )
         )
         await conn.execute(

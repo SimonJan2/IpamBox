@@ -3,6 +3,7 @@ import {
   Activity,
   Building2,
   Cable,
+  ClipboardCheck,
   Container,
   Cpu,
   FolderTree,
@@ -192,6 +193,14 @@ export const DOC_ARTICLES: DocArticle[] = [
     keywords: ["service", "catalog", "app", "beneficiary"],
   },
   // Operations
+  {
+    slug: "review",
+    title: "Review Center",
+    description: "One queue for every flag — mismatches, aging, expiry, unresolved refs.",
+    category: "operations",
+    icon: ClipboardCheck,
+    keywords: ["triage", "queue", "dismiss", "mismatch", "duplicate", "flags", "findings"],
+  },
   {
     slug: "monitoring",
     title: "Monitoring",

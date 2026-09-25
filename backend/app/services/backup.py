@@ -61,6 +61,7 @@ from app.models.monitoring import (
 )
 from app.models.prefix import Prefix
 from app.models.rack import Rack, RackGroup
+from app.models.review import ReviewDismissal
 from app.models.scan_job import ScanJob
 from app.models.service import Service
 from app.models.site import Site
@@ -152,6 +153,10 @@ BACKUP_TABLES: tuple[BackupTable, ...] = (
     BackupTable("change_log", ChangeLog),
     BackupTable("app_settings", AppSetting),
     BackupTable("color_rules", ColorRule),
+    # review_dismissals -> nothing (kind/entity/fingerprint are values, not
+    # FKs); last so a restore can't resurrect a dismissal for an entity the
+    # backup predates — harmless either way, the queue just hides it.
+    BackupTable("review_dismissals", ReviewDismissal),
 )
 
 

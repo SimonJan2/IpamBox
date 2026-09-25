@@ -36,6 +36,10 @@ class DashboardStats(BaseModel):
     rack_u_used: int = 0
     rack_u_total: int = 0
     mac_mismatches: int = 0
+    # Review center (V7.1): open findings across all sections + the title of
+    # the highest-priority non-empty section (sections are worst-first).
+    review_open: int = 0
+    review_worst: str | None = None
     # Bounded samples for the dashboard attention zone — full lists live on
     # the entity pages; these ride along so the page needs no extra requests.
     certs_expiring: list[CertificateOut] = []

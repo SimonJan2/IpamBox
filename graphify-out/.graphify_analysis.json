@@ -5056,15 +5056,15 @@
       "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; semantically similar concepts with no structural link; peripheral node `Address CSV import/export (UTF-8 BOM)` unexpectedly reaches hub `CSV export`"
     },
     {
-      "source": "Live IP column resolution",
-      "target": "Discovery Inbox reconciliation",
+      "source": "Smart import dialog",
+      "target": "Excel workbook import (per-sheet detection, dry-run, all-or-nothing/partial commit)",
       "source_files": [
-        "frontend/src/content/docs/lists.md",
+        "frontend/src/content/docs/devices.md",
         "README.md"
       ],
       "confidence": "INFERRED",
       "relation": "semantically_similar_to",
-      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities; semantically similar concepts with no structural link"
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; semantically similar concepts with no structural link; peripheral node `Excel workbook import (per-sheet detection, dry-run, all-or-nothing/partial commit)` unexpectedly reaches hub `Smart import dialog`"
     },
     {
       "source": "Stats strip & saved views",
@@ -5078,15 +5078,15 @@
       "why": "ambiguous connection - not explicitly stated in source; bridges separate communities; semantically similar concepts with no structural link; peripheral node `Stats strip & saved views` unexpectedly reaches hub `Monitoring doc (V7)`"
     },
     {
-      "source": "Smart import dialog",
-      "target": "Excel workbook import (per-sheet detection, dry-run, all-or-nothing/partial commit)",
+      "source": "Live IP column resolution",
+      "target": "Discovery Inbox reconciliation",
       "source_files": [
-        "frontend/src/content/docs/devices.md",
+        "frontend/src/content/docs/lists.md",
         "README.md"
       ],
       "confidence": "INFERRED",
       "relation": "semantically_similar_to",
-      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; semantically similar concepts with no structural link; peripheral node `Excel workbook import (per-sheet detection, dry-run, all-or-nothing/partial commit)` unexpectedly reaches hub `Smart import dialog`"
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities; semantically similar concepts with no structural link"
     },
     {
       "source": "Export dropdown (Devices toolbar)",
@@ -5100,8 +5100,41 @@
       "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; semantically similar concepts with no structural link"
     }
   ],
-  "tokens": {
-    "input": 0,
-    "output": 0
-  }
+  "questions": [
+    {
+      "type": "ambiguous_edge",
+      "question": "What is the exact relationship between `Cable` and `Rack`?",
+      "why": "Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low."
+    },
+    {
+      "type": "ambiguous_edge",
+      "question": "What is the exact relationship between `Stats strip & saved views` and `Monitoring doc (V7)`?",
+      "why": "Edge tagged AMBIGUOUS (relation: semantically_similar_to) - confidence is low."
+    },
+    {
+      "type": "bridge_node",
+      "question": "Why does `_resolve_prefix()` connect `test_scanner.py` to `IPAddress`, `worker.py`, `lucide-react`?",
+      "why": "High betweenness centrality (0.174) - this node is a cross-community bridge."
+    },
+    {
+      "type": "bridge_node",
+      "question": "Why does `Prefix` connect `lucide-react` to `index.ts`, `prefixes-client.tsx`, `cn`, `import-client.tsx`, `test_scanner.py`?",
+      "why": "High betweenness centrality (0.173) - this node is a cross-community bridge."
+    },
+    {
+      "type": "bridge_node",
+      "question": "Why does `run_scheduled_scans()` connect `worker.py` to `IPAddress`, `_FakePool`, `lucide-react`, `get_settings`?",
+      "why": "High betweenness centrality (0.122) - this node is a cross-community bridge."
+    },
+    {
+      "type": "verify_inferred",
+      "question": "Are the 72 inferred relationships involving `IPAMError` (e.g. with `_get_cable()` and `_get_interface()`) actually correct?",
+      "why": "`IPAMError` has 72 INFERRED edges - model-reasoned connections that need verification."
+    },
+    {
+      "type": "verify_inferred",
+      "question": "Are the 9 inferred relationships involving `get_or_404()` (e.g. with `_check_interface_link()` and `create_address()`) actually correct?",
+      "why": "`get_or_404()` has 9 INFERRED edges - model-reasoned connections that need verification."
+    }
+  ]
 }

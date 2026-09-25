@@ -129,7 +129,32 @@ Scapy raw-socket scanning · Next.js 15 dark-mode UI
   Inbox (bulk confirm/delete), missing `active` hosts go `offline`,
   returning hosts flip back to `active`. When a scanned MAC disagrees
   with a stored (e.g. imported) MAC, the live value wins but the address
-  is flagged `mac_mismatch` for review — the dashboard counts them.
+  is flagged `mac_mismatch` for review — the dashboard counts them and
+  the `/review` queue carries the fix actions.
+
+### Review center
+
+- **One queue for every flag** — `/review` (`g v`) collects eight live,
+  computed sections ordered worst-first: MAC mismatches, duplicate-MAC
+  groups, aging discoveries, offline hosts past the grace scans,
+  certificates inside `cert_warn_days`, unmatched legacy switch refs,
+  uncabled devices and unracked devices. Nothing is stored for the
+  finding itself — no worker, no cron.
+- **Real actions, honest changelog** — confirm/delete go through the
+  entity's own endpoints; MAC-mismatch rows offer **Accept scanned**
+  (write the observed MAC) or **Keep stored** (restore the documented
+  MAC *and* permanently dismiss that MAC pair — the per-address form of
+  `scan_stored_mac_wins`, built for shared dock/NIC MACs).
+- **Dismissal is data, not deletion** — `review_dismissals` rows pin the
+  finding's fingerprint (the MAC pair, the switch/port text, the dup-MAC
+  group), so a dismissal survives re-flagging, carries an actor + note,
+  is itself audited, and restores with one click.
+- **Resolver surface** — the legacy `switch_name`/`switch_port` matcher
+  runs from the unmatched-switch card
+  (`POST /api/v1/review/resolve-switch-fields`) and reports
+  matched/ambiguous/unmatched inline.
+- The dashboard's **Review queue** card shows the open count and the
+  current worst section.
 
 ### Monitoring
 
@@ -278,6 +303,7 @@ apply without a restart, and can be reset back to the env value per key.
 |---|---|
 | `/` | Dashboard — totals, status breakdowns, recent scans, entity counts |
 | `/discovery` | Discovery Inbox — confirm/delete scanned hosts |
+| `/review` | Review center — every flag on one triage queue |
 | `/sites` `/vrfs` `/prefixes` | Core IPAM objects |
 | `/prefixes/[id]` | Address map (grid/list views), ranges, bulk ops, CSV |
 | `/prefixes` → Add network | One-transaction wizard: VLAN + subnet + gateway/DNS + DHCP pool |
