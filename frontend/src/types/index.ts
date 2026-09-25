@@ -464,6 +464,13 @@ export interface SettingsValues {
   monitor_concurrency: number;
   monitor_http_timeout: number;
   notify_retention_days: number;
+  // SNMP enrichment (V8)
+  snmp_enabled: boolean;
+  snmp_interval_minutes: number;
+  snmp_concurrency: number;
+  snmp_timeout: number;
+  snmp_learns_interfaces: boolean;
+  snmp_fills_connected: boolean;
 }
 
 export interface SettingsOut {
@@ -915,6 +922,16 @@ export interface Device {
   import_batch_id: number | null;
   created_at: string;
   updated_at: string;
+  // SNMP enrichment (V8) — snmp_cred itself is write-only and never
+  // returned; snmp_cred_set only reports that one is stored.
+  snmp_enabled: boolean;
+  snmp_version: SnmpVersion | null;
+  snmp_port: number;
+  snmp_cred_set: boolean;
+  snmp_sys_name: string | null;
+  snmp_sys_descr: string | null;
+  snmp_last_ok_at: string | null;
+  snmp_last_error: string | null;
   // API-stamped transients — not columns.
   display_color: string | null;
   /** Worst-of across linked IPs; null = unmonitored. */
@@ -923,6 +940,46 @@ export interface Device {
   /** L1 coverage — how many ports the device has and how many are cabled. */
   interface_count: number;
   cabled_count: number;
+}
+
+export type SnmpVersion = "v1" | "v2c" | "v3";
+
+/** Write-only credential accepted by PATCH /devices/{id} — encrypted to
+ *  snmp_cred_enc and never returned. */
+export interface SnmpCredIn {
+  community?: string;
+  user?: string;
+  auth_key?: string;
+  priv_key?: string;
+  auth_proto?: "sha" | "md5" | "sha224" | "sha256" | "sha384" | "sha512";
+  priv_proto?: "aes128" | "aes192" | "aes256" | "des" | "3des";
+  /** v3 only — named contextName for context-scoped agents. */
+  context?: string;
+}
+
+/** POST /devices/{id}/snmp/test — a live sysName/sysDescr probe. */
+export interface SnmpTestResult {
+  up: boolean;
+  sys_name: string | null;
+  sys_descr: string | null;
+  error: string | null;
+}
+
+/** POST /devices/{id}/snmp/poll — one full enrichment pass inline. */
+export interface SnmpPollResult {
+  device_id: number;
+  up: boolean;
+  sys_name: string | null;
+  sys_descr: string | null;
+  interfaces_seen: number;
+  interfaces_created: number;
+  interfaces_updated: number;
+  macs_learned: number;
+  links_applied: number;
+  links_skipped: number;
+  lldp_neighbors: number;
+  error: string | null;
+  errors: string[];
 }
 
 /** One of a device's IPs — link id/label plus scan status for the table. */
@@ -995,6 +1052,13 @@ export interface DeviceInterface {
   position: number;
   connected_ip_id: number | null;
   pair_interface_id: number | null;
+  /** SNMP-observed state (V8) — null on ports the poller never reported. */
+  if_index: number | null;
+  oper_status: string | null;
+  admin_status: string | null;
+  snmp_seen_at: string | null;
+  /** Provenance — manual | snmp (poller-owned). */
+  source: string;
   created_at: string;
   updated_at: string;
   // Resolved by the API — not columns.

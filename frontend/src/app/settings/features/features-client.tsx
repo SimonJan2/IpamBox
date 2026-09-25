@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   Activity,
+  Antenna,
   Archive,
   Container,
   Crosshair,
@@ -47,6 +48,8 @@ type FeatureDef = {
   type?: "bool" | "int" | "str";
   min?: number;
   max?: number;
+  /** <input type=number> step — set for float settings (e.g. 0.5). */
+  step?: number;
 };
 
 const GROUPS: {
@@ -160,6 +163,52 @@ const GROUPS: {
         min: 0,
         max: 3650,
         hint: "Default 0 = keep forever. Set N to auto-delete notification_log rows older than N days.",
+      },
+    ],
+  },
+  {
+    title: "SNMP enrichment",
+    icon: Antenna,
+    features: [
+      {
+        key: "snmp_enabled",
+        label: "SNMP polling enabled",
+        hint: "Default off: the per-minute tick looks for devices whose SNMP is enabled and due, and polls them in one bounded sweep. Off = the lane is a no-op; per-device Test/Poll buttons still work.",
+      },
+      {
+        key: "snmp_interval_minutes",
+        label: "Poll interval (minutes)",
+        type: "int",
+        min: 5,
+        max: 1440,
+        hint: "Default 60: a device is due when its last poll is older than this. Interfaces whose snmp_seen_at falls ~2 intervals behind are shown dimmed.",
+      },
+      {
+        key: "snmp_concurrency",
+        label: "Poll concurrency",
+        type: "int",
+        min: 1,
+        max: 16,
+        hint: "Default 4: parallel device polls inside the single per-tick sweep — a dead device costs only its own timeout, never the lane.",
+      },
+      {
+        key: "snmp_timeout",
+        label: "Per-device timeout (seconds)",
+        type: "int",
+        min: 0.5,
+        max: 10,
+        step: 0.5,
+        hint: "Default 2s per SNMP request. Devices that don't answer get snmp_last_error stamped; nothing else is written.",
+      },
+      {
+        key: "snmp_learns_interfaces",
+        label: "Learn interfaces from IF-MIB",
+        hint: "Default on: polls create/update ports the device reports (source 'snmp') with live oper/admin state and speed. Off = only status stamps + link filling. Manually created ports are never overwritten.",
+      },
+      {
+        key: "snmp_fills_connected",
+        label: "Fill connected IP from bridge MACs",
+        hint: "Default on: learned bridge-MAC entries resolve known IPs to the port they're behind (connected_interface_id). Off = collect MACs but don't write links. Manual links always win.",
       },
     ],
   },
@@ -331,6 +380,7 @@ export default function FeaturesPage() {
                       type="number"
                       min={f.min}
                       max={f.max}
+                      step={f.step ?? 1}
                       value={draft[f.key] as number}
                       onChange={(e) =>
                         set(

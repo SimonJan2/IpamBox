@@ -158,6 +158,14 @@ EDITABLE: dict[str, SettingSpec] = {
     "notify_retention_days": SettingSpec(
         "notify_retention_days", _v_int(0, 3650)
     ),
+    "snmp_enabled": SettingSpec("snmp_enabled", _v_bool),
+    "snmp_interval_minutes": SettingSpec(
+        "snmp_interval_minutes", _v_int(5, 1440)
+    ),
+    "snmp_concurrency": SettingSpec("snmp_concurrency", _v_int(1, 16)),
+    "snmp_timeout": SettingSpec("snmp_timeout", _v_float(0.5, 10.0)),
+    "snmp_learns_interfaces": SettingSpec("snmp_learns_interfaces", _v_bool),
+    "snmp_fills_connected": SettingSpec("snmp_fills_connected", _v_bool),
     "backup_interval_minutes": SettingSpec(
         "backup_interval_minutes", _v_int(0, 10080)
     ),

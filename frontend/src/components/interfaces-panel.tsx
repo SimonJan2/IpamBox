@@ -16,7 +16,8 @@ import { api } from "@/lib/api";
 import { useAsyncData } from "@/lib/use-async-data";
 import { useAuth } from "@/lib/auth";
 import { PERM } from "@/lib/permissions";
-import { cn } from "@/lib/utils";
+import { useSetting } from "@/lib/features";
+import { cn, timeAgo } from "@/lib/utils";
 import type {
   Cable,
   CableKind,
@@ -84,6 +85,28 @@ const CABLE_KINDS: CableKind[] = [
 
 const fmtSpeed = (mbps: number | null) =>
   mbps == null ? null : mbps >= 1000 ? `${mbps / 1000}G` : `${mbps}M`;
+
+/** SNMP oper_status → status-token chip classes (up≈active, down≈offline). */
+const OPER_CLASS: Record<string, string> = {
+  up: "border-emerald-700/60 bg-emerald-950/40 text-emerald-300",
+  down: "border-rose-700/60 bg-rose-950/40 text-rose-300",
+  testing: "border-amber-700/60 bg-amber-950/40 text-amber-300",
+  dormant: "border-amber-700/60 bg-amber-950/40 text-amber-300",
+};
+const operBadgeClass = (s: string | null) =>
+  s ? (OPER_CLASS[s] ?? "border-border bg-muted/40 text-muted-foreground") : "";
+
+/** An SNMP-owned port goes dim when the device stopped reporting it — its
+ *  snmp_seen_at falls behind ~2 poll intervals (the port may have been
+ *  renamed/removed on the device; we never delete it, just dim). */
+function snmpStale(iface: DeviceInterface, intervalMin: number): boolean {
+  if (iface.source !== "snmp") return false;
+  if (!iface.snmp_seen_at) return true;
+  return (
+    Date.now() - new Date(iface.snmp_seen_at).getTime() >
+    Math.max(intervalMin, 1) * 2 * 60_000
+  );
+}
 
 /** Device picker backed by /devices?q= — text input + datalist, the same
  *  pattern the IP drawer uses. Resolves a device id from the typed name. */
@@ -154,6 +177,7 @@ export function InterfacesPanel({ device }: { device: DeviceDetail }) {
   const [cableFor, setCableFor] = useState<DeviceInterface | null>(null);
   const [traceFor, setTraceFor] = useState<DeviceInterface | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
+  const snmpInterval = useSetting("snmp_interval_minutes") ?? 60;
 
   const rows = ifaces.data ?? [];
   const byId = new Map(rows.map((i) => [i.id, i]));
@@ -217,6 +241,7 @@ export function InterfacesPanel({ device }: { device: DeviceDetail }) {
                   ? byId.get(i.pair_interface_id)
                   : undefined;
               const cabled = i.peer != null;
+              const stale = snmpStale(i, snmpInterval);
               return (
                 <div
                   key={i.id}
@@ -224,7 +249,8 @@ export function InterfacesPanel({ device }: { device: DeviceDetail }) {
                     "group relative rounded-md border px-2 py-1.5 text-xs",
                     cabled
                       ? "border-emerald-700/60 bg-emerald-950/30"
-                      : "border-border bg-card"
+                      : "border-border bg-card",
+                    stale && "opacity-50"
                   )}
                 >
                   <div className="flex items-center justify-between gap-1">
@@ -244,9 +270,39 @@ export function InterfacesPanel({ device }: { device: DeviceDetail }) {
                     >
                       {i.name}
                     </button>
-                    <Badge variant="outline" className="px-1 py-0 text-[10px]">
-                      {i.kind}
-                    </Badge>
+                    <span className="flex shrink-0 items-center gap-0.5">
+                      {i.oper_status && (
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "px-1 py-0 text-[10px]",
+                            operBadgeClass(i.oper_status),
+                            stale && "opacity-70"
+                          )}
+                          title={
+                            `oper ${i.oper_status}` +
+                            (i.admin_status ? ` · admin ${i.admin_status}` : "") +
+                            (i.snmp_seen_at
+                              ? ` · seen ${timeAgo(i.snmp_seen_at)}`
+                              : "")
+                          }
+                        >
+                          {i.oper_status}
+                        </Badge>
+                      )}
+                      {i.source === "snmp" && (
+                        <Badge
+                          variant="outline"
+                          className="px-1 py-0 text-[10px] text-sky-300/80"
+                          title="Discovered by SNMP polling"
+                        >
+                          snmp
+                        </Badge>
+                      )}
+                      <Badge variant="outline" className="px-1 py-0 text-[10px]">
+                        {i.kind}
+                      </Badge>
+                    </span>
                   </div>
                   <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-muted-foreground">
                     {fmtSpeed(i.speed_mbps) && <span dir="ltr">{fmtSpeed(i.speed_mbps)}</span>}

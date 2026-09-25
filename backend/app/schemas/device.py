@@ -5,6 +5,7 @@ slot_layout) are all optional: omit them for unracked inventory, or pass
 rack_id + u_position (or carrier_id + slot) to place the device directly.
 """
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -50,6 +51,33 @@ class DeviceCreate(BaseModel):
         return _norm_mac(v)
 
 
+SnmpVersion = Literal["v1", "v2c", "v3"]
+
+
+class SnmpCredIn(BaseModel):
+    """Write-only SNMP credential for PATCH — encrypted to snmp_cred_enc
+    and never returned. v1/v2c need `community`; v3 needs `user` plus
+    optional auth/priv keys (proto fields pick the algorithm family).
+
+    Omit the field entirely to keep the stored credential; send null or
+    `{}` to clear it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    community: str | None = Field(default=None, max_length=255)
+    user: str | None = Field(default=None, max_length=64)
+    auth_key: str | None = Field(default=None, max_length=255)
+    priv_key: str | None = Field(default=None, max_length=255)
+    auth_proto: (
+        Literal["sha", "md5", "sha224", "sha256", "sha384", "sha512"] | None
+    ) = None
+    priv_proto: (
+        Literal["aes128", "aes192", "aes256", "des", "3des"] | None
+    ) = None
+    # v3 only — agents that scope data behind a contextName (snmpsim does).
+    context: str | None = Field(default=None, max_length=255)
+
+
 class DeviceUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     device_type: str | None = Field(default=None, max_length=255)
@@ -77,6 +105,12 @@ class DeviceUpdate(BaseModel):
     pinned: bool | None = None
     sort_order: int | None = None
     row_color: str | None = None
+    # SNMP enrichment (V8) — write-only credential: snmp_cred goes in as
+    # plaintext JSON, is encrypted to snmp_cred_enc, and never comes back.
+    snmp_enabled: bool | None = None
+    snmp_version: SnmpVersion | None = None
+    snmp_port: int | None = Field(default=None, ge=1, le=65535)
+    snmp_cred: SnmpCredIn | None = None
 
     @field_validator("colour", "row_color")
     @classmethod
@@ -130,6 +164,16 @@ class DeviceOut(BaseModel):
     sort_order: int | None
     pinned: bool
     import_batch_id: int | None
+    # SNMP enrichment (V8) — snmp_cred_enc itself never leaves the server;
+    # snmp_cred_set only reports that one is stored.
+    snmp_enabled: bool
+    snmp_version: str | None
+    snmp_port: int
+    snmp_sys_name: str | None
+    snmp_sys_descr: str | None
+    snmp_last_ok_at: datetime | None
+    snmp_last_error: str | None
+    snmp_cred_set: bool = False
     created_at: datetime
     updated_at: datetime
     # Transients stamped by the API layer — not columns.
@@ -148,3 +192,31 @@ class DeviceDetail(DeviceOut):
     site: LinkedRef | None = None
     rack: LinkedRef | None = None
     carrier: LinkedRef | None = None
+
+
+class SnmpTestOut(BaseModel):
+    """POST /devices/{id}/snmp/test — a live sysName/sysDescr probe.
+    Unreachable is data, not an error status."""
+
+    up: bool
+    sys_name: str | None = None
+    sys_descr: str | None = None
+    error: str | None = None
+
+
+class SnmpPollOut(BaseModel):
+    """POST /devices/{id}/snmp/poll — one full enrichment pass inline."""
+
+    device_id: int
+    up: bool
+    sys_name: str | None = None
+    sys_descr: str | None = None
+    interfaces_seen: int = 0
+    interfaces_created: int = 0
+    interfaces_updated: int = 0
+    macs_learned: int = 0
+    links_applied: int = 0
+    links_skipped: int = 0
+    lldp_neighbors: int = 0
+    error: str | None = None
+    errors: list[str] = []
