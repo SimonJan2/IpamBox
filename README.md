@@ -77,7 +77,13 @@ Scapy raw-socket scanning · Next.js 15 dark-mode UI
   IPs gain a structured `connected_interface` link alongside the legacy
   `switch_name`/`switch_port` free text, with an exact-name matcher
   endpoint to transition old data. Cable labels and port names resolve to
-  their devices in global search.
+  their devices in global search. On SNMP-managed devices, each poll
+  validates documented cabling against observed state — a cabled port
+  reporting down, a far end whose MACs never appear on the port, or an
+  LLDP neighbor on an uncabled port raises a `cable_mismatch` flag (⚠ on
+  the port, count in the device header + dashboard, triage in
+  `/review`); flags self-heal on the next contradictory-free poll and are
+  never auto-fixed.
 - **Rack elevations**: racks with per-U device placement on front/rear
   faces, a read-only SVG elevation view, and collision validation
   (front+rear share a U; same-face overlaps are rejected). Live scan-health
@@ -134,12 +140,12 @@ Scapy raw-socket scanning · Next.js 15 dark-mode UI
 
 ### Review center
 
-- **One queue for every flag** — `/review` (`g v`) collects eight live,
-  computed sections ordered worst-first: MAC mismatches, duplicate-MAC
-  groups, aging discoveries, offline hosts past the grace scans,
-  certificates inside `cert_warn_days`, unmatched legacy switch refs,
-  uncabled devices and unracked devices. Nothing is stored for the
-  finding itself — no worker, no cron.
+- **One queue for every flag** — `/review` (`g v`) collects ten live,
+  computed sections ordered worst-first: MAC mismatches, cable
+  mismatches, duplicate-MAC groups, aging discoveries, offline hosts past
+  the grace scans, certificates inside `cert_warn_days`, unmatched legacy
+  switch refs, unmanaged SNMP senders, uncabled devices and unracked
+  devices. Nothing is stored for the finding itself — no worker, no cron.
 - **Real actions, honest changelog** — confirm/delete go through the
   entity's own endpoints; MAC-mismatch rows offer **Accept scanned**
   (write the observed MAC) or **Keep stored** (restore the documented
@@ -170,8 +176,8 @@ Scapy raw-socket scanning · Next.js 15 dark-mode UI
   ONE `run_monitor_sweep` job (semaphore-bounded probes, runtime-tunable)
   so monitoring shares the `max_jobs=4` pool without starving scans.
 - **Notification channels** — webhook, SMTP, Discord and Telegram — carry
-  monitor transitions plus `cert.expiring`, `scan.failed` and
-  `mac_mismatch` events. Channel secrets (webhook URLs, SMTP passwords,
+  monitor transitions plus `cert.expiring`, `scan.failed`,
+  `mac_mismatch` and `cable.mismatch` events. Channel secrets (webhook URLs, SMTP passwords,
   bot tokens) are encrypted with `IPAMBOX_SECRET_KEY` and are write-only
   in the API; every delivery attempt is recorded in the notification log.
 - Surfaces: the live `/monitoring` board (10s poll), a dashboard card

@@ -112,6 +112,7 @@ def _section(review: dict, key: str) -> dict:
 
 ALL_KEYS = {
     "mac_mismatch",
+    "cable_mismatch",
     "dup_mac",
     "aging_discovery",
     "offline",
@@ -127,7 +128,7 @@ ALL_KEYS = {
 
 
 async def test_empty_state(client: AsyncClient):
-    """Empty inventory → nine zero-count sections, no errors."""
+    """Empty inventory → ten zero-count sections, no errors."""
     secs = {s["key"]: s for s in (await _review(client))["sections"]}
     assert set(secs) == ALL_KEYS
     for s in secs.values():

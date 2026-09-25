@@ -47,6 +47,21 @@ going, so `host → panel-front → panel-back → switch` renders as one path.
 Traces launched mid-chain still surface the whole path, and loops
 terminate at 10 hops.
 
+## Validation — what the switch actually reports
+
+On SNMP-managed devices every poll validates documented cabling against
+observed state (see [SNMP → cable validation](/docs/snmp) for the three
+checks). Flagged ports show an amber ⚠ badge — hover for
+the reason and the observed/documented peer — and the port keeps a
+`validation` blob with the LLDP neighbors and MACs the switch reported.
+
+Flags are findings, never fixes: nothing deletes or rewrites a cable on
+its own. They clear automatically when a later poll disproves the
+condition, and editing or deleting the cable (or editing the port)
+clears the flag keys immediately. Findings queue under
+[Review → Cable mismatches](/docs/review) with **Open trace** and
+**Edit cabling** shortcuts; dismissing one is sticky by fingerprint.
+
 ## IP → interface link
 
 The [IP drawer](/docs/addresses) has a **Connected interface** field — the

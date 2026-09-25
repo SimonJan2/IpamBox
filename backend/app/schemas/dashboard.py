@@ -13,6 +13,18 @@ class MacMismatchItem(BaseModel):
     flagged_at: str | None
 
 
+class CableMismatchItem(BaseModel):
+    """A flagged interface — V8.2's physical-layer twin of MacMismatchItem."""
+
+    id: int  # interface id
+    device_id: int
+    device: str
+    port: str
+    reason: str | None
+    detail: str | None
+    flagged_at: str | None
+
+
 class DashboardStats(BaseModel):
     sites_total: int
     vrfs_total: int
@@ -36,6 +48,8 @@ class DashboardStats(BaseModel):
     rack_u_used: int = 0
     rack_u_total: int = 0
     mac_mismatches: int = 0
+    # Cable validation (V8.2) — interfaces carrying the cable_mismatch flag.
+    cable_mismatches: int = 0
     # Review center (V7.1): open findings across all sections + the title of
     # the highest-priority non-empty section (sections are worst-first).
     review_open: int = 0
@@ -44,3 +58,4 @@ class DashboardStats(BaseModel):
     # the entity pages; these ride along so the page needs no extra requests.
     certs_expiring: list[CertificateOut] = []
     mac_mismatch_items: list[MacMismatchItem] = []
+    cable_mismatch_items: list[CableMismatchItem] = []

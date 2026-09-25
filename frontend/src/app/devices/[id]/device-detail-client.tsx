@@ -13,6 +13,7 @@ import {
   Pencil,
   Plus,
   Trash2,
+  TriangleAlert,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -172,7 +173,17 @@ export default function DeviceDetailClient({ id }: { id: string }) {
           </span>
           <DocsLink slug="devices" />
         </h1>
-        <div className="ml-auto flex gap-1">
+        <div className="ml-auto flex items-center gap-1">
+          {d != null && d.flagged_count > 0 && (
+            <Badge
+              variant="outline"
+              className="border-amber-700/60 bg-amber-950/40 text-amber-300"
+              title={`${d.flagged_count} port(s) carrying a cable_mismatch flag — see Interfaces`}
+            >
+              <TriangleAlert className="mr-1 h-3 w-3" />
+              {d.flagged_count} cable flag{d.flagged_count === 1 ? "" : "s"}
+            </Badge>
+          )}
           {d?.health && <IpStatusBadge s={d.health} />}
           <Button
             variant="ghost"
@@ -268,6 +279,11 @@ export default function DeviceDetailClient({ id }: { id: string }) {
                 {d.interface_count > 0 && (
                   <p className="text-muted-foreground" dir="ltr">
                     Ports: {d.cabled_count}/{d.interface_count} cabled
+                    {d.flagged_count > 0 && (
+                      <span className="text-amber-400">
+                        {" "}· ⚠ {d.flagged_count} flagged
+                      </span>
+                    )}
                   </p>
                 )}
               </div>

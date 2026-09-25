@@ -64,6 +64,7 @@ from app.models.cabling import DeviceInterface
 from app.models.device import Device
 from app.models.ip_address import IPAddress
 from app.schemas.common import ip_display
+from app.services import cable_validation
 from app.services.devices import ips_by_device
 from app.services.ipam import may_write
 from app.services.monitors import device_check_ip
@@ -105,6 +106,11 @@ OID_LLDP_REM_CHASSIS = "1.0.8802.1.1.2.1.4.1.1.5"
 OID_LLDP_REM_PORTID = "1.0.8802.1.1.2.1.4.1.1.7"
 OID_LLDP_REM_PORTDESC = "1.0.8802.1.1.2.1.4.1.1.8"
 OID_LLDP_REM_SYSNAME = "1.0.8802.1.1.2.1.4.1.1.9"
+# lldpLocPortTable — the agent's own port identifier per lldpLocPortNum
+# (ifName on most agents; a MAC under the macAddress subtype). It is how
+# a received neighbor maps back onto OUR port — without it the rem
+# table's bare localPortNum can't be attributed honestly.
+OID_LLDP_LOC_PORTID = "1.0.8802.1.1.2.1.3.7.1.3"
 
 OPER_MAP = {
     1: "up",
@@ -603,15 +609,31 @@ async def walk_bridge_macs(
 async def walk_lldp(
     dev: Device, host: str, *, timeout: float = DEFAULT_TIMEOUT
 ) -> list[dict]:
-    """LLDP-MIB lldpRemTable -> [{local_port, remote_name, remote_port,
-    remote_mac}]. local_port is the agent's port number (≈ bridge base
-    port). Collected now, persisted by v8.2."""
+    """LLDP-MIB lldpRemTable -> [{local_port, local_port_id, remote_name,
+    remote_port, remote_mac}].
+
+    ``local_port`` is the agent's lldpRemLocalPortNum; ``local_port_id``
+    is the matching lldpLocPortTable port identifier — the string the
+    agent itself calls that port (ifName on most agents, a MAC under the
+    macAddress subtype). v8.2's cable validation resolves it onto our
+    interfaces by name/MAC; a missing loc table degrades to
+    ``local_port_id=None``, never a guessed mapping."""
     t = _target(dev, host, timeout=timeout)
     sys_names, port_ids, chassis = (
         await _walk(t, OID_LLDP_REM_SYSNAME),
         await _walk(t, OID_LLDP_REM_PORTID),
         await _walk(t, OID_LLDP_REM_CHASSIS),
     )
+    try:
+        loc_rows = await _walk(t, OID_LLDP_LOC_PORTID)
+    except SnmpError:
+        loc_rows = []  # no loc table — neighbors stay unattributed
+    loc_by: dict[int, str] = {}
+    for oid, v in loc_rows:
+        pnum = _idx_int(oid, OID_LLDP_LOC_PORTID)
+        s = _sval(v)
+        if pnum is not None and s is not None:
+            loc_by[pnum] = s
 
     def col(rows, prefix, conv):
         out = {}
@@ -641,6 +663,7 @@ async def walk_lldp(
         out.append(
             {
                 "local_port": key[0],
+                "local_port_id": loc_by.get(key[0]),
                 "remote_name": name_by[key],
                 "remote_port": port_by.get(key),
                 "remote_mac": chassis_by.get(key),
@@ -922,8 +945,10 @@ async def poll_device(
         summary["error"] = f"if-mib: {e}"
         return summary
 
-    bridge: dict[int, list[str]] = {}
-    lldp: list[dict] = []
+    # None = "no evidence" (collection off or the walk failed) —
+    # validation skips the check entirely; {} / [] = walked and empty.
+    bridge: dict[int, list[str]] | None = None
+    lldp: list[dict] | None = None
     if fills_connected:
         try:
             bridge = await walk_bridge_macs(dev, host, timeout=timeout)
@@ -935,8 +960,6 @@ async def poll_device(
     except SnmpError as e:
         summary["errors"].append(f"lldp-mib: {e}")
 
-    # Collected but not yet persisted — v8.2 consumes LLDP neighbors for
-    # cable validation; the walk runs now so the data path is exercised.
     if learns_interfaces:
         ifindex_map, istats = await _upsert_interfaces(
             session, dev, polled, now
@@ -956,11 +979,22 @@ async def poll_device(
             )
         ).scalars()
         ifindex_map = {i.if_index: i for i in existing}
-    if fills_connected and bridge:
+    if bridge:
         lstats = await _apply_bridge_links(session, dev, bridge, ifindex_map)
         summary["macs_learned"] = lstats["learned"]
         summary["links_applied"] = lstats["applied"]
         summary["links_skipped"] = lstats["skipped"]
+
+    # V8.2 cable validation — the walks above are the evidence; flags
+    # land in device_interfaces.validation (findings, never fixes).
+    vstats = await cable_validation.validate_device(
+        session, dev, polled=polled, bridge=bridge, lldp=lldp, now=now
+    )
+    summary["cable_checked"] = vstats["checked"]
+    summary["cable_flags"] = vstats["flagged"]
+    summary["cable_flags_raised"] = vstats["raised"]
+    summary["cable_flags_cleared"] = vstats["cleared"]
+    summary["cable_flags_new"] = vstats["new_flags"]
 
     error = "; ".join(summary["errors"])[:2000] or None
     summary["error"] = error

@@ -185,6 +185,8 @@ class DeviceOut(BaseModel):
     # L1 coverage — how many ports the device has and how many are cabled.
     interface_count: int = 0
     cabled_count: int = 0
+    # V8.2 — ports carrying a cable_mismatch flag right now.
+    flagged_count: int = 0
 
 
 class DeviceDetail(DeviceOut):
@@ -219,5 +221,12 @@ class SnmpPollOut(BaseModel):
     links_applied: int = 0
     links_skipped: int = 0
     lldp_neighbors: int = 0
+    # Cable validation (V8.2) — ports evaluated, open flags now, and the
+    # raise/clear deltas of this pass.
+    cable_checked: int = 0
+    cable_flags: int = 0
+    cable_flags_raised: int = 0
+    cable_flags_cleared: int = 0
+    cable_flags_new: list[dict] = []
     error: str | None = None
     errors: list[str] = []

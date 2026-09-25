@@ -53,8 +53,44 @@ is looked up in `ip_addresses.mac_address`. On a match, the IP gains
 `connected_interface_id` pointing at the port — visible as the green link
 on the interface tile and in the IP drawer.
 
-**LLDP** is collected for a future cable-validation feature; nothing is
-written from it today.
+**LLDP** (`lldpRemTable` + the agent's own `lldpLocPortTable` for local
+port identity): neighbors land in each interface's `validation` evidence
+blob and feed the cable-validation checks below.
+
+## Cable validation — documented vs observed
+
+The tail of every poll compares what the cabling layer *documents*
+against what the switch *reports*, and writes the outcome into each
+interface's `validation` blob (`cable_mismatch` flag + `lldp` neighbors
++ bounded `macs_seen` + `checked_at`). Three checks, in priority order:
+
+| Reason | Fires when |
+|---|---|
+| `documented_down` | a cable is documented on the port AND the live IF-MIB pass reports `operStatus=down` |
+| `far_end_absent` | the documented far-end device has known MACs (its interfaces ∪ its owned IPs), the bridge table learned *other* MACs on the port, and none of them match |
+| `lldp_neighbor` | LLDP reports a neighbor on a port with NO documented cable |
+
+Honest-evidence rules:
+
+- **Absent evidence is not a violation** — a missing/failed bridge or
+  LLDP walk skips its check entirely; it can neither raise nor clear a
+  flag. A silent port (no MACs learned) never flags `far_end_absent`.
+- **Flags, never fixes** — a mismatch never deletes or rewrites the
+  cable; the human confirms what is true.
+- **Self-healing** — each flag clears on the poll where its own check is
+  disproved by fresh evidence. Editing the cable or the port clears the
+  flag keys immediately; the next poll re-derives everything.
+- **Sticky dismissal** — suppressing a finding from
+  [Review → Cable mismatches](/docs/review) writes a `review_dismissals`
+  row keyed on the flag's fingerprint (reason + cable/neighbor identity),
+  so re-flagging the same thing stays quiet while a genuinely different
+  finding resurfaces.
+
+A `cable.mismatch` notification fires once per poll when new flags are
+raised; recoveries and persistent flags stay silent. Flagged ports show
+an amber ⚠ on the device's interface grid (tooltip = reason + detail),
+roll up as `flagged_count` on the device header, and count beside
+`mac_mismatches` on the dashboard's mismatch card.
 
 ## What enrichment writes — and what it never does
 
@@ -67,6 +103,8 @@ Writes:
   changelog noise;
 - `connected_interface_id` on IPs whose MAC the bridge table places
   behind a port — ORM writes, so they appear in the changelog;
+- the `validation` evidence blob on each evaluated port — bulk-updated
+  like the rest of the observed state, no changelog noise;
 - device stamps: `snmp_sys_name`, `snmp_sys_descr`,
   `snmp_last_ok_at`, `snmp_last_error`.
 

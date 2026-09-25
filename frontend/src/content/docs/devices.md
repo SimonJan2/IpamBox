@@ -49,7 +49,10 @@ view is bookmarkable, survives reload, and can be named via **Saved views**
   one IP belongs to at most one device.
 - **Interfaces** — the device's port grid: generate a whole set in one
   click (`Gi1/0/` × 48, or a patch panel's front+back via a pair prefix),
-  cable ports to other devices, and trace the L1 path. See
+  cable ports to other devices, and trace the L1 path. Ports flagged by
+  [cable validation](/docs/snmp) carry an amber ⚠ (tooltip = the
+  mismatch reason + peer detail) and the header shows a *N cable flags*
+  badge. See
   [Cabling](/docs/cabling).
 - **Notes** — inline-editable.
 - **History** — every create/update/delete, including placement moves

@@ -74,7 +74,7 @@ SKIP_FIELDS = {"updated_at", "last_seen", "password_hash", "sort_order", "pinned
                "state", "consecutive_failures", "last_checked_at", "last_change_at", "last_error", "secret_enc",
                "snmp_cred_enc", "snmp_sys_name", "snmp_sys_descr", "snmp_last_ok_at", "snmp_last_error",
                "snmp_last_trap_at",
-               "oper_status", "admin_status", "snmp_seen_at"}
+               "oper_status", "admin_status", "snmp_seen_at", "validation"}
 _SPECS_KEY = "_changelog_specs"
 _REPR_ATTRS = ("name", "prefix", "address", "cidr", "username")
 

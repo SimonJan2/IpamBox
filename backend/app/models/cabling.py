@@ -27,6 +27,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -98,6 +99,14 @@ class DeviceInterface(Base):
     snmp_seen_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )
+    # Cable-validation evidence blob (V8.2) — one observed document per
+    # port written at the tail of each SNMP poll:
+    #   {cable_mismatch: {reason, detail, at, ...},   <- the flag, has_key
+    #    lldp: [{remote_name, remote_port, remote_mac, ...}],
+    #    macs_seen: [<mac>, ...] (bounded ~32),
+    #    notes: [...], checked_at}
+    # Flags are findings, never fixes — the human confirms what is true.
+    validation: Mapped[dict | None] = mapped_column(JSONB)
     # Provenance — who owns this row: manual (user-created, protected) or
     # snmp (poller-created). Same vocabulary family as ip_addresses.source.
     source: Mapped[str] = mapped_column(
