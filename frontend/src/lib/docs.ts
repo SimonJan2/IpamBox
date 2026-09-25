@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import {
   Activity,
+  Antenna,
   Building2,
   Cable,
   ClipboardCheck,
@@ -208,6 +209,14 @@ export const DOC_ARTICLES: DocArticle[] = [
     category: "operations",
     icon: Activity,
     keywords: ["monitor", "uptime", "alert", "webhook", "smtp", "discord", "telegram", "down", "notify"],
+  },
+  {
+    slug: "snmp",
+    title: "SNMP Enrichment",
+    description: "Devices report their own ports — IF-MIB interfaces, link state, and bridge-MAC links.",
+    category: "operations",
+    icon: Antenna,
+    keywords: ["snmp", "if-mib", "bridge", "mac table", "community", "v3", "port", "switch", "poll"],
   },
   {
     slug: "discovery",

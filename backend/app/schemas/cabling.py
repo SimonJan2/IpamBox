@@ -132,6 +132,12 @@ class DeviceInterfaceOut(BaseModel):
     position: int
     connected_ip_id: int | None
     pair_interface_id: int | None
+    # SNMP-observed state (V8) — null on ports the poller never reported.
+    if_index: int | None
+    oper_status: str | None
+    admin_status: str | None
+    snmp_seen_at: datetime | None
+    source: str
     created_at: datetime
     updated_at: datetime
     # Resolved by the API layer — not columns.

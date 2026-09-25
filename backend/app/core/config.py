@@ -66,6 +66,15 @@ class Settings(BaseSettings):
     monitor_concurrency: int = 64          # parallel probes inside one sweep
     monitor_http_timeout: float = 5.0      # http check request timeout (s)
     notify_retention_days: int = 0         # auto-purge notification_log rows
+    # SNMP enrichment lane (V8) — read-only IF-MIB/BRIDGE-MIB/LLDP polls of
+    # per-device-enabled hosts on the worker's minute cron. Off by default:
+    # new feature, opt-in lane (per-device snmp_enabled still required).
+    snmp_enabled: bool = False             # master switch for the poll lane
+    snmp_interval_minutes: int = 60        # per-device poll interval
+    snmp_concurrency: int = 4              # devices polled in parallel per job
+    snmp_timeout: float = 2.0              # per-request timeout (s)
+    snmp_learns_interfaces: bool = True    # upsert device_interfaces from IF-MIB
+    snmp_fills_connected: bool = True      # bridge-MAC -> connected_interface_id
 
     # Auth settings (env vars are IPAMBOX_*)
     ipambox_password: str = ""  # pre-provision the admin password

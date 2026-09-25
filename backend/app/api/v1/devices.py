@@ -8,6 +8,8 @@ Semantics: rack_id NULL = unracked inventory. PATCH rack_id=X places /
 re-homes (validated), PATCH rack_id=null unracks, DELETE removes the row
 for real (IPs unlink via SET NULL, carrier children unmount).
 """
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -41,6 +43,8 @@ from app.schemas.device import (
     DeviceIpRef,
     DeviceOut,
     DeviceUpdate,
+    SnmpPollOut,
+    SnmpTestOut,
 )
 from app.schemas.rack import LinkedRef
 from app.services.cabling import (
@@ -63,9 +67,13 @@ from app.services.device_io import (
     plan_device_import,
     xlsx_response,
 )
+from app.services import runtime_settings
+from app.services import snmp as snmp_svc
 from app.services.devices import device_health, ips_by_device
 from app.services.ipam import IPAMError, get_or_404
+from app.services.monitors import device_check_ip
 from app.services.ordering import ordered, reorder
+from app.services.secrets import encrypt_str
 from app.services.racks import (
     apply_device_patch,
     carrier_children,
@@ -82,6 +90,54 @@ async def _get_device(session: AsyncSession, device_id: int) -> Device:
         return await get_or_404(session, Device, device_id)
     except IPAMError as e:
         raise HTTPException(e.status_code, str(e))
+
+
+# snmp_cred carries a credential dict when set; _UNSET marks "key absent
+# from the PATCH" (distinct from null, which clears).
+_UNSET = object()
+_SNMP_VERSIONS = ("v1", "v2c", "v3")
+
+
+def _validate_snmp_patch(device: Device, patch: dict, cred) -> None:
+    """Cross-field SNMP rules — checked on the merged result, before any
+    write: enablement needs a version + a credential, and a new credential
+    has to match the (merged) version's shape."""
+    version = patch.get("snmp_version", device.snmp_version)
+    enabled = patch.get("snmp_enabled", device.snmp_enabled)
+    has_cred = bool(device.snmp_cred_enc)
+    if cred is not _UNSET:
+        clean = {k: v for k, v in (cred or {}).items() if v not in (None, "")}
+        if not clean:
+            has_cred = False  # {} / null clears the stored credential
+        else:
+            if version in ("v1", "v2c"):
+                if not clean.get("community"):
+                    raise HTTPException(
+                        422, "snmp_cred.community is required for v1/v2c"
+                    )
+            elif version == "v3":
+                if not clean.get("user"):
+                    raise HTTPException(
+                        422, "snmp_cred.user is required for v3"
+                    )
+            else:
+                raise HTTPException(
+                    422, "set snmp_version before storing credentials"
+                )
+            has_cred = True
+    if enabled:
+        if version not in _SNMP_VERSIONS:
+            raise HTTPException(
+                422, "snmp_version (v1|v2c|v3) is required to enable SNMP"
+            )
+        if not has_cred:
+            detail = (
+                "disable snmp_enabled first — the stored credential cannot "
+                "be cleared while the device is enabled"
+                if cred is not _UNSET and device.snmp_cred_enc
+                else "snmp credentials are required to enable SNMP"
+            )
+            raise HTTPException(422, detail)
 
 
 async def _check_refs(session: AsyncSession, data: dict) -> None:
@@ -113,6 +169,7 @@ async def _detail(session: AsyncSession, device: Device) -> DeviceDetail:
     # would try to read ips/asset/site/rack/carrier relationships into the
     # LinkedRef/IpRef fields and crash on linked rows.
     out = DeviceDetail(**DeviceOut.model_validate(device).model_dump())
+    out.snmp_cred_set = bool(device.snmp_cred_enc)
     ips = (await ips_by_device(session, [device.id]))[device.id]
     out.ip_count = len(ips)
     out.health = device_health(ips)
@@ -359,6 +416,7 @@ async def list_devices(
     items = []
     for d in rows:
         out = DeviceOut.model_validate(d)
+        out.snmp_cred_set = bool(d.snmp_cred_enc)
         out.health = device_health(ips[d.id])
         out.ip_count = len(ips[d.id])
         out.interface_count, out.cabled_count = istats[d.id]
@@ -663,10 +721,21 @@ async def update_device(
     device = await _get_device(session, device_id)
     patch = body.model_dump(exclude_unset=True)
     await _check_refs(session, patch)
+    # snmp_cred is write-only: absent = untouched, null/{} = clear,
+    # dict = encrypt the JSON blob into snmp_cred_enc (never a column
+    # named snmp_cred — it must pop off before apply_device_patch's
+    # setattr pass, and never returns in a response).
+    cred_patch = patch.pop("snmp_cred", _UNSET)
+    _validate_snmp_patch(device, patch, cred_patch)
     try:
         await apply_device_patch(session, device, patch)
     except IPAMError as e:
         raise HTTPException(e.status_code, str(e))
+    if cred_patch is not _UNSET:
+        clean = {k: v for k, v in (cred_patch or {}).items() if v not in (None, "")}
+        device.snmp_cred_enc = (
+            encrypt_str(json.dumps(clean)) if clean else None
+        )
     try:
         await session.commit()
     except IntegrityError as e:
@@ -691,6 +760,66 @@ async def delete_device(
         child.slot = None
     await session.delete(device)
     await session.commit()
+
+
+# ---------------------------------------------------------------------------
+# SNMP enrichment — the test endpoint is the only place plaintext credential
+# semantics touch the wire (in, never out); both endpoints decrypt the stored
+# blob server-side and answer with data, never secrets.
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{device_id}/snmp/test",
+    response_model=SnmpTestOut,
+    dependencies=[Depends(require_perm(DATA_WRITE))],
+)
+async def test_snmp(
+    device_id: int, session: AsyncSession = Depends(get_session)
+):
+    """Live sysName/sysDescr probe via the stored credential. Failures come
+    back as {up:false,error} — unreachable is data, not an exception."""
+    device = await _get_device(session, device_id)
+    ips = (await ips_by_device(session, [device.id]))[device.id]
+    ip = device_check_ip(ips)
+    if ip is None:
+        return SnmpTestOut(
+            up=False, error="device has no linked IP address to poll"
+        )
+    eff = await runtime_settings.get_effective(session)
+    res = await snmp_svc.test_device(
+        device,
+        ip_display(ip.address),
+        timeout=float(eff.values["snmp_timeout"]),
+    )
+    return SnmpTestOut(**res)
+
+
+@router.post(
+    "/{device_id}/snmp/poll",
+    response_model=SnmpPollOut,
+    dependencies=[Depends(require_perm(DATA_WRITE))],
+)
+async def poll_snmp(
+    device_id: int, session: AsyncSession = Depends(get_session)
+):
+    """Run the full enrichment once, inline — the same pass the worker
+    lane runs, on the request's own session."""
+    device = await _get_device(session, device_id)
+    eff = await runtime_settings.get_effective(session)
+    res = await snmp_svc.poll_device(
+        session,
+        device,
+        timeout=float(eff.values["snmp_timeout"]),
+        learns_interfaces=bool(
+            eff.values.get("snmp_learns_interfaces", True)
+        ),
+        fills_connected=bool(
+            eff.values.get("snmp_fills_connected", True)
+        ),
+    )
+    await session.commit()
+    return SnmpPollOut(**res)
 
 
 # ---------------------------------------------------------------------------

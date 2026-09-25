@@ -41,6 +41,13 @@ class SettingsPatch(BaseModel):
     monitor_http_timeout: float | None = None
     notify_retention_days: int | None = None
     rackula_base_url: str | None = None
+    # SNMP enrichment lane (V8)
+    snmp_enabled: bool | None = None
+    snmp_interval_minutes: int | None = None
+    snmp_concurrency: int | None = None
+    snmp_timeout: float | None = None
+    snmp_learns_interfaces: bool | None = None
+    snmp_fills_connected: bool | None = None
 
 
 class LanInfo(BaseModel):

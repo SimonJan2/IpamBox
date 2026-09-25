@@ -87,6 +87,27 @@ class Device(Base):
     import_batch_id: Mapped[int | None] = mapped_column(
         ForeignKey("import_batches.id", ondelete="SET NULL"), index=True
     )
+
+    # SNMP enrichment (V8) — read-only polls of this device's own agent.
+    # snmp_cred_enc is a v6 secrets blob holding JSON: {community} for
+    # v1/v2c, {user, auth_key, priv_key, auth_proto, priv_proto, context?}
+    # for v3.
+    # snmp_sys_*/snmp_last_* are observed columns written by the poll lane
+    # via bulk update() — they live in changelog.SKIP_FIELDS.
+    snmp_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    snmp_version: Mapped[str | None] = mapped_column(String(4))
+    snmp_port: Mapped[int] = mapped_column(
+        Integer, default=161, server_default="161"
+    )
+    snmp_cred_enc: Mapped[str | None] = mapped_column(Text)
+    snmp_sys_name: Mapped[str | None] = mapped_column(Text)
+    snmp_sys_descr: Mapped[str | None] = mapped_column(Text)
+    snmp_last_ok_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    snmp_last_error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

@@ -27,6 +27,7 @@ from app.models.vrf import VRF
 from app.schemas.common import ip_display
 from app.services import notify, prefix_math, runtime_settings, scan_policy
 from app.worker.monitors import monitor_tick, run_monitor_sweep
+from app.worker.snmp import run_snmp_poll, snmp_tick
 from app.worker.reconcile import reconcile
 from app.worker.scanner import (
     ScanCancelled,
@@ -762,13 +763,16 @@ async def shutdown(ctx: dict):
 
 
 class WorkerSettings:
-    functions = [run_scan, run_scheduled_backup, run_monitor_sweep]
+    functions = [run_scan, run_scheduled_backup, run_monitor_sweep, run_snmp_poll]
     cron_jobs = [
         cron(scheduler_tick, minute=set(range(60))),
         cron(scan_watchdog, minute=set(range(60))),
         # the monitor lane — batches due targets into ONE job per tick so
         # checks never eat the scan budget (max_jobs=4 is shared)
         cron(monitor_tick, minute=set(range(60))),
+        # the SNMP lane — same one-job-per-tick discipline, semaphore-
+        # bounded per device so a dead agent costs its timeout, not the lane
+        cron(snmp_tick, minute=set(range(60))),
     ]
     on_startup = startup
     on_shutdown = shutdown

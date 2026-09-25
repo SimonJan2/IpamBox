@@ -88,6 +88,21 @@ class DeviceInterface(Base):
     pair_interface_id: Mapped[int | None] = mapped_column(
         ForeignKey("device_interfaces.id", ondelete="SET NULL"), index=True
     )
+    # SNMP-observed state (V8) — written by the poll lane via bulk
+    # update(); live in changelog.SKIP_FIELDS. if_index is the device's
+    # IF-MIB index (the upsert key); a stale snmp_seen_at marks a port the
+    # device no longer reports — never deleted, manual ports included.
+    if_index: Mapped[int | None] = mapped_column(Integer)
+    oper_status: Mapped[str | None] = mapped_column(String(16))
+    admin_status: Mapped[str | None] = mapped_column(String(16))
+    snmp_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    # Provenance — who owns this row: manual (user-created, protected) or
+    # snmp (poller-created). Same vocabulary family as ip_addresses.source.
+    source: Mapped[str] = mapped_column(
+        String(16), default="manual", server_default="manual"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -112,6 +127,11 @@ class DeviceInterface(Base):
 
     __table_args__ = (
         UniqueConstraint("device_id", "name", name="uq_device_interfaces_device_name"),
+        # if_index is the poller's upsert key — unique per device so two
+        # rows can never claim the same IF-MIB index (NULLs exempt).
+        UniqueConstraint(
+            "device_id", "if_index", name="uq_device_interfaces_device_ifindex"
+        ),
     )
 
     def __changelog_repr__(self) -> str:
