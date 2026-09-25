@@ -39,10 +39,21 @@ const STATUS_ORDER: IpStatus[] = [
   "offline",
 ];
 
+/** Technical-address marker → cell glyph (V6.1). The backend stamps
+ *  `custom_fields.technical` on the protected rows it manages. */
+const TECH_GLYPHS: Record<string, string> = { gateway: "⌂", dns: "≋" };
+
+function techMarker(addr: IpAddress): string | null {
+  const t = addr.custom_fields?.technical;
+  return typeof t === "string" ? t : null;
+}
+
 function cellLabel(ip: string, st: CellState): string {
   switch (st.kind) {
     case "used": {
       const parts = [`${ip} — ${st.addr.status}`];
+      const tech = techMarker(st.addr);
+      if (tech) parts.push(tech === "dns" ? "DNS resolver" : tech);
       if (st.addr.hostname) parts.push(`host ${st.addr.hostname}`);
       if (st.addr.mac_address) parts.push(`mac ${st.addr.mac_address}`);
       return parts.join(", ");
@@ -403,6 +414,10 @@ export function SubnetGrid({
                   : null;
                 const glyph =
                   st.kind === "used" ? STATUS_TOKENS[st.addr.status].glyph : "";
+                const techGlyph =
+                  st.kind === "used"
+                    ? (TECH_GLYPHS[techMarker(st.addr) ?? ""] ?? null)
+                    : null;
                 const liveHit = liveFound?.has(intIp) ?? false;
                 const cell = (
                   <button
@@ -476,6 +491,14 @@ export function SubnetGrid({
                         {glyph}
                       </span>
                     )}
+                    {techGlyph && (
+                      <span
+                        aria-hidden="true"
+                        className="absolute bottom-0.5 left-0.5 text-[9px] leading-none opacity-90"
+                      >
+                        {techGlyph}
+                      </span>
+                    )}
                     {last}
                     {cellTags.length > 0 && (
                       <span className="absolute bottom-0.5 right-0.5 flex gap-0.5">
@@ -503,6 +526,17 @@ export function SubnetGrid({
                       )}
                       {st.kind === "used" ? (
                         <div className="space-y-0.5 text-muted-foreground">
+                          {techMarker(st.addr) === "gateway" && (
+                            <div className="text-sky-400">gateway</div>
+                          )}
+                          {techMarker(st.addr) === "dns" && (
+                            <div className="text-sky-400">DNS resolver</div>
+                          )}
+                          {st.addr.range_role && (
+                            <div>
+                              in {st.addr.range_role} pool
+                            </div>
+                          )}
                           {st.addr.hostname && <div>host: {st.addr.hostname}</div>}
                           {st.addr.mac_address && <div>mac: {st.addr.mac_address}</div>}
                           {st.addr.vendor && <div>vendor: {st.addr.vendor}</div>}

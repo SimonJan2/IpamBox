@@ -98,6 +98,10 @@ class IPAddressOut(BaseModel):
     address_int: int
     prefix_id: int
     vrf_id: int
+    ip_range_id: int | None = None
+    # Stamped by the API layer (services.ranges.stamp_range_roles) — the role
+    # of the pool this address sits in, not a column.
+    range_role: str | None = None
     mac_address: str | None
     vendor: str | None
     hostname: str | None

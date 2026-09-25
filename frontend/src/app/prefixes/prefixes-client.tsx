@@ -2,7 +2,14 @@
 
 import { useEffect, useId, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Download, History, Pencil, Plus, Trash2 } from "lucide-react";
+import {
+  Download,
+  History,
+  Network,
+  Pencil,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import {
   flexRender,
   getCoreRowModel,
@@ -25,7 +32,8 @@ import { AsyncPanel } from "@/components/async-panel";
 import { DocsLink } from "@/components/docs/docs-link";
 import { HistoryDialog } from "@/components/history-panel";
 import { SavedViews } from "@/components/saved-views";
-import type { Page, Prefix, Site, Vlan, Vrf } from "@/types";
+import type { Page, Prefix, Site, Vlan, VlanGroup, Vrf } from "@/types";
+import { NetworkWizard } from "@/components/network-wizard";
 import { PrefixStatusBadge } from "@/components/status-badge";
 import { TagChip, TagPicker, useTags } from "@/components/tag-picker";
 import { Button } from "@/components/ui/button";
@@ -240,6 +248,8 @@ function EditPrefixDialog({
     vlan_id: "none",
     status: "active",
     description: "",
+    gateway: "",
+    dns_servers: "",
   });
   const [busy, setBusy] = useState(false);
   const uid = useId();
@@ -252,6 +262,8 @@ function EditPrefixDialog({
         vlan_id: prefix.vlan_id ? String(prefix.vlan_id) : "none",
         status: prefix.status,
         description: prefix.description ?? "",
+        gateway: prefix.gateway ?? "",
+        dns_servers: (prefix.dns_servers ?? []).join(", "),
       });
     }
   }, [prefix]);
@@ -260,12 +272,18 @@ function EditPrefixDialog({
     if (!prefix) return;
     setBusy(true);
     try {
+      const dns = form.dns_servers
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
       await api.patch(`/api/v1/prefixes/${prefix.id}`, {
         vrf_id: Number(form.vrf_id),
         site_id: form.site_id === "none" ? null : Number(form.site_id),
         vlan_id: form.vlan_id === "none" ? null : Number(form.vlan_id),
         status: form.status,
         description: form.description || null,
+        gateway: form.gateway.trim() || null,
+        dns_servers: dns.length ? dns : [],
       });
       toast.success("Prefix updated");
       onOpenChange(false);
@@ -363,6 +381,35 @@ function EditPrefixDialog({
                 </SelectContent>
               </Select>
             </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-1.5">
+              <Label htmlFor={`${uid}-gateway`}>Gateway</Label>
+              <Input
+                id={`${uid}-gateway`}
+                placeholder="10.0.0.1"
+                className="font-mono"
+                value={form.gateway}
+                onChange={(e) => setForm({ ...form, gateway: e.target.value })}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor={`${uid}-dns`}>DNS resolvers</Label>
+              <Input
+                id={`${uid}-dns`}
+                placeholder="10.0.0.2, 8.8.8.8"
+                className="font-mono"
+                value={form.dns_servers}
+                onChange={(e) =>
+                  setForm({ ...form, dns_servers: e.target.value })
+                }
+              />
+            </div>
+            <p className="col-span-2 text-xs text-muted-foreground">
+              The gateway must live inside the prefix; resolvers may be
+              anywhere (comma-separated, max 4). Setting them maintains
+              protected reserved address rows.
+            </p>
           </div>
           <div className="grid gap-1.5">
             <Label htmlFor={`${uid}-description`}>Description</Label>
@@ -475,12 +522,20 @@ export default function PrefixesPage() {
       return [];
     }
   });
+  const groupsQ = useAsyncData(async () => {
+    try {
+      return await api.get<VlanGroup[]>("/api/v1/vlan-groups");
+    } catch {
+      return [];
+    }
+  });
   const [q, setQRaw] = useUrlText("q");
   const setQ = (v: string | ((p: string) => string)) =>
     setQRaw(typeof v === "function" ? v(q) : v);
   const [vrfFilter, setVrfFilter] = useUrlParam("vrf", "all");
   const [sorting, setSorting] = useUrlSorting();
   const [createOpen, setCreateOpen] = useState(false);
+  const [wizardOpen, setWizardOpen] = useState(false);
   const [editing, setEditing] = useState<Prefix | null>(null);
   const [deleting, setDeleting] = useState<Prefix | null>(null);
   const [historyFor, setHistoryFor] = useState<Prefix | null>(null);
@@ -490,6 +545,7 @@ export default function PrefixesPage() {
   const vrfs = vrfsQ.data ?? [];
   const sites = sitesQ.data ?? [];
   const vlans = vlansQ.data ?? [];
+  const groups = groupsQ.data ?? [];
 
   const refresh = () => {
     void prefixesQ.reload();
@@ -718,9 +774,18 @@ export default function PrefixesPage() {
             </a>
           </Button>
           {canWrite && (
-            <Button size="sm" onClick={() => setCreateOpen(true)}>
-              <Plus /> New prefix
-            </Button>
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setCreateOpen(true)}
+              >
+                <Plus /> New prefix
+              </Button>
+              <Button size="sm" onClick={() => setWizardOpen(true)}>
+                <Network /> Add network
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -801,6 +866,15 @@ export default function PrefixesPage() {
         vrfs={vrfs}
         sites={sites}
         vlans={vlans}
+        onCreated={refresh}
+      />
+      <NetworkWizard
+        open={wizardOpen}
+        onOpenChange={setWizardOpen}
+        vrfs={vrfs}
+        sites={sites}
+        vlans={vlans}
+        groups={groups}
         onCreated={refresh}
       />
       <EditPrefixDialog

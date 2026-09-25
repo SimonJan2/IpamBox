@@ -35,6 +35,12 @@ class IPAddress(Base):
     address_int: Mapped[int] = mapped_column(Numeric(39, 0), nullable=False)
     prefix_id: Mapped[int] = mapped_column(ForeignKey("prefixes.id", ondelete="CASCADE"), index=True)
     vrf_id: Mapped[int] = mapped_column(ForeignKey("vrfs.id", ondelete="CASCADE"), index=True)
+    # Pool membership — set automatically when the address falls inside an
+    # ip_ranges row of the same prefix (all roles, informational). SET NULL
+    # so deleting a range frees its members without deleting them.
+    ip_range_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ip_ranges.id", ondelete="SET NULL"), index=True
+    )
     mac_address: Mapped[str | None] = mapped_column(String(17))
     vendor: Mapped[str | None] = mapped_column(String(255))
     hostname: Mapped[str | None] = mapped_column(String(255))
@@ -106,6 +112,7 @@ class IPAddress(Base):
 
     prefix: Mapped["Prefix"] = relationship(back_populates="addresses")  # noqa: F821
     vrf: Mapped["VRF"] = relationship()  # noqa: F821
+    ip_range: Mapped["IPRange | None"] = relationship()  # noqa: F821
     # Never lazy-loaded on hot paths — device_name on responses is stamped
     # via a grouped query (services/devices.py::stamp_device_names).
     device: Mapped["Device | None"] = relationship(back_populates="ips")  # noqa: F821

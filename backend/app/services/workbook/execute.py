@@ -24,7 +24,8 @@ from app.models.service import Service
 from app.models.site import Site
 from app.models.vlan import VLAN
 from app.models.vrf import VRF
-from app.services.ipam import slugify
+from app.services.ipam import ConflictError, slugify
+from app.services.ranges import apply_pool_membership
 from app.services.workbook.listparse import key_for
 
 
@@ -141,9 +142,12 @@ async def _get_or_create_prefix(session, entry, vrf_ids, site_ids, ids) -> int:
     return prefix.id
 
 
-async def _insert_address(session, row, vrf_ids, prefix_ids, batch_id):
+async def _insert_address(session, row, vrf_ids, prefix_ids, batch_id, ranges_by_prefix):
+    """Returns (outcome, addr). force=True on the pool guard: a deliberate
+    bulk import IS the documented truth — statics inside pools are imported
+    and auditable via custom_fields.pool_override, never silently dropped."""
     if row["action"] == "skip":
-        return "skip"
+        return "skip", None
     if row["action"] == "update" and row.get("target_id"):
         addr = await session.get(IPAddress, row["target_id"])
         if addr is not None:
@@ -158,7 +162,13 @@ async def _insert_address(session, row, vrf_ids, prefix_ids, batch_id):
             }
             for f in row.get("fills", []):
                 setattr(addr, f, row.get(field_map[f]))
-            return "update"
+            # Pool membership follows the row's prefix; the guard reads its
+            # current status — imports get the same semantics as the drawer,
+            # except the deliberate import acts as the force (audit marker).
+            apply_pool_membership(
+                addr, ranges_by_prefix.get(addr.prefix_id, []), force=True
+            )
+            return "update", addr
         # target vanished — fall through to create
     addr = IPAddress(
         address=row["address"],
@@ -178,9 +188,10 @@ async def _insert_address(session, row, vrf_ids, prefix_ids, batch_id):
         source="import",
         notes=row.get("notes"),
     )
+    apply_pool_membership(addr, ranges_by_prefix.get(addr.prefix_id, []), force=True)
     session.add(addr)
     await session.flush()
-    return "create"
+    return "create", addr
 
 
 def _group_by_sheet(rows):
@@ -352,20 +363,41 @@ async def execute_plan(
             rep(r["sheet"], r["row"], "error", str(e)[:200])
 
     # -- addresses, grouped per sheet for partial-mode savepoints -----------
+    # Pool membership/guard data — one query for every prefix the plan
+    # created or referenced, applied per row by _insert_address.
+    ranges_by_prefix: dict[int, list[IPRange]] = {}
+    if prefix_ids:
+        for rng in (
+            await session.execute(
+                select(IPRange).where(IPRange.prefix_id.in_(set(prefix_ids.values())))
+            )
+        ).scalars():
+            ranges_by_prefix.setdefault(rng.prefix_id, []).append(rng)
     addr_groups = _group_by_sheet(plan.get("addresses", []))
     for sheet, rows in addr_groups.items():
         for row in rows:
             try:
                 if partial:
                     async with session.begin_nested():
-                        outcome = await _insert_address(
-                            session, row, vrf_ids, prefix_ids, batch.id
+                        outcome, addr = await _insert_address(
+                            session, row, vrf_ids, prefix_ids, batch.id,
+                            ranges_by_prefix,
                         )
                 else:
-                    outcome = await _insert_address(
-                        session, row, vrf_ids, prefix_ids, batch.id
+                    outcome, addr = await _insert_address(
+                        session, row, vrf_ids, prefix_ids, batch.id,
+                        ranges_by_prefix,
                     )
-                rep(sheet, row["row"], outcome, row["address"])
+                detail = row["address"]
+                if addr is not None and (addr.custom_fields or {}).get(
+                    "pool_override"
+                ):
+                    detail += " — inside a pool (override marked)"
+                rep(sheet, row["row"], outcome, detail)
+            except ConflictError as e:
+                # the pool guard is a policy rejection, not a crash — report
+                # the row and keep going (unreachable today: force=True)
+                rep(sheet, row["row"], "conflict", f"{row['address']}: {e}")
             except Exception as e:
                 if not partial:
                     raise

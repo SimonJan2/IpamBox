@@ -9,6 +9,11 @@ from app.models.ip_address import IPAddress, IPStatus
 from app.schemas.common import Page
 from app.schemas.ip_address import IPAddressOut
 from app.services.ipam import IPAMError, get_or_404
+from app.services.ranges import (
+    apply_pool_membership,
+    ranges_for_prefix,
+    stamp_range_roles,
+)
 
 router = APIRouter(prefix="/discovery", tags=["discovery"])
 
@@ -47,7 +52,10 @@ class ConfirmBody(BaseModel):
     dependencies=[Depends(require_perm(DATA_WRITE))],
 )
 async def confirm_discovered(
-    address_id: int, body: ConfirmBody | None = None, session: AsyncSession = Depends(get_session)
+    address_id: int,
+    body: ConfirmBody | None = None,
+    force: bool = Query(default=False),
+    session: AsyncSession = Depends(get_session),
 ):
     """One-click confirm a discovered host (default -> Active)."""
     try:
@@ -60,6 +68,15 @@ async def confirm_discovered(
         row.hostname = body.hostname
     if body.notes is not None:
         row.notes = body.notes
+    try:
+        # Confirming to active/reserved inside a dhcp/pool range hits the
+        # same pool guard as the address write path.
+        apply_pool_membership(
+            row, await ranges_for_prefix(session, row.prefix_id), force=force
+        )
+    except IPAMError as e:
+        raise HTTPException(e.status_code, str(e))
     await session.commit()
     await session.refresh(row)
+    await stamp_range_roles(session, [row])
     return row

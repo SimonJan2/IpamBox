@@ -7,6 +7,7 @@ import {
   Download,
   History,
   Loader2,
+  Network,
   Plus,
   Printer,
   Radar,
@@ -872,6 +873,30 @@ export default function PrefixDetailPage({ id }: { id: string }) {
                 {ranges.length} range{ranges.length > 1 ? "s" : ""}
               </span>
             )}
+            {prefix.gateway && (
+              <button
+                type="button"
+                title="Copy gateway"
+                onClick={() =>
+                  navigator.clipboard?.writeText(prefix.gateway!).catch(() => {})
+                }
+                className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-xs text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <Network className="h-3 w-3" aria-hidden="true" />
+                gw {prefix.gateway}
+              </button>
+            )}
+            {prefix.dns_servers?.map((d) => (
+              <button
+                key={d}
+                type="button"
+                title="Copy resolver"
+                onClick={() => navigator.clipboard?.writeText(d).catch(() => {})}
+                className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-xs text-muted-foreground transition-colors hover:text-foreground"
+              >
+                dns {d}
+              </button>
+            ))}
             {prefix.description && (
               <span className="ml-auto text-muted-foreground">{prefix.description}</span>
             )}

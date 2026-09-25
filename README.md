@@ -33,6 +33,12 @@ Scapy raw-socket scanning · Next.js 15 dark-mode UI
 - **Atomic allocation**: "next available IP" uses `SELECT … FOR UPDATE`
   + `UNIQUE(vrf_id, address)`; defined IP ranges are excluded
   automatically.
+- **Subnet semantics**: prefixes carry their `gateway` + `dns_servers`;
+  technical addresses get protected `reserved` rows (grid glyphs ⌂/≋,
+  changelog-audited), and `dhcp`/`pool` ranges own their members —
+  statics inside a pool are rejected unless forced (`force=1`, audited
+  as `custom_fields.pool_override`). **Add network** creates
+  VLAN + subnet + gateway/DNS + DHCP pool in one transaction.
 - **Rich object model**: VLAN groups + VLANs, IP ranges
   (dhcp/pool/reserved), IP roles (vip/vrrp/hsrp/glbp/carp/secondary),
   NAT-inside links, colored tags on sites/VRFs/prefixes/addresses.
@@ -248,6 +254,7 @@ apply without a restart, and can be reset back to the env value per key.
 | `/discovery` | Discovery Inbox — confirm/delete scanned hosts |
 | `/sites` `/vrfs` `/prefixes` | Core IPAM objects |
 | `/prefixes/[id]` | Address map (grid/list views), ranges, bulk ops, CSV |
+| `/prefixes` → Add network | One-transaction wizard: VLAN + subnet + gateway/DNS + DHCP pool |
 | `/circuits` `/certificates` | WAN circuits, certificate expiry (30d countdown) |
 | `/inventory` `/services` | SW/HW + serial inventory, service catalog |
 | `/racks` `/racks/[id]` `/racks/groups/[id]` `/racks/[id]/print` | Rack list + groups, live elevation, bayed row view, print report + QR labels, Rackula round-trip |

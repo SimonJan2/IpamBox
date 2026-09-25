@@ -72,5 +72,8 @@ status, set role, assign tags, or delete — all at once, each change logged.
 Opening an address slides out a detail panel: every field, its tag chips,
 the NAT partner, the owning [device](/docs/devices) link, the **connected
 interface** picker (far-end switch port — the structured sibling of the
-switch_name/switch_port free text, which still shows as fallback), and the
-object's own [changelog](/docs/changelog) history.
+switch_name/switch_port free text, which still shows as fallback), pool
+membership when the address sits inside an IP range, and the object's own
+[changelog](/docs/changelog) history. Saving a static (active/reserved)
+address inside a dhcp/pool range is blocked by a conflict dialog — *Assign
+anyway* applies the audited `pool_override`.

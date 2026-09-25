@@ -61,6 +61,31 @@ export interface IpRange {
   created_at: string;
 }
 
+/** POST /networks — the "add network" wizard payload. Creates the VLAN
+ *  (or reuses `vlan_id`), prefix, protected gateway/DNS address rows and
+ *  the DHCP range in a single transaction. */
+export interface NetworkCreate {
+  site_id?: number | null;
+  vlan?: { vid: number; name: string; group_id?: number | null } | null;
+  vlan_id?: number | null;
+  prefix: {
+    cidr: string;
+    vrf_id: number;
+    status?: PrefixStatus;
+    description?: string | null;
+  };
+  gateway?: string | null;
+  dns_servers?: string[] | null;
+  dhcp_range?: { start: string; end: string; description?: string | null } | null;
+}
+
+export interface NetworkOut {
+  vlan_id: number;
+  prefix_id: number;
+  ip_range_id: number | null;
+  address_ids: number[];
+}
+
 export interface Site {
   id: number;
   name: string;
@@ -107,6 +132,11 @@ export interface Prefix {
   vlan: VlanRef | null;
   status: PrefixStatus;
   description: string | null;
+  /** Gateway inside the prefix — the API keeps a protected "technical"
+   *  address row in sync with this value. */
+  gateway: string | null;
+  /** Resolvers for the subnet — may live outside the prefix. */
+  dns_servers: string[] | null;
   created_at: string;
   // null for IPv6 — 2^n host counts exceed Number.MAX_SAFE_INTEGER and are
   // meaningless; render '—' for capacity, used_ips stays real
@@ -124,6 +154,11 @@ export interface IpAddress {
   address: string;
   address_int: number;
   prefix_id: number;
+  /** Pool/range this address falls inside, if any (informational — set
+   *  automatically from ip_ranges membership). */
+  ip_range_id: number | null;
+  /** Role of the containing range — stamped by the API, not a column. */
+  range_role: RangeRole | null;
   vrf_id: number;
   mac_address: string | null;
   vendor: string | null;

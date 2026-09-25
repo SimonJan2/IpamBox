@@ -636,6 +636,67 @@ async def test_import_e2e(client):
     assert circuits[0]["status"] == "committed"
 
 
+def _xlsx_bytes_pool():
+    """Site sheet documenting a DHCP span AND static stations inside it —
+    the real Ashdod-sheet pattern that used to 500 the commit."""
+    import io
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "רשימת אתרים"
+    ws.append(["Name", "Code", "type", "Subet range", "", "", "", "Subet", "הערות"])
+    ws.append(["Ashdod", "ASHD", "גדול", "10", "44", ".0.", "0/24", "255.255.255.0", ""])
+    ws2 = wb.create_sheet("אשדוד תחנה")
+    ws2.append(
+        ["IP Address", "", "Subnet mask", "VLAN/LAN", "Node Name", "Model",
+         "description", "serial", "", "", "MAC"]
+    )
+    ws2.append(
+        ["10.44.1.", "101-200", "255.255.255.0", "VLAN1", "DHCP", "",
+         "DHCP range for PC's"]
+    )
+    ws2.append(
+        ["10.44.1.", "105", "255.255.255.0", "", "STA-01", "", "station 5",
+         "", "", "", "0002E33199B5"]
+    )
+    ws2.append(["10.44.1.", "50", "255.255.255.0", "", "SW-01", "", "switch"])
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+async def test_workbook_statics_inside_dhcp_span_import_marked(client):
+    """Pool-guard regression: committing a plan whose dhcp range covers
+    documented statics must not 500 — a deliberate bulk import acts as the
+    force, so rows land stamped ip_range_id + pool_override."""
+    r = await client.post(
+        "/api/v1/imports/workbook?filename=pool.xlsx",
+        content=_xlsx_bytes_pool(),
+        headers={"content-type": "application/octet-stream"},
+    )
+    assert r.status_code == 201, r.text
+    batch_id = r.json()["batch"]["id"]
+
+    # non-partial commit — the mode that used to crash on ConflictError
+    r = await client.post(
+        f"/api/v1/imports/{batch_id}/commit", json={"partial": False}
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["counts"].get("error", 0) == 0
+
+    ranges = (await client.get("/api/v1/ranges")).json()["items"]
+    rng = next(x for x in ranges if x["start_address"] == "10.44.1.101")
+    assert rng["role"] == "dhcp"
+
+    addrs = (await client.get("/api/v1/addresses")).json()
+    by_addr = {a["address"]: a for a in addrs}
+    sta = by_addr["10.44.1.105"]
+    assert sta["ip_range_id"] == rng["id"]
+    assert sta["custom_fields"]["pool_override"] is True
+    assert by_addr["10.44.1.50"]["ip_range_id"] is None
+
+
 async def test_import_rejects_non_xlsx(client):
     r = await client.post("/api/v1/imports/workbook", content=b"not a zip")
     assert r.status_code == 422

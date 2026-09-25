@@ -448,3 +448,351 @@ async def test_dashboard_attention_fields(client, session):
     assert item["prefix_id"] == p["id"]
     assert item["mac_was"] == "00:11:22:33:44:55"
     assert item["mac_seen"] == "66:77:88:99:AA:BB"
+
+
+# --- V6.1: pool membership + the /networks wizard ---------------------------
+
+async def _range(client, prefix_id, start, end, role="dhcp", description=None):
+    body = {
+        "prefix_id": prefix_id,
+        "start_address": start,
+        "end_address": end,
+        "role": role,
+    }
+    if description:
+        body["description"] = description
+    r = await client.post("/api/v1/ranges", json=body)
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+async def test_static_inside_dhcp_range_conflicts_and_force_overrides(client):
+    p = await _prefix(client, "10.40.0.0/24")
+    rng = await _range(
+        client, p["id"], "10.40.0.100", "10.40.0.199", description="LAN dhcp"
+    )
+
+    r = await client.post(
+        "/api/v1/addresses",
+        json={"address": "10.40.0.150", "prefix_id": p["id"], "status": "active"},
+    )
+    assert r.status_code == 409, r.text
+    detail = r.json()["detail"]
+    assert "10.40.0.100" in detail and "10.40.0.199" in detail
+
+    r = await client.post(
+        "/api/v1/addresses?force=1",
+        json={"address": "10.40.0.150", "prefix_id": p["id"], "status": "active"},
+    )
+    assert r.status_code == 201, r.text
+    row = r.json()
+    assert row["ip_range_id"] == rng["id"]
+    assert row["range_role"] == "dhcp"
+    assert row["custom_fields"]["pool_override"] is True
+
+    # dhcp-status rows inside a dhcp range are always fine
+    r = await client.post(
+        "/api/v1/addresses",
+        json={"address": "10.40.0.151", "prefix_id": p["id"], "status": "dhcp"},
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["ip_range_id"] == rng["id"]
+
+
+async def test_membership_any_role_and_range_delete_nulls_link(client):
+    p = await _prefix(client, "10.41.0.0/24")
+    rng = await _range(client, p["id"], "10.41.0.200", "10.41.0.210", role="reserved")
+    r = await client.post(
+        "/api/v1/addresses",
+        json={"address": "10.41.0.205", "prefix_id": p["id"], "status": "active"},
+    )
+    # reserved ranges inform but never block
+    assert r.status_code == 201, r.text
+    addr = r.json()
+    assert addr["ip_range_id"] == rng["id"]
+
+    rows = (
+        await client.get("/api/v1/addresses", params={"ip_range_id": rng["id"]})
+    ).json()
+    assert [a["id"] for a in rows] == [addr["id"]]
+    assert rows[0]["range_role"] == "reserved"
+
+    r = await client.delete(f"/api/v1/ranges/{rng['id']}")
+    assert r.status_code == 204
+    got = (await client.get(f"/api/v1/addresses/{addr['id']}")).json()
+    assert got["ip_range_id"] is None
+    assert got["range_role"] is None
+
+
+async def test_patch_status_into_pool_conflicts_unless_forced(client):
+    p = await _prefix(client, "10.42.0.0/24")
+    rng = await _range(client, p["id"], "10.42.0.100", "10.42.0.199")
+    r = await client.post(
+        "/api/v1/addresses",
+        json={"address": "10.42.0.150", "prefix_id": p["id"], "status": "discovered"},
+    )
+    assert r.status_code == 201, r.text
+    addr = r.json()
+    assert addr["ip_range_id"] == rng["id"]  # membership is informational
+
+    r = await client.patch(
+        f"/api/v1/addresses/{addr['id']}", json={"status": "active"}
+    )
+    assert r.status_code == 409, r.text
+
+    r = await client.patch(
+        f"/api/v1/addresses/{addr['id']}?force=1", json={"status": "active"}
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["custom_fields"]["pool_override"] is True
+
+    # acknowledged override stays editable without force
+    r = await client.patch(
+        f"/api/v1/addresses/{addr['id']}", json={"hostname": "printer"}
+    )
+    assert r.status_code == 200, r.text
+
+
+async def test_csv_import_marks_statics_inside_pool(client):
+    """A deliberate bulk import documents existing reality — statics inside
+    pools land with an auditable pool_override marker rather than sinking
+    the whole file."""
+    p = await _prefix(client, "10.43.0.0/24")
+    await _range(client, p["id"], "10.43.0.100", "10.43.0.199")
+    csv_body = (
+        "address,prefix,hostname,status\n"
+        "10.43.0.50,10.43.0.0/24,ok-host,active\n"
+        "10.43.0.150,10.43.0.0/24,pooled,active\n"
+    )
+    r = await client.post(
+        "/api/v1/addresses/import",
+        content=csv_body,
+        headers={"content-type": "text/csv"},
+    )
+    assert r.status_code == 200, r.text
+    rows = r.json()
+    assert rows[0]["ok"] is True
+    assert rows[1]["ok"] is True and "override" in rows[1]["detail"]
+
+    got = (
+        await client.get("/api/v1/addresses", params={"prefix_id": p["id"]})
+    ).json()
+    by_addr = {a["address"]: a for a in got}
+    assert by_addr["10.43.0.50"]["ip_range_id"] is None
+    pooled = by_addr["10.43.0.150"]
+    assert pooled["ip_range_id"] is not None
+    assert pooled["custom_fields"]["pool_override"] is True
+
+
+async def test_networks_wizard_happy_path(client):
+    vrf_id = await _vrf(client)
+    r = await client.post(
+        "/api/v1/networks",
+        json={
+            "vlan": {"vid": 10, "name": "LAN-10"},
+            "prefix": {"cidr": "10.10.0.0/24", "vrf_id": vrf_id},
+            "gateway": "10.10.0.1",
+            "dns_servers": ["10.10.0.2"],
+            "dhcp_range": {"start": "10.10.0.100", "end": "10.10.0.199"},
+        },
+    )
+    assert r.status_code == 201, r.text
+    out = r.json()
+    assert out["vlan_id"] and out["prefix_id"] and out["ip_range_id"]
+    assert len(out["address_ids"]) == 2  # gateway + in-prefix resolver
+
+    p = (await client.get(f"/api/v1/prefixes/{out['prefix_id']}")).json()
+    assert p["gateway"] == "10.10.0.1"
+    assert p["dns_servers"] == ["10.10.0.2"]
+    assert p["vlan_id"] == out["vlan_id"]
+
+    addrs = (
+        await client.get("/api/v1/addresses", params={"prefix_id": p["id"]})
+    ).json()
+    gw = next(a for a in addrs if a["address"] == "10.10.0.1")
+    assert gw["custom_fields"]["technical"] == "gateway"
+
+    ranges = (
+        await client.get("/api/v1/ranges", params={"prefix_id": p["id"]})
+    ).json()["items"]
+    assert ranges[0]["id"] == out["ip_range_id"]
+    assert ranges[0]["role"] == "dhcp"
+    assert ranges[0]["start_address"] == "10.10.0.100"
+    assert ranges[0]["end_address"] == "10.10.0.199"
+
+
+async def test_networks_wizard_rolls_back_everything(client):
+    vrf_id = await _vrf(client)
+    vlans_before = (await client.get("/api/v1/vlans")).json()["total"]
+
+    # bad CIDR -> request rejected before anything is created
+    r = await client.post(
+        "/api/v1/networks",
+        json={
+            "vlan": {"vid": 77, "name": "GONE-77"},
+            "prefix": {"cidr": "not-a-cidr", "vrf_id": vrf_id},
+        },
+    )
+    assert r.status_code == 422
+    assert (await client.get("/api/v1/vlans")).json()["total"] == vlans_before
+
+    # mid-transaction failure (overlapping prefix) -> the new VLAN rolls back too
+    await _prefix(client, "10.20.0.0/24")
+    r = await client.post(
+        "/api/v1/networks",
+        json={
+            "vlan": {"vid": 78, "name": "GONE-78"},
+            "prefix": {"cidr": "10.20.0.0/24", "vrf_id": vrf_id},
+            "gateway": "10.20.0.1",
+        },
+    )
+    assert r.status_code == 409, r.text
+    assert (await client.get("/api/v1/vlans")).json()["total"] == vlans_before
+    vlans = (await client.get("/api/v1/vlans")).json()["items"]
+    assert not any(v["vid"] == 78 for v in vlans)
+
+
+async def test_networks_wizard_reuses_vlan_by_id(client):
+    vrf_id = await _vrf(client)
+    vlan = (
+        await client.post("/api/v1/vlans", json={"vid": 55, "name": "voice"})
+    ).json()
+    r = await client.post(
+        "/api/v1/networks",
+        json={
+            "vlan_id": vlan["id"],
+            "prefix": {"cidr": "10.55.0.0/24", "vrf_id": vrf_id},
+        },
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["vlan_id"] == vlan["id"]
+    assert r.json()["ip_range_id"] is None
+
+
+# --- V6.1: migration 0025 scratch-DB check ---------------------------------
+
+async def test_migration_0025_columns_backfill_rollback():
+    """Scratch DB: seed a range + member address at 0024, upgrade to head —
+    gateway/dns columns appear and the member's ip_range_id backfills;
+    downgrade to 0024 drops them; re-upgrade re-links (idempotent)."""
+    import os
+    import subprocess
+
+    import asyncpg
+
+    from tests.conftest import _base_dsn, _split_dsn
+
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    root, query = _split_dsn(_base_dsn())
+    db = "ipam_test_migrate"
+    pg_url = f"{root}/{db}{query}"
+    env = dict(
+        os.environ,
+        DATABASE_URL=pg_url.replace("postgresql://", "postgresql+asyncpg://"),
+    )
+
+    def alembic(*args: str) -> None:
+        subprocess.run(["alembic", *args], check=True, env=env, cwd=backend_dir)
+
+    conn = await asyncpg.connect(f"{root}/postgres{query}")
+    try:
+        await conn.execute(f'DROP DATABASE IF EXISTS "{db}" WITH (FORCE)')
+        await conn.execute(f'CREATE DATABASE "{db}"')
+    finally:
+        await conn.close()
+
+    try:
+        alembic("upgrade", "0024_ip_source")
+        conn = await asyncpg.connect(pg_url)
+        try:
+            cols = {
+                r["column_name"]
+                for r in await conn.fetch(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = 'prefixes'"
+                )
+            }
+            assert "gateway" not in cols and "dns_servers" not in cols
+
+            await conn.execute("INSERT INTO vrfs (name) VALUES ('Mig')")
+            await conn.execute(
+                "INSERT INTO prefixes (prefix, vrf_id) VALUES ('10.81.0.0/24', 1)"
+            )
+            await conn.execute(
+                "INSERT INTO ip_ranges "
+                "(prefix_id, vrf_id, start_address, start_int, end_address, "
+                " end_int, role) VALUES "
+                "(1, 1, '10.81.0.100', 173025380, '10.81.0.199', 173025479, 'dhcp')"
+            )
+            # one member + one outsider
+            await conn.execute(
+                "INSERT INTO ip_addresses "
+                "(address, address_int, prefix_id, vrf_id) VALUES "
+                "('10.81.0.150', 173025430, 1, 1), "
+                "('10.81.0.50', 173025330, 1, 1)"
+            )
+        finally:
+            await conn.close()
+
+        alembic("upgrade", "head")
+        conn = await asyncpg.connect(pg_url)
+        try:
+            cols = {
+                r["column_name"]
+                for r in await conn.fetch(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = 'prefixes'"
+                )
+            }
+            assert {"gateway", "dns_servers"} <= cols
+            rows = {
+                r["address"]: r["ip_range_id"]
+                for r in await conn.fetch(
+                    "SELECT host(address) AS address, ip_range_id FROM ip_addresses"
+                )
+            }
+            assert rows == {"10.81.0.150": 1, "10.81.0.50": None}
+        finally:
+            await conn.close()
+
+        alembic("downgrade", "0024_ip_source")
+        conn = await asyncpg.connect(pg_url)
+        try:
+            cols = {
+                r["column_name"]
+                for r in await conn.fetch(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = 'prefixes'"
+                )
+            }
+            assert "gateway" not in cols
+            acols = {
+                r["column_name"]
+                for r in await conn.fetch(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = 'ip_addresses'"
+                )
+            }
+            assert "ip_range_id" not in acols
+        finally:
+            await conn.close()
+
+        # re-upgrade re-links — the backfill UPDATE is idempotent
+        alembic("upgrade", "head")
+        conn = await asyncpg.connect(pg_url)
+        try:
+            rows = {
+                r["address"]: r["ip_range_id"]
+                for r in await conn.fetch(
+                    "SELECT host(address) AS address, ip_range_id FROM ip_addresses"
+                )
+            }
+            assert rows == {"10.81.0.150": 1, "10.81.0.50": None}
+        finally:
+            await conn.close()
+    finally:
+        conn = await asyncpg.connect(f"{root}/postgres{query}")
+        try:
+            await conn.execute(f'DROP DATABASE IF EXISTS "{db}" WITH (FORCE)')
+        finally:
+            await conn.close()

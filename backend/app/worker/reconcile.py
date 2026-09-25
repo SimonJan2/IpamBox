@@ -6,6 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ip_address import IPAddress, IPStatus
+from app.models.ip_range import IPRange
+from app.services.ranges import containing_range
 from app.worker.scanner import HostResult
 
 # Reconcile policy keys read from effective settings (Settings > Features).
@@ -72,6 +74,14 @@ async def reconcile(
         )
     ).scalars().all()
     existing = {int(r.address_int): r for r in rows}
+    # Pool membership is informational for the scanner — a live host inside
+    # a dhcp range is an observation, not a rogue static assignment, so no
+    # guard here; membership gets stamped/kept fresh on every pass.
+    ranges = (
+        await session.execute(
+            select(IPRange).where(IPRange.prefix_id == prefix_id)
+        )
+    ).scalars().all()
     seen_ints: set[int] = set()
     new_count = 0
 
@@ -81,12 +91,14 @@ async def reconcile(
         seen_ints.add(key)
         row = existing.get(key)
         if row is None:
+            hit = containing_range(ranges, key)
             session.add(
                 IPAddress(
                     address=h.ip,
                     address_int=key,
                     prefix_id=prefix_id,
                     vrf_id=vrf_id,
+                    ip_range_id=hit.id if hit else None,
                     mac_address=h.mac,
                     vendor=h.vendor,
                     hostname=h.hostname,
@@ -99,6 +111,8 @@ async def reconcile(
             )
             new_count += 1
         else:
+            hit = containing_range(ranges, key)
+            row.ip_range_id = hit.id if hit else None
             # Observed fields refresh below, but `source` is never rewritten:
             # a manual or imported row keeps its provenance — the scanner
             # owns only rows it created. (services.ipam.may_write is the
