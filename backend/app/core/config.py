@@ -59,6 +59,13 @@ class Settings(BaseSettings):
     changelog_retention_days: int = 0      # auto-purge old changelog entries
     scan_job_retention_days: int = 0       # auto-purge terminal scan jobs
     cert_warn_days: int = 30               # amber "expiring soon" threshold
+    # Monitoring lane (V7) — per-target ping/tcp/http checks on the worker's
+    # minute cron; notification channels carry transitions + cert/scan/MAC
+    # events to webhook/SMTP/Discord/Telegram.
+    monitoring_enabled: bool = True        # master switch for the check lane
+    monitor_concurrency: int = 64          # parallel probes inside one sweep
+    monitor_http_timeout: float = 5.0      # http check request timeout (s)
+    notify_retention_days: int = 0         # auto-purge notification_log rows
 
     # Auth settings (env vars are IPAMBOX_*)
     ipambox_password: str = ""  # pre-provision the admin password

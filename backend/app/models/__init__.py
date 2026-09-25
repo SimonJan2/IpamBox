@@ -11,6 +11,9 @@ from app.models.device import Device
 from app.models.import_batch import ImportBatch, ImportBatchStatus
 from app.models.ip_address import IPAddress, IPRole, IPStatus
 from app.models.ip_range import IPRange, IPRangeRole
+from app.models.monitoring import (ChannelKind, MonitorKind, MonitorState,
+                                   MonitorTarget, NotificationChannel,
+                                   NotificationLog)
 from app.models.prefix import Prefix, PrefixStatus
 from app.models.rack import Rack, RackFace, RackGroup
 from app.models.scan_job import ScanJob, ScanStatus
@@ -60,4 +63,10 @@ __all__ = [
     "IPRange",
     "IPRangeRole",
     "InterfaceKind",
+    "MonitorTarget",
+    "MonitorKind",
+    "MonitorState",
+    "NotificationChannel",
+    "NotificationLog",
+    "ChannelKind",
 ]

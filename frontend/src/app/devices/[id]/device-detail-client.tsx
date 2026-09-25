@@ -28,6 +28,7 @@ import { DocsLink } from "@/components/docs/docs-link";
 import { HistoryDialog, HistoryPanel } from "@/components/history-panel";
 import { InlineText } from "@/components/inline-edit";
 import { InterfacesPanel } from "@/components/interfaces-panel";
+import { MonitorSection } from "@/components/monitor-section";
 import { IpStatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -343,6 +344,8 @@ export default function DeviceDetailClient({ id }: { id: string }) {
                   label={`Edit notes for ${d.name}`}
                 />
               </div>
+
+              <MonitorSection deviceId={d.id} anchorLabel={d.name} />
             </div>
 
             {/* IPs table + link picker */}

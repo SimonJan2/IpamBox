@@ -5,6 +5,7 @@ from app.api.v1 import (
     backup,
     cables,
     changelog,
+    channels,
     color_rules,
     dashboard,
     devices,
@@ -13,6 +14,7 @@ from app.api.v1 import (
     imports,
     lists,
     maintenance,
+    monitors,
     networks,
     prefixes,
     rack_groups,
@@ -58,3 +60,6 @@ api_router.include_router(rack_groups.router)
 api_router.include_router(devices.router)
 api_router.include_router(cables.router)
 api_router.include_router(cables.interfaces_router)
+api_router.include_router(monitors.router)
+api_router.include_router(channels.router)
+api_router.include_router(channels.log_router)

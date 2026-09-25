@@ -1,6 +1,11 @@
 import { STATUS_TOKENS } from "@/lib/status-tokens";
 import { Badge } from "@/components/ui/badge";
-import type { IpStatus, PrefixStatus, ScanStatus } from "@/types";
+import type {
+  IpStatus,
+  MonitorState,
+  PrefixStatus,
+  ScanStatus,
+} from "@/types";
 
 const prefixVariant: Record<PrefixStatus, "secondary" | "default" | "amber" | "zinc"> = {
   container: "secondary",
@@ -25,4 +30,14 @@ export const PrefixStatusBadge = ({ s }: { s: PrefixStatus }) => (
 );
 export const ScanStatusBadge = ({ s }: { s: ScanStatus }) => (
   <Badge variant={scanVariant[s]}>{s}</Badge>
+);
+
+const monitorVariant: Record<MonitorState, "default" | "red" | "zinc"> = {
+  up: "default",
+  down: "red",
+  unknown: "zinc",
+};
+
+export const MonitorStateBadge = ({ s }: { s: MonitorState }) => (
+  <Badge variant={monitorVariant[s]}>{s}</Badge>
 );

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import {
+  Activity,
   BookOpen,
   Building2,
   Cable,
@@ -97,6 +98,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Operations",
     items: [
+      { href: "/monitoring", label: "Monitoring", icon: Activity },
       { href: "/discovery", label: "Discovery Inbox", icon: Inbox },
       { href: "/scans", label: "Scans", icon: ScanLine },
       { href: "/import", label: "Import", icon: Upload },
