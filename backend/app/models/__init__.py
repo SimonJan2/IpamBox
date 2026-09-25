@@ -16,6 +16,7 @@ from app.models.monitoring import (ChannelKind, MonitorKind, MonitorState,
                                    NotificationLog)
 from app.models.prefix import Prefix, PrefixStatus
 from app.models.rack import Rack, RackFace, RackGroup
+from app.models.review import ReviewDismissal
 from app.models.scan_job import ScanJob, ScanStatus
 from app.models.service import Service
 from app.models.site import Site
@@ -69,4 +70,5 @@ __all__ = [
     "NotificationChannel",
     "NotificationLog",
     "ChannelKind",
+    "ReviewDismissal",
 ]

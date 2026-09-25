@@ -28,6 +28,7 @@ from app.models.ip_range import IPRange
 from app.models.monitoring import MonitorTarget, NotificationChannel
 from app.models.prefix import Prefix
 from app.models.rack import Rack, RackGroup
+from app.models.review import ReviewDismissal
 from app.models.service import Service
 from app.models.site import Site
 from app.models.tag import Tag, TagAssignment
@@ -62,6 +63,7 @@ AUDITED_MODELS: tuple = (
     Cable,
     MonitorTarget,
     NotificationChannel,
+    ReviewDismissal,
 )
 # churn-only columns that produce noise, never signal — sort_order/pinned/
 # group_position change on every drag/drop and would spam the audit log

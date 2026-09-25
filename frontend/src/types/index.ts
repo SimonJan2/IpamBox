@@ -259,8 +259,47 @@ export interface DashboardStats {
   rack_u_used: number;
   rack_u_total: number;
   mac_mismatches: number;
+  /** Review center (V7.1): open findings across all sections. */
+  review_open: number;
+  /** Title of the highest-priority non-empty review section (or null). */
+  review_worst: string | null;
   certs_expiring: Certificate[];
   mac_mismatch_items: MacMismatchItem[];
+}
+
+// --- Review center (V7.1): one queue for every flag ----------------------
+
+export type ReviewEntityType = "ip_address" | "device" | "certificate" | "mac_group";
+
+export interface ReviewItem {
+  /** Together with the section key this is the dismissal tuple —
+   *  POST /review/dismiss takes the same fields back. */
+  entity_type: ReviewEntityType;
+  entity_id: number;
+  label: string;
+  sub: string | null;
+  detail: Record<string, unknown>;
+  flagged_at: string | null;
+  fingerprint: string;
+  // Populated only on entries of a section's `dismissed` list.
+  dismissed_at: string | null;
+  dismissed_by: string | null;
+  dismiss_notes: string | null;
+}
+
+export interface ReviewSection {
+  key: string;
+  title: string;
+  /** Honest open-item count — `items`/`dismissed` are capped at ~50. */
+  count: number;
+  items: ReviewItem[];
+  dismissed: ReviewItem[];
+  /** Set when a section is inert by configuration (e.g. aging disabled). */
+  note: string | null;
+}
+
+export interface ReviewOut {
+  sections: ReviewSection[];
 }
 
 export interface PrefixNode {

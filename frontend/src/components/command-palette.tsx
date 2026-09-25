@@ -7,6 +7,7 @@ import {
   Boxes,
   Building2,
   Cable,
+  ClipboardCheck,
   Container,
   Cpu,
   Crosshair,
@@ -124,6 +125,28 @@ interface Item {
 }
 
 const ENC = encodeURIComponent;
+
+// Static page jumps — destinations the API search can't return (query pages
+// that aren't entities). Matched against the palette query by label/sub.
+const PAGES: Item[] = [
+  {
+    group: "Pages",
+    icon: ClipboardCheck,
+    label: "Review",
+    sub: "flag triage queue",
+    href: "/review",
+  },
+];
+
+function pagesFor(q: string): Item[] {
+  const needle = q.trim().toLowerCase();
+  if (!needle) return [];
+  return PAGES.filter(
+    (p) =>
+      p.label.toLowerCase().includes(needle) ||
+      (p.sub ?? "").toLowerCase().includes(needle)
+  );
+}
 
 function itemsFor(res: SearchOut, q: string): Item[] {
   const items: Item[] = [];
@@ -336,7 +359,7 @@ export function CommandPalette({
         sub: docCategoryLabel(d.category),
         href: docHref(d.slug),
       }));
-    return [...items, ...docItems];
+    return [...pagesFor(q), ...items, ...docItems];
   }, [q, items, recent]);
 
   const pick = (item: Item) => {

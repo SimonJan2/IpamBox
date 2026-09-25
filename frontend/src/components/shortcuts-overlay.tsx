@@ -29,6 +29,7 @@ const GROUPS: Group[] = [
     name: "Go to (press g, then the key)",
     items: [
       ["g d", "Dashboard"],
+      ["g v", "Review"],
       ["g p", "Subnets"],
       ["g s", "Scans"],
       ["g i", "Discovery inbox"],

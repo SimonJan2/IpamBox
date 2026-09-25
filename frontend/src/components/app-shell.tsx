@@ -9,6 +9,7 @@ import {
   Building2,
   Cable,
   ChevronDown,
+  ClipboardCheck,
   Container,
   Cpu,
   FolderTree,
@@ -98,6 +99,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Operations",
     items: [
+      { href: "/review", label: "Review", icon: ClipboardCheck },
       { href: "/monitoring", label: "Monitoring", icon: Activity },
       { href: "/discovery", label: "Discovery Inbox", icon: Inbox },
       { href: "/scans", label: "Scans", icon: ScanLine },

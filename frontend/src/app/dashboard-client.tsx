@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   Boxes,
   Cable,
+  ClipboardCheck,
   Globe,
   HardDrive,
   History,
@@ -201,7 +202,19 @@ export default function DashboardPage() {
         />
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
+        <StatCard
+          title="Review queue"
+          value={stats?.review_open ?? "—"}
+          sub={
+            stats?.review_open
+              ? `worst: ${stats.review_worst}`
+              : "queue clear"
+          }
+          icon={ClipboardCheck}
+          href="/review"
+          danger={Boolean(stats?.review_open)}
+        />
         <StatCard
           title="Circuits"
           value={stats?.circuits_total ?? "—"}
@@ -384,11 +397,14 @@ export default function DashboardPage() {
               <AlertTriangle className="h-4 w-4 text-amber-400" />
               MAC mismatches
             </CardTitle>
-            {stats && stats.mac_mismatches > 0 && (
-              <span className="text-xs text-muted-foreground">
-                {stats.mac_mismatches} flagged
-              </span>
-            )}
+            <Link
+              href="/review"
+              className="text-xs text-muted-foreground hover:underline"
+            >
+              {stats && stats.mac_mismatches > 0
+                ? `${stats.mac_mismatches} flagged · triage`
+                : "review queue"}
+            </Link>
           </CardHeader>
           <CardContent className="space-y-2">
             <AsyncPanel

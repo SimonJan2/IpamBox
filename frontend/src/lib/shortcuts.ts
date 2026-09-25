@@ -15,6 +15,7 @@ const CHORD_TIMEOUT_MS = 800;
 /** g-chord -> route. Kept next to NAV_GROUPS destinations in app-shell. */
 export const G_CHORDS: Record<string, { href: string; label: string }> = {
   d: { href: "/", label: "Dashboard" },
+  v: { href: "/review", label: "Review" },
   p: { href: "/prefixes", label: "Subnets" },
   s: { href: "/scans", label: "Scans" },
   i: { href: "/discovery", label: "Discovery inbox" },
