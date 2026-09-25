@@ -66,6 +66,12 @@ class Settings(BaseSettings):
     ipambox_session_hours: int = 168  # one week
     ipambox_allow_insecure: bool = False  # disable auth entirely (behind a trusted proxy)
     ipambox_cookie_secure: bool = False  # set True when serving over HTTPS
+    # Master key for secrets at rest — encrypts the *_enc credential columns
+    # (monitoring channels, SNMP communities, controller tokens, OIDC). The
+    # file wins over the env var, same as ipambox_password_file. Rotating it
+    # invalidates every stored credential — there is no re-wrap tooling.
+    ipambox_secret_key: str = ""
+    ipambox_secret_key_file: str = ""
     # X-Forwarded-For is only honored when the socket peer is inside one of
     # these networks (comma-separated IPs/CIDRs). Loopback covers dev mode;
     # compose adds the pinned `ipam` bridge subnet (see docker-compose.yml).

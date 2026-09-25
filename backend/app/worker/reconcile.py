@@ -94,10 +94,15 @@ async def reconcile(
                     device_type=h.device_type,
                     status=discovered_status,
                     last_seen=now,
+                    source="scan",
                 )
             )
             new_count += 1
         else:
+            # Observed fields refresh below, but `source` is never rewritten:
+            # a manual or imported row keeps its provenance — the scanner
+            # owns only rows it created. (services.ipam.may_write is the
+            # ownership primitive later writers call before overwriting.)
             row.last_seen = now
             if row.missed_scans:
                 row.missed_scans = 0

@@ -6,6 +6,7 @@ from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.list_params import parse_str_set
 from app.core.db import get_session
 from app.core.deps import DATA_DELETE, DATA_WRITE, has_perm, require_perm
 from app.models.cabling import DeviceInterface
@@ -46,7 +47,7 @@ async def _check_interface_link(
 ADDRESS_CSV_COLUMNS = [
     "address", "prefix_id", "vrf_id", "hostname", "mac_address",
     "vendor", "status", "role", "nat_inside_id", "device_type",
-    "open_ports", "last_seen", "notes", "display_color",
+    "open_ports", "last_seen", "source", "notes", "display_color",
 ]
 
 
@@ -57,9 +58,12 @@ def _addresses_stmt(
     tag_ids: set[int] | None,
     untagged: bool,
     q: str | None,
+    sources: set[str] | None = None,
 ):
     """Shared list/export filter construction — one predicate, two callers."""
     stmt = select(IPAddress).order_by(IPAddress.address_int)
+    if sources:
+        stmt = stmt.where(IPAddress.source.in_(sources))
     if vrf_id is not None:
         stmt = stmt.where(IPAddress.vrf_id == vrf_id)
     if prefix_id is not None:
@@ -132,8 +136,8 @@ def _address_csv_row(a: IPAddress) -> list:
         a.role.value if a.role else "", a.nat_inside_id or "",
         a.device_type or "",
         " ".join(str(p) for p in (a.open_ports or [])),
-        a.last_seen.isoformat() if a.last_seen else "", a.notes or "",
-        a.display_color or "",
+        a.last_seen.isoformat() if a.last_seen else "", a.source,
+        a.notes or "", a.display_color or "",
     ]
 
 
@@ -153,18 +157,25 @@ async def export_addresses(
     q: str | None = Query(
         default=None, description="match address/hostname/mac/vendor/notes"
     ),
+    source: str | None = Query(
+        default=None,
+        description="source or comma-separated set (manual|import|scan|…)",
+    ),
     session: AsyncSession = Depends(get_session),
 ):
     """Same filters as the list endpoint — what a filtered view shows is what
-    downloads. Extras over the list: `status`/`tags` accept CSV sets and
-    `untagged` selects addresses with no tag assignments."""
+    downloads. Extras over the list: `status`/`tags`/`source` accept CSV sets
+    and `untagged` selects addresses with no tag assignments."""
     statuses = _parse_statuses(status)
     tag_ids = _parse_tag_ids(tags, tag_id)
-    stmt = _addresses_stmt(vrf_id, prefix_id, statuses, tag_ids, untagged, q)
+    sources = parse_str_set(source)
+    stmt = _addresses_stmt(
+        vrf_id, prefix_id, statuses, tag_ids, untagged, q, sources
+    )
     rows = (await session.execute(stmt)).scalars().all()
     rows = await stamp_colors(session, "addresses", rows)
     filtered = any(
-        x is not None for x in (vrf_id, prefix_id, statuses, tag_ids)
+        x is not None for x in (vrf_id, prefix_id, statuses, tag_ids, sources)
     ) or untagged or bool(q)
     return csv_response(
         "addresses-filtered.csv" if filtered else "addresses.csv",
@@ -257,6 +268,7 @@ async def import_addresses(
                 status=IPStatus(status),
                 role=None if role is None else IPRole(role),
                 notes=r.get("notes") or None,
+                source="import",
             )
             existing.add((int(ip), prefix.id))
             to_add.append(row)
@@ -380,6 +392,10 @@ async def list_addresses(
     status: IPStatus | None = None,
     tag_id: int | None = None,
     q: str | None = Query(default=None, description="match address/hostname/mac"),
+    source: str | None = Query(
+        default=None,
+        description="source or comma-separated set (manual|import|scan|…)",
+    ),
     limit: int = Query(default=500, le=5000),
     offset: int = 0,
     session: AsyncSession = Depends(get_session),
@@ -391,6 +407,7 @@ async def list_addresses(
         {tag_id} if tag_id is not None else None,
         untagged=False,
         q=q,
+        sources=parse_str_set(source),
     )
     rows = (
         (await session.execute(stmt.limit(limit).offset(offset))).scalars().all()
@@ -449,6 +466,7 @@ async def create_address(body: IPAddressCreate, session: AsyncSession = Depends(
         counter_location=body.counter_location,
         custom_fields=body.custom_fields,
         notes=body.notes,
+        source="manual",
     )
     session.add(row)
     try:

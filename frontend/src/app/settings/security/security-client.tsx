@@ -1,7 +1,14 @@
 "use client";
 
 import { useId, useState } from "react";
-import { KeyRound, MonitorSmartphone, ShieldAlert, Trash2 } from "lucide-react";
+import Link from "next/link";
+import {
+  KeyRound,
+  Lock,
+  MonitorSmartphone,
+  ShieldAlert,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
@@ -9,7 +16,7 @@ import { useAsyncData } from "@/lib/use-async-data";
 import { fmtTs } from "@/lib/prefs";
 import { useAuth } from "@/lib/auth";
 import { ROLE_META } from "@/lib/permissions";
-import type { SessionOut } from "@/types";
+import type { SessionOut, SettingsOut } from "@/types";
 import { AsyncPanel } from "@/components/async-panel";
 import { DocsLink } from "@/components/docs/docs-link";
 import { Badge } from "@/components/ui/badge";
@@ -38,6 +45,61 @@ function fmtAgo(seconds: number | null): string {
   if (seconds < 7200) return `${Math.round(seconds / 60)}m`;
   if (seconds < 172800) return `${Math.round(seconds / 3600)}h`;
   return `${Math.round(seconds / 86400)}d`;
+}
+
+/** Read-only status for the secrets master key — env-provisioned, never an
+ *  input. Required before credential features (monitoring, SNMP, controller
+ *  sync, OIDC) can store anything. */
+function SecretsCard() {
+  const settingsQ = useAsyncData(() =>
+    api.get<SettingsOut>("/api/v1/settings")
+  );
+  const configured = settingsQ.data?.env.secret_key_configured;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Lock className="h-4 w-4" /> Secrets at rest
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2 text-sm text-muted-foreground">
+        <AsyncPanel
+          loading={settingsQ.loading}
+          error={settingsQ.error}
+          onRetry={settingsQ.reload}
+        >
+          <div className="flex items-center gap-2">
+            Master key
+            {configured ? (
+              <Badge
+                variant="outline"
+                className="border-emerald-500/40 text-emerald-400"
+              >
+                configured
+              </Badge>
+            ) : (
+              <Badge
+                variant="outline"
+                className="border-amber-500/40 text-amber-400"
+              >
+                not configured
+              </Badge>
+            )}
+          </div>
+          <p>
+            One master key encrypts every stored credential (monitoring
+            channels, SNMP communities, controller tokens, OIDC). Set{" "}
+            <code>IPAMBOX_SECRET_KEY</code> or{" "}
+            <code>IPAMBOX_SECRET_KEY_FILE</code> in <code>.env</code> and
+            restart — rotating it invalidates stored credentials.{" "}
+            <Link href="/docs/secrets" className="text-foreground hover:underline">
+              Secrets docs →
+            </Link>
+          </p>
+        </AsyncPanel>
+      </CardContent>
+    </Card>
+  );
 }
 
 export default function SecurityPage() {
@@ -104,6 +166,7 @@ export default function SecurityPage() {
             Accounts, passwords and sessions are managed by your reverse proxy.
           </CardContent>
         </Card>
+        <SecretsCard />
       </div>
     );
   }
@@ -251,6 +314,8 @@ export default function SecurityPage() {
           )}
         </CardContent>
       </Card>
+
+      <SecretsCard />
     </div>
   );
 }

@@ -92,6 +92,12 @@ class IPAddress(Base):
     import_batch_id: Mapped[int | None] = mapped_column(
         ForeignKey("import_batches.id", ondelete="SET NULL"), index=True
     )
+    # Provenance — who created/maintains this row. Enum-by-convention, same
+    # vocabulary as devices.source: manual|import|scan|snmp|integration.
+    # services.ipam.may_write is the field-ownership primitive.
+    source: Mapped[str] = mapped_column(
+        String(16), default="manual", server_default="manual", index=True
+    )
     notes: Mapped[str | None] = mapped_column(Text)
     # Manual row accent (#rrggbb, Tag.color format); NULL = none.
     row_color: Mapped[str | None] = mapped_column(String(7))

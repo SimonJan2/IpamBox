@@ -12,6 +12,7 @@ from app.schemas.settings import LanInfo, SettingsOut, SettingsPatch, SystemInfo
 from app.services import runtime_settings
 from app.services.backup import _alembic_revisions
 from app.services.runtime_settings import SettingsValidationError
+from app.services.secrets import secrets_configured
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -59,6 +60,7 @@ async def _build_out(session: AsyncSession) -> SettingsOut:
             "ipambox_allow_insecure": env.ipambox_allow_insecure,
             "ipambox_cookie_secure": env.ipambox_cookie_secure,
             "ipambox_password_set": bool(env.ipambox_password or env.ipambox_password_file),
+            "secret_key_configured": secrets_configured(),
             "backup_dir": env.backup_dir,
         },
         system=SystemInfo(

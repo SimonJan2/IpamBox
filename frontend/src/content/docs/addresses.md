@@ -41,6 +41,20 @@ hosts.
   live value wins but the address is flagged for review and counted on the
   dashboard.
 
+## Provenance
+
+Every address records **where it came from** in `source`:
+
+`manual` — created or reserved in the UI · `import` — workbook/CSV import ·
+`scan` — first seen by the network scanner (`snmp` and `integration` are
+reserved for future writers).
+
+The scanner refreshes observed fields (last seen, MAC, vendor, ports) on any
+address but **never claims ownership** — a manual or imported row keeps its
+source, so a scan can't launder curated data into "discovered". The filter
+panel's **Source** facet and the `?source=` API/export parameter select by
+it, and the IP drawer shows it as a badge next to status.
+
 ## Bulk operations
 
 Select rows (or drag a span in the [subnet matrix](/docs/subnets)) to set

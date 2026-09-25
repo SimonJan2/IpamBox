@@ -530,6 +530,7 @@ export default function PrefixDetailPage({ id }: { id: string }) {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [search, setSearch, setSearchNow] = useUrlText("q");
   const [statusSel, setStatusSel] = useUrlSet<IpStatus>("status");
+  const [sourceSel, setSourceSel] = useUrlSet("source");
   const [tagSelRaw, setTagSelRaw] = useUrlSet("tags");
   const tagSel = useMemo(
     () => new Set([...tagSelRaw].map(Number).filter((n) => !isNaN(n))),
@@ -700,7 +701,11 @@ export default function PrefixDetailPage({ id }: { id: string }) {
   const view = showGrid && viewSel === "grid" ? "grid" : "list";
 
   const filtersActive =
-    !!search || statusSel.size > 0 || tagSel.size > 0 || untagged;
+    !!search ||
+    statusSel.size > 0 ||
+    sourceSel.size > 0 ||
+    tagSel.size > 0 ||
+    untagged;
 
   const filtered = useMemo(() => {
     const ql = search.trim().toLowerCase();
@@ -710,12 +715,13 @@ export default function PrefixDetailPage({ id }: { id: string }) {
         if (!hay.some((v) => v && v.toLowerCase().includes(ql))) return false;
       }
       if (statusSel.size && !statusSel.has(a.status)) return false;
+      if (sourceSel.size && !sourceSel.has(a.source)) return false;
       const at = addrTags.get(a.id) ?? [];
       if (untagged && at.length > 0) return false;
       if (tagSel.size && !at.some((t) => tagSel.has(t.id))) return false;
       return true;
     });
-  }, [page, search, statusSel, tagSel, untagged, addrTags]);
+  }, [page, search, statusSel, sourceSel, tagSel, untagged, addrTags]);
 
   const matchIds = useMemo(
     () => (filtersActive ? new Set(filtered.map((a) => a.id)) : null),
@@ -733,7 +739,7 @@ export default function PrefixDetailPage({ id }: { id: string }) {
   }, [filtered, tagSel, addrTags]);
 
   const clearFilters = () =>
-    setSearchNow("", { status: null, tags: null, untagged: null });
+    setSearchNow("", { status: null, source: null, tags: null, untagged: null });
 
   // Export mirrors the on-screen filter state — same params the backend
   // export endpoint accepts; display-only params (view, sort) stay out.
@@ -741,10 +747,11 @@ export default function PrefixDetailPage({ id }: { id: string }) {
     const p = new URLSearchParams({ prefix_id: String(prefixId) });
     if (search.trim()) p.set("q", search.trim());
     if (statusSel.size) p.set("status", [...statusSel].join(","));
+    if (sourceSel.size) p.set("source", [...sourceSel].join(","));
     if (tagSel.size) p.set("tags", [...tagSel].join(","));
     if (untagged) p.set("untagged", "1");
     return `/api/v1/addresses/export.csv?${p}`;
-  }, [prefixId, search, statusSel, tagSel, untagged]);
+  }, [prefixId, search, statusSel, sourceSel, tagSel, untagged]);
 
   const pickAddress = (a: IpAddress) => {
     setFocusInt(Number(a.address_int));
@@ -1030,6 +1037,8 @@ export default function PrefixDetailPage({ id }: { id: string }) {
                   onSearch={setSearch}
                   statusSel={statusSel}
                   onToggleStatus={(s) => setStatusSel(toggleIn(statusSel, s))}
+                  sourceSel={sourceSel}
+                  onToggleSource={(s) => setSourceSel(toggleIn(sourceSel, s))}
                   tagSel={tagSel}
                   onToggleTag={(id) => setTagSel(toggleIn(tagSel, id))}
                   untagged={untagged}

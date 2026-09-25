@@ -175,6 +175,7 @@ async def _insert_address(session, row, vrf_ids, prefix_ids, batch_id):
         counter_location=row.get("counter"),
         custom_fields=row.get("custom_fields"),
         import_batch_id=batch_id,
+        source="import",
         notes=row.get("notes"),
     )
     session.add(addr)

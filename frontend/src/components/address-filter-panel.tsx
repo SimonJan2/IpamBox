@@ -32,6 +32,8 @@ export function AddressFilterPanel({
   onSearch,
   statusSel,
   onToggleStatus,
+  sourceSel,
+  onToggleSource,
   tagSel,
   onToggleTag,
   untagged,
@@ -49,6 +51,8 @@ export function AddressFilterPanel({
   onSearch: (v: string) => void;
   statusSel: Set<IpStatus>;
   onToggleStatus: (s: IpStatus) => void;
+  sourceSel: Set<string>;
+  onToggleSource: (s: string) => void;
   tagSel: Set<number>;
   onToggleTag: (id: number) => void;
   untagged: boolean;
@@ -61,11 +65,25 @@ export function AddressFilterPanel({
   const { can } = useAuth();
   const canWrite = can(PERM.DATA_WRITE);
   const [newTagOpen, setNewTagOpen] = useState(false);
-  const active = !!search || statusSel.size > 0 || tagSel.size > 0 || untagged;
+  const active =
+    !!search ||
+    statusSel.size > 0 ||
+    sourceSel.size > 0 ||
+    tagSel.size > 0 ||
+    untagged;
 
   const statusCounts = useMemo(() => {
     const m = new Map<IpStatus, number>();
     for (const a of items) m.set(a.status, (m.get(a.status) ?? 0) + 1);
+    return m;
+  }, [items]);
+
+  // Provenance facet — same vocabulary the API's `source=` CSV set accepts
+  // (manual|import|scan|snmp|integration). Only rendered when the set has
+  // more than one source, so a homogeneous list stays uncluttered.
+  const sourceCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const a of items) m.set(a.source, (m.get(a.source) ?? 0) + 1);
     return m;
   }, [items]);
 
@@ -131,6 +149,38 @@ export function AddressFilterPanel({
           })}
         </div>
       </div>
+
+      {(sourceCounts.size > 1 || sourceSel.size > 0) && (
+        <div>
+          <div className="mb-1.5 text-xs font-medium text-muted-foreground">
+            Source
+          </div>
+          <div className="space-y-0.5">
+            {[...new Set([...sourceCounts.keys(), ...sourceSel])]
+              .sort()
+              .map((s) => {
+              const on = sourceSel.has(s);
+              return (
+                <button
+                  key={s}
+                  onClick={() => onToggleSource(s)}
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded-md px-2 py-1 text-sm transition-colors",
+                    on ? "bg-accent" : "hover:bg-accent/50"
+                  )}
+                >
+                  <i className="h-2 w-2 rounded-full border border-dashed border-muted-foreground" />
+                  <span className="flex-1 text-left">{s}</span>
+                  {on && <Check className="h-3.5 w-3.5" />}
+                  <span className="text-xs text-muted-foreground">
+                    {sourceCounts.get(s) ?? 0}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div>
         <div className="mb-1.5 flex items-center justify-between">

@@ -21,7 +21,7 @@ Operational settings follow **`.env` default → database override**:
 | **Features** | Behavior toggles grouped by concern — *Scanner reconciliation* (offline marking, grace scans, reactivation, inbox, MAC/hostname/device-type policy), *Scan targeting* (auto-create prefixes, VRF inference), *Discovery inbox* expiry, *Data retention* (changelog + scan history auto-purge), *Certificates* warn window, *Site cascade*. All defaults reproduce the original behavior |
 | **Scanning** | Runtime scanner config: networks, exclusions, schedule, rate limits, timeouts, ports |
 | **Backup & Restore** | Download a `.json.gz` snapshot, restore on any install, schedule recurring backups |
-| **Account & Security** | Your password and active sessions (revoke others remotely) |
+| **Account & Security** | Your password and active sessions (revoke others remotely), plus the [secrets-at-rest](/docs/secrets) master-key status |
 | **Users & Roles** | Admin console — create users, set [roles](/docs/accounts-and-roles) |
 | **Appearance** | Theme (IpamBox Nightwire is the default; also IpamBox Tokyo Night/Storm, IpamBox Dark/Light, LocalSend Mint/Dark, NetBox Light/Dark, system), ambient effects, density, list preferences |
 | **Color Rules** | Admin-managed conditional row coloring — see [Row Colors](/docs/row-colors) |

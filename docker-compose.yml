@@ -44,6 +44,10 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3010}
       IPAMBOX_PASSWORD: ${IPAMBOX_PASSWORD:-}
       IPAMBOX_PASSWORD_FILE: ${IPAMBOX_PASSWORD_FILE:-}
+      # master key for secrets at rest (monitoring/SNMP/controller/OIDC
+      # creds) — rotating it invalidates stored credentials
+      IPAMBOX_SECRET_KEY: ${IPAMBOX_SECRET_KEY:-}
+      IPAMBOX_SECRET_KEY_FILE: ${IPAMBOX_SECRET_KEY_FILE:-}
       IPAMBOX_SESSION_HOURS: ${IPAMBOX_SESSION_HOURS:-168}
       IPAMBOX_ALLOW_INSECURE: ${IPAMBOX_ALLOW_INSECURE:-false}
       # false so logins work over plain HTTP on a LAN (browsers reject Secure
@@ -110,6 +114,9 @@ services:
       SCAN_MIN_INTERVAL_SECONDS: ${SCAN_MIN_INTERVAL_SECONDS:-15}
       SCAN_MAX_HOSTS: ${SCAN_MAX_HOSTS:-4096}
       SCAN_TCP_PORTS: ${SCAN_TCP_PORTS:-22,80,443,445,8080}
+      # worker needs the master key to decrypt creds it uses (SNMP etc.)
+      IPAMBOX_SECRET_KEY: ${IPAMBOX_SECRET_KEY:-}
+      IPAMBOX_SECRET_KEY_FILE: ${IPAMBOX_SECRET_KEY_FILE:-}
       BACKUP_DIR: ${BACKUP_DIR:-/backups}
       BACKUP_INTERVAL_MINUTES: ${BACKUP_INTERVAL_MINUTES:-0}
       BACKUP_KEEP: ${BACKUP_KEEP:-14}
