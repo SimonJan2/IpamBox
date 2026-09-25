@@ -117,6 +117,13 @@ services:
       # worker needs the master key to decrypt creds it uses (SNMP etc.)
       IPAMBOX_SECRET_KEY: ${IPAMBOX_SECRET_KEY:-}
       IPAMBOX_SECRET_KEY_FILE: ${IPAMBOX_SECRET_KEY_FILE:-}
+      # SNMP trap receiver (V8.1) — opt-in. network_mode: host means the
+      # listener binds the HOST's UDP port directly; a `ports:` mapping
+      # would be ignored under host networking. Both values are also
+      # runtime-editable (Settings → Features → SNMP) and re-bind within
+      # a minute — these envs are just the boot defaults.
+      SNMP_TRAPS_ENABLED: ${SNMP_TRAPS_ENABLED:-false}
+      SNMP_TRAP_PORT: ${SNMP_TRAP_PORT:-162}
       BACKUP_DIR: ${BACKUP_DIR:-/backups}
       BACKUP_INTERVAL_MINUTES: ${BACKUP_INTERVAL_MINUTES:-0}
       BACKUP_KEEP: ${BACKUP_KEEP:-14}

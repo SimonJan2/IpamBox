@@ -166,6 +166,8 @@ EDITABLE: dict[str, SettingSpec] = {
     "snmp_timeout": SettingSpec("snmp_timeout", _v_float(0.5, 10.0)),
     "snmp_learns_interfaces": SettingSpec("snmp_learns_interfaces", _v_bool),
     "snmp_fills_connected": SettingSpec("snmp_fills_connected", _v_bool),
+    "snmp_traps_enabled": SettingSpec("snmp_traps_enabled", _v_bool),
+    "snmp_trap_port": SettingSpec("snmp_trap_port", _v_int(1, 65535)),
     "backup_interval_minutes": SettingSpec(
         "backup_interval_minutes", _v_int(0, 10080)
     ),

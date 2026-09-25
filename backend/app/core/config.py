@@ -75,6 +75,11 @@ class Settings(BaseSettings):
     snmp_timeout: float = 2.0              # per-request timeout (s)
     snmp_learns_interfaces: bool = True    # upsert device_interfaces from IF-MIB
     snmp_fills_connected: bool = True      # bridge-MAC -> connected_interface_id
+    # SNMP trap receiver (V8.1) — opt-in UDP listener for near-realtime
+    # link state; lives in the worker (host-networked, binds the host's
+    # port directly). Off by default: a listening port is opt-in.
+    snmp_traps_enabled: bool = False       # master switch for the trap listener
+    snmp_trap_port: int = 162              # UDP port — privileged below 1024
 
     # Auth settings (env vars are IPAMBOX_*)
     ipambox_password: str = ""  # pre-provision the admin password

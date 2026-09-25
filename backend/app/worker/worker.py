@@ -28,6 +28,7 @@ from app.schemas.common import ip_display
 from app.services import notify, prefix_math, runtime_settings, scan_policy
 from app.worker.monitors import monitor_tick, run_monitor_sweep
 from app.worker.snmp import run_snmp_poll, snmp_tick
+from app.worker import traps as trap_rx
 from app.worker.reconcile import reconcile
 from app.worker.scanner import (
     ScanCancelled,
@@ -642,6 +643,16 @@ async def scheduler_tick(ctx: dict) -> dict:
     async with SessionLocal() as session:
         eff = await runtime_settings.get_effective(session)
 
+    # Trap receiver is a runtime toggle: the minute tick re-syncs the
+    # socket so enable/disable/port changes apply without a restart.
+    try:
+        await trap_rx.ensure(
+            bool(eff.values.get("snmp_traps_enabled")),
+            int(eff.values["snmp_trap_port"]),
+        )
+    except Exception:
+        log.warning("snmp trap listener sync failed", exc_info=True)
+
     r = get_redis()  # shared client — never close per call
     try:
         iface = eff.values["scan_interface"]
@@ -755,9 +766,21 @@ async def startup(ctx: dict):
                 "failed — worker restarted",
                 {"scan_id": j.id, "cidr": j.cidr, "error": j.error},
             )
+    # opt-in trap listener — bind at boot so it's live before the first
+    # scheduler tick (which re-syncs it every minute anyway)
+    try:
+        async with SessionLocal() as session:
+            eff = await runtime_settings.get_effective(session)
+        await trap_rx.ensure(
+            bool(eff.values.get("snmp_traps_enabled")),
+            int(eff.values["snmp_trap_port"]),
+        )
+    except Exception:
+        log.warning("snmp trap listener startup failed", exc_info=True)
 
 
 async def shutdown(ctx: dict):
+    trap_rx.stop()
     await close_redis()
     await close_arq_pool()
 

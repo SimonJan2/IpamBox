@@ -48,6 +48,9 @@ class SettingsPatch(BaseModel):
     snmp_timeout: float | None = None
     snmp_learns_interfaces: bool | None = None
     snmp_fills_connected: bool | None = None
+    # SNMP trap receiver (V8.1)
+    snmp_traps_enabled: bool | None = None
+    snmp_trap_port: int | None = None
 
 
 class LanInfo(BaseModel):
