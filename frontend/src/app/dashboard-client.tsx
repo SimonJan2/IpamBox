@@ -33,7 +33,15 @@ import { useChartTheme } from "@/lib/use-chart-theme";
 import { usePolling } from "@/lib/use-polling";
 import { formatKg, formatWatts } from "@/lib/rack-capacity";
 import { timeAgo } from "@/lib/utils";
-import type { ChangeLogEntry, DashboardStats, Page, Prefix, Rack, ScanJob } from "@/types";
+import type {
+  ChangeLogEntry,
+  DashboardStats,
+  MonitorSummary,
+  Page,
+  Prefix,
+  Rack,
+  ScanJob,
+} from "@/types";
 import { AsyncPanel } from "@/components/async-panel";
 import { DocsLink } from "@/components/docs/docs-link";
 import { ExpiryBadge } from "@/components/expiry-badge";
@@ -55,22 +63,31 @@ function StatCard({
   sub,
   icon: Icon,
   href,
+  danger,
 }: {
   title: string;
   value: React.ReactNode;
   sub?: string;
   icon: React.ElementType;
   href: string;
+  /** Down-state treatment — red border + value color. */
+  danger?: boolean;
 }) {
   return (
     <Link href={href} className="block">
-      <Card className="h-full transition-colors hover:border-emerald-500/30">
+      <Card
+        className={`h-full transition-colors hover:border-emerald-500/30 ${
+          danger ? "border-red-500/40 bg-red-500/5" : ""
+        }`}
+      >
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
-          <Icon className="h-4 w-4 text-emerald-400" />
+          <Icon className={`h-4 w-4 ${danger ? "text-red-400" : "text-emerald-400"}`} />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{value}</div>
+          <div className={`text-2xl font-bold ${danger ? "text-red-400" : ""}`}>
+            {value}
+          </div>
           {sub && <p className="mt-1 text-xs text-muted-foreground">{sub}</p>}
         </CardContent>
       </Card>
@@ -97,6 +114,9 @@ export default function DashboardPage() {
   const activityQ = useAsyncData(() =>
     api.get<Page<ChangeLogEntry>>("/api/v1/changelog?limit=6").then((p) => p.items)
   );
+  const monitorQ = useAsyncData(() =>
+    api.get<MonitorSummary>("/api/v1/monitor-targets/summary")
+  );
 
   const refresh = useCallback(async () => {
     const r = await Promise.all([
@@ -105,9 +125,10 @@ export default function DashboardPage() {
       scansQ.reload(),
       racksQ.reload(),
       activityQ.reload(),
+      monitorQ.reload(),
     ]);
     return JSON.stringify(r);
-  }, [statsQ.reload, prefixesQ.reload, scansQ.reload, racksQ.reload, activityQ.reload]);
+  }, [statsQ.reload, prefixesQ.reload, scansQ.reload, racksQ.reload, activityQ.reload, monitorQ.reload]);
 
   usePolling(refresh, { interval: 8000 });
 
@@ -180,7 +201,7 @@ export default function DashboardPage() {
         />
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <StatCard
           title="Circuits"
           value={stats?.circuits_total ?? "—"}
@@ -209,6 +230,22 @@ export default function DashboardPage() {
           value={stats?.services_total ?? "—"}
           icon={Server}
           href="/services"
+        />
+        <StatCard
+          title="Monitors"
+          value={
+            monitorQ.data
+              ? `${monitorQ.data.up} up / ${monitorQ.data.down} down`
+              : "—"
+          }
+          sub={
+            monitorQ.data
+              ? `${monitorQ.data.unknown} unknown · ${monitorQ.data.due} due`
+              : undefined
+          }
+          icon={Activity}
+          href="/monitoring"
+          danger={Boolean(monitorQ.data?.down)}
         />
       </div>
       </AsyncPanel>

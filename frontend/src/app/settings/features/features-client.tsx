@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
+  Activity,
   Archive,
   Container,
   Crosshair,
@@ -124,6 +125,41 @@ const GROUPS: {
         min: 0,
         max: 3650,
         hint: "Default 0 = never expire. Set N to auto-delete 'discovered' rows that haven't been seen for N days.",
+      },
+    ],
+  },
+  {
+    title: "Monitoring",
+    icon: Activity,
+    features: [
+      {
+        key: "monitoring_enabled",
+        label: "Monitoring enabled",
+        hint: "Default on: the per-minute monitor tick checks due targets. Off = the tick is a no-op — states freeze, no alerts fire.",
+      },
+      {
+        key: "monitor_concurrency",
+        label: "Check concurrency",
+        type: "int",
+        min: 1,
+        max: 512,
+        hint: "Default 64: parallel probes inside the single per-tick sweep job. Lower it on constrained workers.",
+      },
+      {
+        key: "monitor_http_timeout",
+        label: "HTTP check timeout (seconds)",
+        type: "int",
+        min: 1,
+        max: 30,
+        hint: "Default 5s per http check request. Ping/TCP reuse the scanner's probe timeouts.",
+      },
+      {
+        key: "notify_retention_days",
+        label: "Notification log retention (days)",
+        type: "int",
+        min: 0,
+        max: 3650,
+        hint: "Default 0 = keep forever. Set N to auto-delete notification_log rows older than N days.",
       },
     ],
   },

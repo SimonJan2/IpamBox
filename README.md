@@ -131,6 +131,28 @@ Scapy raw-socket scanning · Next.js 15 dark-mode UI
   with a stored (e.g. imported) MAC, the live value wins but the address
   is flagged `mac_mismatch` for review — the dashboard counts them.
 
+### Monitoring
+
+- **Per-target health checks** — `ping` (ICMP), `tcp` (port connect) and
+  `http` (GET against an expectation: empty = any 2xx/3xx, `status:NNN` =
+  exact code, anything else = body substring). Targets anchor to a device
+  or an IP address.
+- **Hysteresis**: a target flips `down` only after `down_after`
+  consecutive failures and recovers on the first success — no flapping
+  alerts. State changes emit events; steady state stays silent and never
+  touches the changelog.
+- **Second worker lane**: a per-minute cron batches all due targets into
+  ONE `run_monitor_sweep` job (semaphore-bounded probes, runtime-tunable)
+  so monitoring shares the `max_jobs=4` pool without starving scans.
+- **Notification channels** — webhook, SMTP, Discord and Telegram — carry
+  monitor transitions plus `cert.expiring`, `scan.failed` and
+  `mac_mismatch` events. Channel secrets (webhook URLs, SMTP passwords,
+  bot tokens) are encrypted with `IPAMBOX_SECRET_KEY` and are write-only
+  in the API; every delivery attempt is recorded in the notification log.
+- Surfaces: the live `/monitoring` board (10s poll), a dashboard card
+  with danger styling on down, per-device/IP monitor sections, and
+  channel admin + delivery log under **Settings → Monitoring**.
+
 ### Platform
 
 - **First-run auth**: the UI asks you to create the admin account on
@@ -242,6 +264,10 @@ apply without a restart, and can be reset back to the env value per key.
 | `BACKUP_KEEP` ✎ | how many scheduled files to retain | `14` |
 | `IMPORT_DIR` | where uploaded workbooks are stored for re-preview/commit | `<BACKUP_DIR>/imports` |
 | `IPAMBOX_RACKULA_BASE_URL` ✎ | self-hosted Rackula URL enabling "Open in Rackula" | — |
+| `MONITORING_ENABLED` ✎ | master switch for the health-check lane | `true` |
+| `MONITOR_CONCURRENCY` ✎ | parallel probes inside one monitor sweep | `64` |
+| `MONITOR_HTTP_TIMEOUT` ✎ | per-request timeout for http checks (s) | `5` |
+| `NOTIFY_RETENTION_DAYS` ✎ | notification-log retention; `0` = keep | `0` |
 
 > **Secrets**: prefer `IPAMBOX_PASSWORD_FILE` (e.g. a Docker secret) over
 > `IPAMBOX_PASSWORD` so the value never sits in your env/compose file.
@@ -262,6 +288,7 @@ apply without a restart, and can be reset back to the env value per key.
 | `/import` | Workbook import wizard — upload, detection, preview, commit |
 | `/vlans` `/tags` | VLAN groups + VLANs, tag management |
 | `/scans` | Trigger/schedule/cancel scans, live progress |
+| `/monitoring` | Live monitor board — up/down states, check kind, last error, check-now |
 | `/changelog` | Global audit trail |
 | `/tree` | Site → VRF → prefix hierarchy view |
 | `/settings` | System overview, runtime config, backups, accounts, preferences, maintenance |
@@ -272,6 +299,7 @@ The Settings area has its own sub-navigation:
 |---|---|
 | `/settings` | General — version, schema rev, DB/Redis health, detected LAN |
 | `/settings/scanning` | Networks, excludes, ports, intervals — runtime-editable |
+| `/settings/monitoring` | Notification channels + secrets, check-lane toggles, delivery log — admins only |
 | `/settings/backup` | Snapshots, schedule + retention, restore |
 | `/settings/security` | Change password, active sessions |
 | `/settings/users` | Users & Roles console — admins only |

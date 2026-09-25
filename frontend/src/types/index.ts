@@ -420,6 +420,11 @@ export interface SettingsValues {
   scan_job_retention_days: number;
   cert_warn_days: number;
   rackula_base_url: string;
+  // Monitoring (V7)
+  monitoring_enabled: boolean;
+  monitor_concurrency: number;
+  monitor_http_timeout: number;
+  notify_retention_days: number;
 }
 
 export interface SettingsOut {
@@ -1002,4 +1007,71 @@ export interface MatchFreeTextReport {
   matched_ids: number[];
   ambiguous_ids: number[];
   unmatched_ids: number[];
+}
+
+// --- Monitoring (V7): per-target health checks + notification channels ------
+
+export type MonitorKind = "ping" | "tcp" | "http";
+export type MonitorState = "up" | "down" | "unknown";
+
+export interface MonitorTarget {
+  id: number;
+  device_id: number | null;
+  address_id: number | null;
+  kind: MonitorKind;
+  port: number | null;
+  http_path: string;
+  http_expect: string | null;
+  interval_seconds: number;
+  down_after: number;
+  enabled: boolean;
+  state: MonitorState;
+  consecutive_failures: number;
+  last_checked_at: string | null;
+  last_change_at: string | null;
+  last_error: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  // API-stamped display fields — not columns.
+  target_label: string | null;
+  resolved_ip: string | null;
+  device_name: string | null;
+}
+
+export interface MonitorSummary {
+  up: number;
+  down: number;
+  unknown: number;
+  due: number;
+}
+
+export type ChannelKind = "webhook" | "smtp" | "discord" | "telegram";
+
+/** Secret material never reaches the client: `secret_set` says whether
+ *  `secret_enc` holds a value; `config` carries only non-secret fields. */
+export interface NotificationChannel {
+  id: number;
+  name: string;
+  kind: ChannelKind;
+  enabled: boolean;
+  created_at: string;
+  config: Record<string, unknown>;
+  secret_set: boolean;
+}
+
+export interface ChannelTestOut {
+  ok: boolean;
+  error: string | null;
+}
+
+export interface NotificationLogEntry {
+  id: number;
+  channel_id: number | null;
+  event_type: string;
+  summary: string;
+  ok: boolean;
+  error: string | null;
+  created_at: string;
+  channel_name: string | null;
 }

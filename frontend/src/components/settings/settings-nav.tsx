@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  Activity,
   DatabaseZap,
   FileArchive,
   Info,
@@ -22,6 +23,7 @@ export const SETTINGS_SECTIONS = [
   { href: "/settings", label: "General", icon: Info, perm: PERM.DATA_READ },
   { href: "/settings/features", label: "Features", icon: SlidersHorizontal, perm: PERM.DATA_READ },
   { href: "/settings/scanning", label: "Scanning", icon: Radar, perm: PERM.DATA_READ },
+  { href: "/settings/monitoring", label: "Monitoring", icon: Activity, perm: PERM.SYSTEM_ADMIN },
   { href: "/settings/backup", label: "Backup & Restore", icon: FileArchive, perm: PERM.BACKUP_ACCESS },
   { href: "/settings/security", label: "Account & Security", icon: ShieldCheck, perm: PERM.DATA_READ },
   { href: "/settings/users", label: "Users & Roles", icon: Users, perm: PERM.USERS_MANAGE },

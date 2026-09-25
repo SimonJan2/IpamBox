@@ -17,12 +17,16 @@ from app.core.redis import (
     redis_settings_from_url,
 )
 from app.core.security import set_actor
+from app.models.certificate import Certificate
 from app.models.change_log import ChangeLog
 from app.models.ip_address import IPAddress, IPStatus
+from app.models.monitoring import NotificationLog
 from app.models.prefix import Prefix, PrefixStatus
 from app.models.scan_job import ScanJob, ScanStatus
 from app.models.vrf import VRF
-from app.services import prefix_math, runtime_settings, scan_policy
+from app.schemas.common import ip_display
+from app.services import notify, prefix_math, runtime_settings, scan_policy
+from app.worker.monitors import monitor_tick, run_monitor_sweep
 from app.worker.reconcile import reconcile
 from app.worker.scanner import (
     ScanCancelled,
@@ -278,6 +282,18 @@ async def run_scan(ctx: dict, scan_id: int) -> dict:
                 should_stop=_cancelled,
             )
 
+            # Snapshot the flagged set so the mac_mismatch event fires only
+            # for flags this scan *raised* — a flag that persists across
+            # scans isn't re-reported every sweep.
+            flagged_before = set(
+                (
+                    await session.execute(
+                        select(IPAddress.id).where(
+                            IPAddress.custom_fields.has_key("mac_mismatch")  # noqa: W601
+                        )
+                    )
+                ).scalars().all()
+            )
             discovered, new = await reconcile(
                 session, prefix.id, vrf_id, hosts, net, eff.values
             )
@@ -305,6 +321,50 @@ async def run_scan(ctx: dict, scan_id: int) -> dict:
             job.finished_at = datetime.now(timezone.utc)
             job.duration_seconds = round((job.finished_at - started).total_seconds(), 2)
             await session.commit()
+            # Mismatch events fire post-commit, only for flags this scan
+            # raised (cleared-and-reflagged counts as raised again). The
+            # notify payload only samples 20 rows — count the true total
+            # separately so a big scan doesn't under-report in the summary.
+            _mismatch_where = IPAddress.custom_fields.has_key(  # noqa: W601
+                "mac_mismatch"
+            ) & IPAddress.id.notin_(flagged_before)
+            mismatch_total = await session.scalar(
+                select(func.count()).select_from(
+                    select(IPAddress.id).where(_mismatch_where).subquery()
+                )
+            ) or 0
+            newly_flagged = (
+                await session.execute(
+                    select(IPAddress).where(_mismatch_where).limit(20)
+                )
+            ).scalars().all()
+            if newly_flagged:
+                _shown = (
+                    f" (showing {len(newly_flagged)})"
+                    if mismatch_total > len(newly_flagged)
+                    else ""
+                )
+                await notify.emit(
+                    "mac_mismatch",
+                    f"{mismatch_total} MAC mismatch(es) flagged by "
+                    f"scan #{scan_id} on {cidr}{_shown}",
+                    {
+                        "scan_id": scan_id,
+                        "cidr": cidr,
+                        "items": [
+                            {
+                                "address": ip_display(a.address),
+                                "mac_was": (a.custom_fields or {})
+                                .get("mac_mismatch", {})
+                                .get("was"),
+                                "mac_seen": (a.custom_fields or {})
+                                .get("mac_mismatch", {})
+                                .get("seen"),
+                            }
+                            for a in newly_flagged
+                        ],
+                    },
+                )
             await _publish(
                 scan_id,
                 {
@@ -345,6 +405,17 @@ async def run_scan(ctx: dict, scan_id: int) -> dict:
                     (job.finished_at - started).total_seconds(), 2
                 )
                 await session.commit()
+                await notify.emit(
+                    "scan.failed",
+                    f"scan #{scan_id}"
+                    f"{f' ({job.cidr})' if job.cidr else ''} failed: "
+                    f"{err[:300]}",
+                    {
+                        "scan_id": scan_id,
+                        "cidr": job.cidr,
+                        "error": err,
+                    },
+                )
             await _publish(
                 scan_id,
                 {"scan_id": scan_id, "phase": "error", "status": "failed", "error": err},
@@ -467,6 +538,15 @@ async def _retention_sweeps(session, values: dict, now: datetime) -> dict:
         )
         detail["discovery"] = res.rowcount or 0
 
+    days = int(values.get("notify_retention_days") or 0)
+    if days > 0:
+        res = await session.execute(
+            delete(NotificationLog).where(
+                NotificationLog.created_at < now - timedelta(days=days)
+            )
+        )
+        detail["notification_log"] = res.rowcount or 0
+
     if any(detail.values()):
         await session.execute(
             ChangeLog.__table__.insert(),
@@ -501,6 +581,49 @@ def _due(last_iso: str | None, interval_minutes: int, now: datetime) -> bool:
         # stamps written before timestamptz carried no offset (UTC implied)
         last = last.replace(tzinfo=timezone.utc)
     return (now - last).total_seconds() >= interval_minutes * 60
+
+
+async def _cert_warnings(now: datetime) -> int:
+    """Emit cert.expiring once per certificate per day for certs inside the
+    warn window. Day-stamps live in Redis (like the sched stamps — never
+    app_settings, which would spam the changelog every sweep)."""
+    async with SessionLocal() as session:
+        eff = await runtime_settings.get_effective(session)
+        warn = int(eff.values["cert_warn_days"])
+        today = now.date()
+        rows = (
+            await session.execute(
+                select(Certificate).where(
+                    Certificate.expires_on.is_not(None),
+                    Certificate.expires_on <= today + timedelta(days=warn),
+                )
+            )
+        ).scalars().all()
+    if not rows:
+        return 0
+    r = get_redis()
+    sent = 0
+    for c in rows:
+        key = f"ipam:notify:cert:{c.id}"
+        if await r.get(key) == today.isoformat():
+            continue  # already reported today — one event per cert per day
+        days_left = (c.expires_on - today).days
+        label = c.cert_name or c.server_name or f"cert#{c.id}"
+        await notify.emit(
+            "cert.expiring",
+            f"{label} expires {c.expires_on.isoformat()} "
+            f"({'expired' if days_left < 0 else f'{days_left}d left'})",
+            {
+                "certificate_id": c.id,
+                "cert_name": c.cert_name,
+                "server_name": c.server_name,
+                "expires_on": c.expires_on.isoformat(),
+                "days_left": days_left,
+            },
+        )
+        await r.set(key, today.isoformat(), ex=172800)  # 2-day TTL self-cleans
+        sent += 1
+    return sent
 
 
 async def scheduler_tick(ctx: dict) -> dict:
@@ -544,6 +667,14 @@ async def scheduler_tick(ctx: dict) -> dict:
     async with SessionLocal() as session:
         await _retention_sweeps(session, eff.values, now)
 
+    # Channel events — cert warnings ride the minute tick too.
+    try:
+        notified = await _cert_warnings(now)
+        if notified:
+            ran.append("cert_warnings")
+    except Exception:
+        log.warning("cert warning sweep failed", exc_info=True)
+
     if "scans" in ran:
         await run_scheduled_scans(ctx)
     if "backups" in ran:
@@ -568,6 +699,7 @@ async def reap_stale_scan_jobs(session, now: datetime | None = None) -> int:
         )
     ).scalars().all()
     reaped = 0
+    reaped_jobs: list[ScanJob] = []
     for j in stale:
         ref = j.started_at if j.status == ScanStatus.RUNNING else j.created_at
         if ref is None or ref > cutoff:
@@ -578,9 +710,17 @@ async def reap_stale_scan_jobs(session, now: datetime | None = None) -> int:
         if j.started_at:
             j.duration_seconds = round((now - j.started_at).total_seconds(), 2)
         reaped += 1
+        reaped_jobs.append(j)
     if reaped:
         await session.commit()
         log.warning("watchdog reaped %d stale scan job(s)", reaped)
+        for j in reaped_jobs:
+            await notify.emit(
+                "scan.failed",
+                f"scan #{j.id}{f' ({j.cidr})' if j.cidr else ''} "
+                "timed out — worker died?",
+                {"scan_id": j.id, "cidr": j.cidr, "error": j.error},
+            )
     return reaped
 
 
@@ -607,6 +747,13 @@ async def startup(ctx: dict):
             j.error = "worker restarted"
             j.finished_at = datetime.now(timezone.utc)
         await session.commit()
+        for j in stale:
+            await notify.emit(
+                "scan.failed",
+                f"scan #{j.id}{f' ({j.cidr})' if j.cidr else ''} "
+                "failed — worker restarted",
+                {"scan_id": j.id, "cidr": j.cidr, "error": j.error},
+            )
 
 
 async def shutdown(ctx: dict):
@@ -615,10 +762,13 @@ async def shutdown(ctx: dict):
 
 
 class WorkerSettings:
-    functions = [run_scan, run_scheduled_backup]
+    functions = [run_scan, run_scheduled_backup, run_monitor_sweep]
     cron_jobs = [
         cron(scheduler_tick, minute=set(range(60))),
         cron(scan_watchdog, minute=set(range(60))),
+        # the monitor lane — batches due targets into ONE job per tick so
+        # checks never eat the scan budget (max_jobs=4 is shared)
+        cron(monitor_tick, minute=set(range(60))),
     ]
     on_startup = startup
     on_shutdown = shutdown

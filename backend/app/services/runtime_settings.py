@@ -150,6 +150,14 @@ EDITABLE: dict[str, SettingSpec] = {
         "scan_job_retention_days", _v_int(0, 3650)
     ),
     "cert_warn_days": SettingSpec("cert_warn_days", _v_int(1, 365)),
+    "monitoring_enabled": SettingSpec("monitoring_enabled", _v_bool),
+    "monitor_concurrency": SettingSpec("monitor_concurrency", _v_int(1, 512)),
+    "monitor_http_timeout": SettingSpec(
+        "monitor_http_timeout", _v_float(0.5, 30.0)
+    ),
+    "notify_retention_days": SettingSpec(
+        "notify_retention_days", _v_int(0, 3650)
+    ),
     "backup_interval_minutes": SettingSpec(
         "backup_interval_minutes", _v_int(0, 10080)
     ),

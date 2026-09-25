@@ -54,6 +54,11 @@ from app.models.import_batch import ImportBatch
 from app.models.device import Device
 from app.models.ip_address import IPAddress
 from app.models.ip_range import IPRange
+from app.models.monitoring import (
+    MonitorTarget,
+    NotificationChannel,
+    NotificationLog,
+)
 from app.models.prefix import Prefix
 from app.models.rack import Rack, RackGroup
 from app.models.scan_job import ScanJob
@@ -133,6 +138,12 @@ BACKUP_TABLES: tuple[BackupTable, ...] = (
     # ip_addresses -> prefixes + vrfs + devices + device_interfaces — must
     # follow all of them (connected_interface_id restores directly).
     BackupTable("ip_addresses", IPAddress, deferred_fks=("nat_inside_id",)),
+    # monitor_targets -> devices + ip_addresses; notification_log ->
+    # notification_channels (secret_enc travels as the encrypted blob —
+    # restores never see plaintext).
+    BackupTable("monitor_targets", MonitorTarget),
+    BackupTable("notification_channels", NotificationChannel),
+    BackupTable("notification_log", NotificationLog),
     BackupTable("custom_lists", CustomList),
     BackupTable("custom_list_rows", CustomListRow),
     BackupTable("tags", Tag),

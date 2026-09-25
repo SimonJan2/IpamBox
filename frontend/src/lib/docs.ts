@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 import {
+  Activity,
   Building2,
   Cable,
   Container,
@@ -191,6 +192,14 @@ export const DOC_ARTICLES: DocArticle[] = [
     keywords: ["service", "catalog", "app", "beneficiary"],
   },
   // Operations
+  {
+    slug: "monitoring",
+    title: "Monitoring",
+    description: "Per-target health checks (ping/TCP/HTTP) and notification channels.",
+    category: "operations",
+    icon: Activity,
+    keywords: ["monitor", "uptime", "alert", "webhook", "smtp", "discord", "telegram", "down", "notify"],
+  },
   {
     slug: "discovery",
     title: "Discovery Inbox",

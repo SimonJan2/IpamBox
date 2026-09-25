@@ -1,7 +1,10 @@
 import asyncio
 import ipaddress
+import os
 import socket
+import struct
 import subprocess
+import time
 from dataclasses import dataclass, field
 
 import psutil
@@ -141,50 +144,138 @@ def _arp_scan(cidr: str, iface: str | None, timeout: float) -> dict[str, str]:
         return {}
 
 
-async def _icmp_sweep(ips: list[str], timeout: float) -> set[str]:
-    """ICMP echo sweep over a Linux ping socket (SOCK_DGRAM/IPPROTO_ICMP).
+_ICMP_ECHO_REQUEST = 8
+_ICMP_ECHO_REPLY = 0
 
-    The kernel builds the ICMP header and matches replies to this socket's
-    ident, so we only need recvfrom sources. Fully async and fast.
-    """
+
+def _icmp_checksum(data: bytes) -> int:
+    if len(data) % 2:
+        data += b"\x00"
+    total = sum(
+        int.from_bytes(data[i : i + 2], "big") for i in range(0, len(data), 2)
+    )
+    while total >> 16:
+        total = (total & 0xFFFF) + (total >> 16)
+    return ~total & 0xFFFF
+
+
+def _icmp_echo_packet(ident: int, seq: int, payload: bytes) -> bytes:
+    """A well-formed ICMP echo request: the kernel validates type/code
+    and checksum even on unprivileged ping sockets — an arbitrary
+    payload with no header is rejected with EINVAL."""
+    head = struct.pack("!BBHHH", _ICMP_ECHO_REQUEST, 0, 0, ident, seq)
+    check = _icmp_checksum(head + payload)
+    return struct.pack("!BBHHH", _ICMP_ECHO_REQUEST, 0, check, ident, seq) + payload
+
+
+def _icmp_socket() -> tuple[socket.socket | None, bool, str | None]:
+    """Open an IPv4 ICMP echo socket: unprivileged ping socket
+    (SOCK_DGRAM) first, raw socket fallback for hosts whose
+    ping_group_range denies the unprivileged kind (the worker carries
+    cap_net_raw for exactly that). Returns (sock, is_raw, err)."""
+    err: str | None = None
+    for stype in (socket.SOCK_DGRAM, socket.SOCK_RAW):
+        try:
+            return (
+                socket.socket(socket.AF_INET, stype, socket.IPPROTO_ICMP),
+                stype == socket.SOCK_RAW,
+                None,
+            )
+        except OSError as e:
+            err = e.strerror or str(e)
+    return None, False, err
+
+
+def _is_echo_reply(data: bytes, is_raw: bool) -> bool:
+    """RAW sockets prepend the IP header to every read; DGRAM ping
+    sockets hand back the ICMP message alone and only ever deliver
+    replies addressed to this socket."""
+    if is_raw:
+        if len(data) < 21:
+            return False
+        ihl = (data[0] & 0x0F) * 4
+        return len(data) >= ihl + 1 and data[ihl] == _ICMP_ECHO_REPLY
+    return True
+
+
+def _ping_host_blocking(ip: str, timeout: float) -> tuple[bool, str | None]:
+    """Single ICMP echo + reply wait, plain blocking socket ops. Runs in
+    a worker thread via asyncio.to_thread — uvloop (the API's loop) has
+    no sock_sendto/sock_recvfrom for datagrams, so the loop-level API is
+    not usable everywhere."""
+    sock, is_raw, err = _icmp_socket()
+    if sock is None:
+        return False, f"icmp socket unavailable: {err}"
+    try:
+        packet = _icmp_echo_packet(
+            os.getpid() & 0xFFFF, 1, b"ipambox" + b"\x00" * 24
+        )
+        sock.sendto(packet, (ip, 0))
+        deadline = time.monotonic() + timeout
+        while True:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                return False, "timeout"
+            sock.settimeout(left)
+            try:
+                data, (src, _p) = sock.recvfrom(4096)
+            except TimeoutError:
+                return False, "timeout"
+            except OSError:
+                continue
+            if src == ip and _is_echo_reply(data, is_raw):
+                return True, None
+    except OSError as e:
+        return False, str(e)
+    finally:
+        sock.close()
+
+
+def _icmp_sweep_blocking(ips: list[str], timeout: float) -> set[str]:
+    """ICMP echo sweep on one socket: fire all echos, then drain replies
+    until the deadline. Blocking variant of the old loop-based sweep —
+    identical semantics, safe under any loop policy."""
     alive: set[str] = set()
     if not ips:
         return alive
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_ICMP)
-        sock.setblocking(False)
-    except OSError:
+    sock, is_raw, _err = _icmp_socket()
+    if sock is None:
         return alive
-
-    loop = asyncio.get_running_loop()
-    payload = b"ipambox" + b"\x00" * 24
     try:
+        ident = os.getpid() & 0xFFFF
+        payload = b"ipambox" + b"\x00" * 24
         sent = 0
-        for ip in ips:
+        for seq, ip in enumerate(ips, start=1):
             try:
-                await loop.sock_sendto(sock, payload, (ip, 0))
+                sock.sendto(_icmp_echo_packet(ident, seq, payload), (ip, 0))
                 sent += 1
                 if sent % 64 == 0:
-                    await asyncio.sleep(0.02)
+                    time.sleep(0.02)
             except OSError:
                 continue
-        deadline = loop.time() + timeout
+        deadline = time.monotonic() + timeout
         while True:
-            left = deadline - loop.time()
+            left = deadline - time.monotonic()
             if left <= 0:
                 break
+            sock.settimeout(left)
             try:
-                _data, (src, _port) = await asyncio.wait_for(
-                    loop.sock_recvfrom(sock, 4096), left
-                )
-            except (asyncio.TimeoutError, TimeoutError):
+                data, (src, _port) = sock.recvfrom(4096)
+            except TimeoutError:
                 break
             except OSError:
                 continue
-            alive.add(src)
+            if _is_echo_reply(data, is_raw):
+                alive.add(src)
     finally:
         sock.close()
     return alive
+
+
+async def _icmp_sweep(ips: list[str], timeout: float) -> set[str]:
+    """ICMP echo sweep — the kernel builds the ICMP header and matches
+    replies to this socket's ident, so we only need recvfrom sources."""
+    return await asyncio.to_thread(_icmp_sweep_blocking, ips, timeout)
 
 
 async def _tcp_probe(ip: str, ports: list[int], timeout: float, sem: asyncio.Semaphore) -> list[int]:

@@ -20,6 +20,7 @@ import type {
   Tag,
 } from "@/types";
 import { HistoryPanel } from "@/components/history-panel";
+import { MonitorSection } from "@/components/monitor-section";
 import { IpStatusBadge } from "@/components/status-badge";
 import { TagChip, TagPicker } from "@/components/tag-picker";
 import { Badge } from "@/components/ui/badge";
@@ -685,6 +686,12 @@ export function IpDrawer({
                   <Trash2 className="h-4 w-4" />
                 </Button>
               )}
+            </div>
+          )}
+
+          {addr && open && (
+            <div className="border-t pt-3">
+              <MonitorSection addressId={addr.id} anchorLabel={ip} />
             </div>
           )}
 

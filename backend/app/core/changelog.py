@@ -25,6 +25,7 @@ from app.models.device import Device
 from app.models.import_batch import ImportBatch
 from app.models.ip_address import IPAddress
 from app.models.ip_range import IPRange
+from app.models.monitoring import MonitorTarget, NotificationChannel
 from app.models.prefix import Prefix
 from app.models.rack import Rack, RackGroup
 from app.models.service import Service
@@ -59,11 +60,15 @@ AUDITED_MODELS: tuple = (
     Device,
     DeviceInterface,
     Cable,
+    MonitorTarget,
+    NotificationChannel,
 )
 # churn-only columns that produce noise, never signal — sort_order/pinned/
 # group_position change on every drag/drop and would spam the audit log
-# per gesture
-SKIP_FIELDS = {"updated_at", "last_seen", "password_hash", "sort_order", "pinned", "group_position", "missed_scans"}
+# per gesture. Monitor state/last_* flip every check and channel secrets
+# are encrypted blobs — events, not audit diffs.
+SKIP_FIELDS = {"updated_at", "last_seen", "password_hash", "sort_order", "pinned", "group_position", "missed_scans",
+               "state", "consecutive_failures", "last_checked_at", "last_change_at", "last_error", "secret_enc"}
 _SPECS_KEY = "_changelog_specs"
 _REPR_ATTRS = ("name", "prefix", "address", "cidr", "username")
 
