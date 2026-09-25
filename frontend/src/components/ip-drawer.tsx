@@ -13,6 +13,7 @@ import type {
   Device,
   DeviceInterface,
   IpAddress,
+  IpRange,
   IpRole,
   IpStatus,
   Page,
@@ -23,6 +24,14 @@ import { IpStatusBadge } from "@/components/status-badge";
 import { TagChip, TagPicker } from "@/components/tag-picker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input, Textarea } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -79,6 +88,10 @@ export function IpDrawer({
   const [busy, setBusy] = useState(false);
   const [natOptions, setNatOptions] = useState<IpAddress[]>([]);
   const [natError, setNatError] = useState<string | null>(null);
+  // Range the address sits in (V6.1) — resolved lazily from ip_range_id.
+  const [pool, setPool] = useState<IpRange | null>(null);
+  // Pool-guard 409 — the "assign anyway" dialog retries with ?force=1.
+  const [poolConflict, setPoolConflict] = useState<string | null>(null);
   const natTouched = useRef(false);
   const natTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Device link — devText is the picker input, devId the resolved row.
@@ -214,13 +227,23 @@ export function IpDrawer({
           })
         );
     }
+    setPool(null);
+    setPoolConflict(null);
+    if (addr?.ip_range_id) {
+      api
+        .get<Page<IpRange>>(`/api/v1/ranges?prefix_id=${prefixId}&limit=500`)
+        .then((p) =>
+          setPool(p.items.find((r) => r.id === addr.ip_range_id) ?? null)
+        )
+        .catch(() => setPool(null));
+    }
     return () => {
       if (natTimer.current) clearTimeout(natTimer.current);
       if (devTimer.current) clearTimeout(devTimer.current);
     };
   }, [addr, open, prefixId]);
 
-  const save = async () => {
+  const save = async (force = false) => {
     setBusy(true);
     try {
       const natVal = form.nat_inside.trim();
@@ -260,19 +283,30 @@ export function IpDrawer({
         notes: form.notes || null,
       };
       if (addr) {
-        await api.patch(`/api/v1/addresses/${addr.id}`, body);
+        await api.patch(
+          `/api/v1/addresses/${addr.id}${force ? "?force=1" : ""}`,
+          body
+        );
       } else {
-        await api.post("/api/v1/addresses", {
+        await api.post(`/api/v1/addresses${force ? "?force=1" : ""}`, {
           address: ip,
           prefix_id: prefixId,
           ...body,
         });
       }
       toast.success(addr ? "Address updated" : "Address reserved");
+      setPoolConflict(null);
       onOpenChange(false);
       onSaved();
     } catch (e) {
-      toast.error("Save failed", { description: String(e) });
+      // 409 = the pool guard — offer the auditable "assign anyway" path
+      // instead of a dead-end toast.
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!force && msg.startsWith("409")) {
+        setPoolConflict(msg.replace(/^409:\s*/, ""));
+      } else {
+        toast.error("Save failed", { description: msg });
+      }
     } finally {
       setBusy(false);
     }
@@ -329,6 +363,32 @@ export function IpDrawer({
               )}
               {addr.last_seen && (
                 <div>last seen: {fmtTs(addr.last_seen)}</div>
+              )}
+            </div>
+          )}
+          {addr?.ip_range_id != null && (
+            <div className="rounded-md border border-sky-500/30 bg-sky-500/5 p-3 text-sm">
+              <span className="text-sky-400">
+                in {addr.range_role ?? ""} pool
+                {pool && (
+                  <>
+                    {" "}
+                    <span className="font-mono">
+                      {pool.start_address}–{pool.end_address}
+                    </span>
+                  </>
+                )}
+              </span>
+              {pool?.description && (
+                <span className="text-muted-foreground">
+                  {" "}
+                  · {pool.description}
+                </span>
+              )}
+              {!!addr.custom_fields?.pool_override && (
+                <div className="mt-1 text-xs text-amber-400">
+                  static assignment force-allowed inside this pool
+                </div>
               )}
             </div>
           )}
@@ -610,7 +670,7 @@ export function IpDrawer({
           {(canWrite || (addr && canDelete)) && (
             <div className="flex gap-2 pt-2">
               {canWrite && (
-                <Button onClick={save} disabled={busy} className="flex-1">
+                <Button onClick={() => save()} disabled={busy} className="flex-1">
                   {busy ? "Saving…" : addr ? "Save" : "Reserve"}
                 </Button>
               )}
@@ -642,6 +702,32 @@ export function IpDrawer({
           )}
         </div>
       </SheetContent>
+      <Dialog
+        open={poolConflict !== null}
+        onOpenChange={(o) => !o && setPoolConflict(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Address inside a pool</DialogTitle>
+            <DialogDescription className="pt-1 text-sm">
+              {poolConflict}
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Assigning a static address inside a DHCP/pool range can collide
+            with leased clients. You can assign it anyway — the override is
+            recorded on the address for auditing.
+          </p>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setPoolConflict(null)}>
+              Cancel
+            </Button>
+            <Button onClick={() => void save(true)} disabled={busy}>
+              {busy ? "Saving…" : "Assign anyway"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Sheet>
   );
 }

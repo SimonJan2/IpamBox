@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
 from app.core.deps import DATA_DELETE, DATA_WRITE, require_perm
+from app.models.ip_address import IPAddress
 from app.models.ip_range import IPRange
 from app.models.prefix import Prefix
 from app.schemas.common import Page
@@ -82,6 +83,19 @@ async def create_range(body: IPRangeCreate, session: AsyncSession = Depends(get_
         description=body.description,
     )
     session.add(row)
+    await session.flush()
+    # Retro-link addresses already inside the new range — membership is
+    # deterministic (address_int within bounds), so this is pure bookkeeping,
+    # not an override of the pool guard on future writes.
+    for addr in (
+        await session.execute(
+            select(IPAddress).where(
+                IPAddress.prefix_id == prefix.id,
+                IPAddress.address_int.between(int(start), int(end)),
+            )
+        )
+    ).scalars():
+        addr.ip_range_id = row.id
     await session.commit()
     await session.refresh(row)
     return row

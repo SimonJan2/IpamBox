@@ -296,8 +296,9 @@ async def test_migration_0024_backfill_and_rollback():
         finally:
             await conn.close()
 
-        # reversible: the column (and its index) drop cleanly
-        alembic("downgrade", "-1")
+        # reversible: the column (and its index) drop cleanly. Pin the
+        # target — head moves on (0025+), but this test is about 0024.
+        alembic("downgrade", "0023_interfaces_cables")
         conn = await asyncpg.connect(pg_url)
         try:
             cols = {

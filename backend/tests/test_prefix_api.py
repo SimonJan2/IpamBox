@@ -188,3 +188,129 @@ async def test_tree_endpoint(client):
     assert leaf_node["usable_ips"] == 62
     assert leaf_node["utilization_pct"] == round(100.0 * 3 / 62, 1)
     assert leaf_node["children"] == []
+
+
+# --- V6.1: subnet semantics — gateway/DNS technical addresses ---------------
+
+async def _mkprefix(client, cidr="10.10.0.0/24"):
+    vrf_id = await _global_vrf_id(client)
+    r = await client.post("/api/v1/prefixes", json={"prefix": cidr, "vrf_id": vrf_id})
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+async def _addrs(client, prefix_id):
+    rows = (
+        await client.get("/api/v1/addresses", params={"prefix_id": prefix_id})
+    ).json()
+    return {a["address"]: a for a in rows}
+
+
+async def test_prefix_gateway_creates_reserved_technical_row(client):
+    p = await _mkprefix(client)
+    r = await client.patch(
+        f"/api/v1/prefixes/{p['id']}",
+        json={"gateway": "10.10.0.1", "dns_servers": ["10.10.0.2", "8.8.8.8"]},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["gateway"] == "10.10.0.1"
+    assert r.json()["dns_servers"] == ["10.10.0.2", "8.8.8.8"]
+
+    by_addr = await _addrs(client, p["id"])
+    gw = by_addr["10.10.0.1"]
+    assert gw["status"] == "reserved"
+    assert gw["custom_fields"]["technical"] == "gateway"
+    dns = by_addr["10.10.0.2"]
+    assert dns["status"] == "reserved"
+    assert dns["custom_fields"]["technical"] == "dns"
+    # resolvers outside the prefix stay a prefix attribute — no fake member row
+    assert "8.8.8.8" not in by_addr
+
+
+async def test_gateway_clear_removes_only_pristine_row(client):
+    p = await _mkprefix(client)
+    await client.patch(f"/api/v1/prefixes/{p['id']}", json={"gateway": "10.10.0.1"})
+    gw_id = (await _addrs(client, p["id"]))["10.10.0.1"]["id"]
+
+    # a touched technical row is user data — clearing the field must keep it
+    r = await client.patch(
+        f"/api/v1/addresses/{gw_id}", json={"hostname": "core-gw"}
+    )
+    assert r.status_code == 200, r.text
+    r = await client.patch(f"/api/v1/prefixes/{p['id']}", json={"gateway": None})
+    assert r.status_code == 200 and r.json()["gateway"] is None
+    assert "10.10.0.1" in await _addrs(client, p["id"])
+
+    # …while a still-pristine row is removed cleanly
+    await client.patch(f"/api/v1/prefixes/{p['id']}", json={"gateway": "10.10.0.3"})
+    assert "10.10.0.3" in await _addrs(client, p["id"])
+    r = await client.patch(f"/api/v1/prefixes/{p['id']}", json={"gateway": None})
+    assert r.status_code == 200
+    assert "10.10.0.3" not in await _addrs(client, p["id"])
+
+
+async def test_gateway_never_clobbers_manual_row(client):
+    p = await _mkprefix(client)
+    r = await client.post(
+        "/api/v1/addresses",
+        json={
+            "address": "10.10.0.1",
+            "prefix_id": p["id"],
+            "status": "active",
+            "hostname": "core-gw",
+        },
+    )
+    assert r.status_code == 201, r.text
+
+    r = await client.patch(f"/api/v1/prefixes/{p['id']}", json={"gateway": "10.10.0.1"})
+    assert r.status_code == 200, r.text
+    rows = await _addrs(client, p["id"])
+    assert rows["10.10.0.1"]["hostname"] == "core-gw"
+    assert "technical" not in (rows["10.10.0.1"]["custom_fields"] or {})
+
+
+async def test_gateway_validation(client):
+    p = await _mkprefix(client)
+    r = await client.patch(f"/api/v1/prefixes/{p['id']}", json={"gateway": "10.9.9.1"})
+    assert r.status_code == 422
+    r = await client.patch(f"/api/v1/prefixes/{p['id']}", json={"gateway": "nope"})
+    assert r.status_code == 422
+    r = await client.patch(
+        f"/api/v1/prefixes/{p['id']}",
+        json={"dns_servers": ["1.1.1.1", "8.8.8.8", "8.8.4.4", "9.9.9.9", "10.0.0.1"]},
+    )
+    assert r.status_code == 422
+    r = await client.patch(
+        f"/api/v1/prefixes/{p['id']}", json={"dns_servers": ["not-an-ip"]}
+    )
+    assert r.status_code == 422
+
+
+async def test_next_ip_never_hands_out_gateway(client):
+    p = await _mkprefix(client)
+    await client.patch(f"/api/v1/prefixes/{p['id']}", json={"gateway": "10.10.0.1"})
+    r = await client.post(f"/api/v1/prefixes/{p['id']}/available-ips", json={})
+    assert r.status_code == 201, r.text
+    assert r.json()["address"] == "10.10.0.2"
+
+
+async def test_technical_address_rows_are_audited(client):
+    p = await _mkprefix(client)
+    await client.patch(f"/api/v1/prefixes/{p['id']}", json={"gateway": "10.10.0.1"})
+    gw_id = (await _addrs(client, p["id"]))["10.10.0.1"]["id"]
+    log = (
+        await client.get(
+            f"/api/v1/changelog?object_type=IPAddress&object_id={gw_id}"
+        )
+    ).json()
+    actions = {e["action"] for e in log["items"]}
+    assert "create" in actions
+    # clearing the field deletes the pristine row — also audited
+    await client.patch(f"/api/v1/prefixes/{p['id']}", json={"gateway": None})
+    log = (
+        await client.get(
+            f"/api/v1/changelog?object_type=IPAddress&object_id={gw_id}"
+        )
+    ).json()
+    actions = {e["action"] for e in log["items"]}
+    assert {"create", "delete"} <= actions

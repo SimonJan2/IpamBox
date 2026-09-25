@@ -13,6 +13,7 @@ from app.api.v1 import (
     imports,
     lists,
     maintenance,
+    networks,
     prefixes,
     rack_groups,
     racks,
@@ -43,6 +44,7 @@ api_router.include_router(changelog.router)
 api_router.include_router(tags.router)
 api_router.include_router(vlans.router)
 api_router.include_router(ranges.router)
+api_router.include_router(networks.router)
 api_router.include_router(imports.router)
 api_router.include_router(search.router)
 api_router.include_router(color_rules.router)

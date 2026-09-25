@@ -63,3 +63,39 @@ They show up as bands in the subnet matrix and are skipped by allocation.
 
 Each prefix has a print-friendly page (the print action on the detail view)
 that renders the address list cleanly for audits and wall-of-ops printouts.
+
+## Gateway & DNS
+
+A prefix can record its **gateway** and up to four **DNS resolvers** — edit
+the subnet or use the *Add network* wizard. The gateway must be inside the
+prefix (resolvers may live anywhere — they often do).
+
+Each technical address that falls inside the prefix is mirrored into a real
+`reserved` address row tagged `technical: gateway|dns` — it appears on the
+matrix with its own glyph (⌂ gateway, ≋ resolver), is excluded from next-IP
+allocation, and is fully audited in the changelog. Clearing the field removes
+the row *only* while it's still exactly what the system wrote — a row anyone
+edited is kept. A row you created yourself at that address is never touched.
+
+## Pools & static assignments
+
+Addresses inside an `ip_ranges` range automatically record membership
+(`ip_range_id`) — the drawer shows "in pool …" and the address list can be
+filtered by `ip_range_id`. Creating or editing an `active`/`reserved` address
+inside a `dhcp`/`pool` range is rejected with a conflict naming the range —
+a DHCP server may hand the address to a client. Pass `force=1` (or click
+*Assign anyway* in the drawer) to allow it anyway; the override is recorded
+as `custom_fields.pool_override` for auditing. `dhcp`-status rows inside a
+pool are always fine, and scanner observations are never blocked.
+
+Workbook/CSV imports document existing reality, so a deliberate import acts
+as the force: statics inside a pool land with the `pool_override` marker and
+the commit report notes them ("inside a pool (override marked)") instead of
+rejecting the row — or the whole batch.
+
+## Add network wizard
+
+The **Add network** button on the Subnets page walks through VLAN (new or
+existing) → subnet → gateway/DNS → DHCP pool → review, then creates
+everything in a single transaction via `POST /networks`. If any step is
+invalid, nothing is created — a half-built network is worse than none.

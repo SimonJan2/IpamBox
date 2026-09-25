@@ -38,6 +38,7 @@ from app.services.ipam import (
     prefix_stats_dict,
     reserve_next_available,
 )
+from app.services.ranges import stamp_range_roles, sync_technical_addresses
 
 router = APIRouter(prefix="/prefixes", tags=["prefixes"])
 
@@ -241,6 +242,10 @@ async def update_prefix(prefix_id: int, body: PrefixUpdate, session: AsyncSessio
     new_vrf = data.get("vrf_id")
     moving_vrf = new_vrf is not None and new_vrf != prefix.vrf_id
     net = prefix_math.to_network(prefix.prefix)
+    if data.get("gateway") is not None:
+        gw = ipaddress.ip_address(data["gateway"])
+        if gw.version != net.version or gw not in net:
+            raise HTTPException(422, f"gateway {gw} is not inside prefix {net}")
     try:
         if data.get("vlan_id") is not None:
             await get_or_404(session, VLAN, data["vlan_id"])
@@ -279,6 +284,10 @@ async def update_prefix(prefix_id: int, body: PrefixUpdate, session: AsyncSessio
         raise HTTPException(e.status_code, str(e))
     for field, value in data.items():
         setattr(prefix, field, value)
+    if "gateway" in data or "dns_servers" in data:
+        # Mirror the technical addresses into reserved, marker-tagged rows —
+        # removed rows drop only when they're still exactly what we wrote.
+        await sync_technical_addresses(session, prefix)
     if moving_vrf:
         # Addresses carry their own vrf_id (UNIQUE(vrf_id, address)) — cascade.
         for addr in (
@@ -335,6 +344,7 @@ async def prefix_addresses(
         )
     ).scalars().all()
     await stamp_colors(session, "addresses", rows)
+    await stamp_range_roles(session, rows)
     net = prefix_math.to_network(prefix.prefix)
     first, last = (None, None)
     if prefix_math.reserves_boundaries(net):

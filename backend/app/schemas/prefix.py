@@ -25,12 +25,33 @@ class PrefixCreate(BaseModel):
             raise ValueError(f"invalid CIDR: {v}") from exc
 
 
+def _valid_ip(v: str) -> str:
+    try:
+        return str(ipaddress.ip_address(v.strip()))
+    except ValueError as exc:
+        raise ValueError(f"invalid IP address: {v}") from exc
+
+
 class PrefixUpdate(BaseModel):
     vrf_id: int | None = None
     site_id: int | None = None
     vlan_id: int | None = None
     status: PrefixStatus | None = None
     description: str | None = None
+    # Send null to clear. dns entries may live outside the prefix — resolvers
+    # often do — but must be valid IPs, max four.
+    gateway: str | None = None
+    dns_servers: list[str] | None = Field(default=None, max_length=4)
+
+    @field_validator("gateway")
+    @classmethod
+    def _gw(cls, v: str | None) -> str | None:
+        return _valid_ip(v) if v is not None else None
+
+    @field_validator("dns_servers")
+    @classmethod
+    def _dns(cls, v: list[str] | None) -> list[str] | None:
+        return [_valid_ip(s) for s in v] if v is not None else None
 
 
 class VlanRefOut(BaseModel):
@@ -52,6 +73,8 @@ class PrefixOut(BaseModel):
     vlan: VlanRefOut | None = None
     status: PrefixStatus
     description: str | None
+    gateway: str | None
+    dns_servers: list[str] | None
     created_at: datetime
 
     # Calculated attributes (filled by the service layer). Capacity fields
@@ -66,10 +89,15 @@ class PrefixOut(BaseModel):
     unusable_first: bool = False
     unusable_last: bool = False
 
-    @field_validator("prefix", mode="before")
+    @field_validator("prefix", "gateway", mode="before")
     @classmethod
-    def _prefix_str(cls, v):
+    def _ip_str(cls, v):
         return ip_display(v)
+
+    @field_validator("dns_servers", mode="before")
+    @classmethod
+    def _dns_str(cls, v):
+        return [ip_display(s) for s in v] if v is not None else None
 
 
 class PrefixSplitOut(BaseModel):

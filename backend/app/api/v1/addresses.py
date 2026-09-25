@@ -6,12 +6,13 @@ from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.list_params import parse_str_set
+from app.api.v1.list_params import parse_int_set, parse_str_set
 from app.core.db import get_session
 from app.core.deps import DATA_DELETE, DATA_WRITE, has_perm, require_perm
 from app.models.cabling import DeviceInterface
 from app.models.device import Device
 from app.models.ip_address import IPAddress, IPRole, IPStatus
+from app.models.ip_range import IPRange
 from app.models.user import User
 from app.models.prefix import Prefix
 from app.models.tag import TagAssignment
@@ -27,6 +28,11 @@ from app.services.colors import stamp_colors
 from app.services.csv_export import csv_response, parse_csv
 from app.services.devices import stamp_device_names
 from app.services.ipam import IPAMError, get_or_404
+from app.services.ranges import (
+    apply_pool_membership,
+    ranges_for_prefix,
+    stamp_range_roles,
+)
 
 router = APIRouter(prefix="/addresses", tags=["addresses"])
 
@@ -59,9 +65,12 @@ def _addresses_stmt(
     untagged: bool,
     q: str | None,
     sources: set[str] | None = None,
+    ip_range_ids: set[int] | None = None,
 ):
     """Shared list/export filter construction — one predicate, two callers."""
     stmt = select(IPAddress).order_by(IPAddress.address_int)
+    if ip_range_ids:
+        stmt = stmt.where(IPAddress.ip_range_id.in_(ip_range_ids))
     if sources:
         stmt = stmt.where(IPAddress.source.in_(sources))
     if vrf_id is not None:
@@ -161,6 +170,9 @@ async def export_addresses(
         default=None,
         description="source or comma-separated set (manual|import|scan|…)",
     ),
+    ip_range_id: str | None = Query(
+        default=None, description="range id or comma-separated set"
+    ),
     session: AsyncSession = Depends(get_session),
 ):
     """Same filters as the list endpoint — what a filtered view shows is what
@@ -170,12 +182,14 @@ async def export_addresses(
     tag_ids = _parse_tag_ids(tags, tag_id)
     sources = parse_str_set(source)
     stmt = _addresses_stmt(
-        vrf_id, prefix_id, statuses, tag_ids, untagged, q, sources
+        vrf_id, prefix_id, statuses, tag_ids, untagged, q, sources,
+        parse_int_set(ip_range_id, "ip_range_id"),
     )
     rows = (await session.execute(stmt)).scalars().all()
     rows = await stamp_colors(session, "addresses", rows)
     filtered = any(
-        x is not None for x in (vrf_id, prefix_id, statuses, tag_ids, sources)
+        x is not None
+        for x in (vrf_id, prefix_id, statuses, tag_ids, sources, ip_range_id)
     ) or untagged or bool(q)
     return csv_response(
         "addresses-filtered.csv" if filtered else "addresses.csv",
@@ -235,6 +249,18 @@ async def import_addresses(
         else set()
     )
 
+    # Pools on the referenced prefixes — imported statics get membership.
+    # Like the workbook importer, a deliberate bulk import acts as the force:
+    # statics inside pools land with an auditable pool_override marker.
+    ranges_by_prefix: dict[int, list[IPRange]] = {}
+    if ref_prefix_ids:
+        for rng in (
+            await session.execute(
+                select(IPRange).where(IPRange.prefix_id.in_(ref_prefix_ids))
+            )
+        ).scalars():
+            ranges_by_prefix.setdefault(rng.prefix_id, []).append(rng)
+
     results: list[ImportRow] = []
     to_add: list[IPAddress] = []
     for i, r in enumerate(rows, start=2):  # header is row 1
@@ -270,9 +296,15 @@ async def import_addresses(
                 notes=r.get("notes") or None,
                 source="import",
             )
+            apply_pool_membership(
+                row, ranges_by_prefix.get(prefix.id, []), force=True
+            )
             existing.add((int(ip), prefix.id))
             to_add.append(row)
-            results.append(ImportRow(row=i, ok=True, detail=str(ip)))
+            detail = str(ip)
+            if (row.custom_fields or {}).get("pool_override"):
+                detail += " — inside a pool (override marked)"
+            results.append(ImportRow(row=i, ok=True, detail=detail))
         except Exception as e:
             results.append(ImportRow(row=i, ok=False, detail=str(e)))
 
@@ -338,8 +370,23 @@ async def bulk_addresses(
         rows = (
             await session.execute(select(IPAddress).where(IPAddress.id.in_(found)))
         ).scalars().all()
-        for r in rows:
-            r.status = body.status
+        # Same pool guard as single-row writes — a bulk flip to active inside
+        # a dhcp/pool range is still a rogue static assignment.
+        prefix_ids = {r.prefix_id for r in rows}
+        ranges_by_prefix: dict[int, list[IPRange]] = {}
+        if prefix_ids:
+            for rng in (
+                await session.execute(
+                    select(IPRange).where(IPRange.prefix_id.in_(prefix_ids))
+                )
+            ).scalars():
+                ranges_by_prefix.setdefault(rng.prefix_id, []).append(rng)
+        try:
+            for r in rows:
+                r.status = body.status
+                apply_pool_membership(r, ranges_by_prefix.get(r.prefix_id, []))
+        except IPAMError as e:
+            raise HTTPException(e.status_code, str(e))
         affected = len(rows)
     elif body.action == "set_role":
         rows = (
@@ -396,6 +443,9 @@ async def list_addresses(
         default=None,
         description="source or comma-separated set (manual|import|scan|…)",
     ),
+    ip_range_id: str | None = Query(
+        default=None, description="range id or comma-separated set"
+    ),
     limit: int = Query(default=500, le=5000),
     offset: int = 0,
     session: AsyncSession = Depends(get_session),
@@ -408,6 +458,7 @@ async def list_addresses(
         untagged=False,
         q=q,
         sources=parse_str_set(source),
+        ip_range_ids=parse_int_set(ip_range_id, "ip_range_id"),
     )
     rows = (
         (await session.execute(stmt.limit(limit).offset(offset))).scalars().all()
@@ -415,6 +466,7 @@ async def list_addresses(
     rows = await stamp_colors(session, "addresses", rows)
     await stamp_device_names(session, rows)
     await stamp_connected_interfaces(session, rows)
+    await stamp_range_roles(session, rows)
     return rows
 
 
@@ -424,7 +476,15 @@ async def list_addresses(
     status_code=201,
     dependencies=[Depends(require_perm(DATA_WRITE))],
 )
-async def create_address(body: IPAddressCreate, session: AsyncSession = Depends(get_session)):
+async def create_address(
+    body: IPAddressCreate,
+    force: bool = Query(
+        default=False,
+        description="allow an active/reserved static inside a dhcp/pool range "
+        "(audited via custom_fields.pool_override)",
+    ),
+    session: AsyncSession = Depends(get_session),
+):
     try:
         prefix = await get_or_404(session, Prefix, body.prefix_id)
     except IPAMError as e:
@@ -468,6 +528,12 @@ async def create_address(body: IPAddressCreate, session: AsyncSession = Depends(
         notes=body.notes,
         source="manual",
     )
+    try:
+        apply_pool_membership(
+            row, await ranges_for_prefix(session, prefix.id), force=force
+        )
+    except IPAMError as e:
+        raise HTTPException(e.status_code, str(e))
     session.add(row)
     try:
         await session.commit()
@@ -478,6 +544,7 @@ async def create_address(body: IPAddressCreate, session: AsyncSession = Depends(
     await stamp_colors(session, "addresses", [row])
     await stamp_device_names(session, [row])
     await stamp_connected_interfaces(session, [row])
+    await stamp_range_roles(session, [row])
     return row
 
 
@@ -490,6 +557,7 @@ async def get_address(address_id: int, session: AsyncSession = Depends(get_sessi
     await stamp_colors(session, "addresses", [row])
     await stamp_device_names(session, [row])
     await stamp_connected_interfaces(session, [row])
+    await stamp_range_roles(session, [row])
     return row
 
 
@@ -499,7 +567,14 @@ async def get_address(address_id: int, session: AsyncSession = Depends(get_sessi
     dependencies=[Depends(require_perm(DATA_WRITE))],
 )
 async def update_address(
-    address_id: int, body: IPAddressUpdate, session: AsyncSession = Depends(get_session)
+    address_id: int,
+    body: IPAddressUpdate,
+    force: bool = Query(
+        default=False,
+        description="allow an active/reserved static inside a dhcp/pool range "
+        "(audited via custom_fields.pool_override)",
+    ),
+    session: AsyncSession = Depends(get_session),
 ):
     try:
         row = await get_or_404(session, IPAddress, address_id)
@@ -526,6 +601,15 @@ async def update_address(
     for field, value in data.items():
         setattr(row, field, value)
     try:
+        # Membership follows the row's (possibly new) prefix; the guard reads
+        # the post-patch status — a flip to active/reserved inside a pool is
+        # a static assignment and needs force or a prior pool_override mark.
+        apply_pool_membership(
+            row, await ranges_for_prefix(session, row.prefix_id), force=force
+        )
+    except IPAMError as e:
+        raise HTTPException(e.status_code, str(e))
+    try:
         await session.commit()
     except IntegrityError:
         await session.rollback()
@@ -534,6 +618,7 @@ async def update_address(
     await stamp_colors(session, "addresses", [row])
     await stamp_device_names(session, [row])
     await stamp_connected_interfaces(session, [row])
+    await stamp_range_roles(session, [row])
     return row
 
 
