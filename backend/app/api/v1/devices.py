@@ -67,7 +67,7 @@ from app.services.device_io import (
     plan_device_import,
     xlsx_response,
 )
-from app.services import runtime_settings
+from app.services import cable_validation, runtime_settings
 from app.services import snmp as snmp_svc
 from app.services.devices import device_health, ips_by_device
 from app.services.ipam import IPAMError, get_or_404
@@ -176,6 +176,9 @@ async def _detail(session: AsyncSession, device: Device) -> DeviceDetail:
     out.interface_count, out.cabled_count = (
         await interface_stats(session, [device.id])
     )[device.id]
+    out.flagged_count = (await cable_validation.flagged_counts(
+        session, [device.id]
+    )).get(device.id, 0)
     out.ips = [
         DeviceIpRef(
             id=i.id,
@@ -413,6 +416,9 @@ async def list_devices(
     # Health + counts in grouped queries — never per-row.
     ips = await ips_by_device(session, [d.id for d in rows])
     istats = await interface_stats(session, [d.id for d in rows])
+    flagged = await cable_validation.flagged_counts(
+        session, [d.id for d in rows]
+    )
     items = []
     for d in rows:
         out = DeviceOut.model_validate(d)
@@ -420,6 +426,7 @@ async def list_devices(
         out.health = device_health(ips[d.id])
         out.ip_count = len(ips[d.id])
         out.interface_count, out.cabled_count = istats[d.id]
+        out.flagged_count = flagged.get(d.id, 0)
         items.append(out)
     return Page(items=items, total=total or 0, limit=limit, offset=offset)
 
@@ -819,6 +826,10 @@ async def poll_snmp(
         ),
     )
     await session.commit()
+    # Same notify rule as the worker lane: newly-raised flags page once.
+    await cable_validation.emit_new_flags(
+        device.id, device.name, res.get("cable_flags_new") or []
+    )
     return SnmpPollOut(**res)
 
 
@@ -1120,6 +1131,9 @@ async def update_interface(
     try:
         await session.flush()
         await _reciprocate_pair(session, iface)
+        # An edited port may have changed identity — drop its stale
+        # validation flags; the next poll re-derives the truth.
+        await cable_validation.clear_validation(session, [iface.id])
         await session.commit()
     except IntegrityError as e:
         await session.rollback()
@@ -1145,6 +1159,13 @@ async def delete_interface(
     iface = await _get_iface(session, device.id, iface_id)
     cable = await cable_for(session, iface.id)
     if cable is not None:
+        # The far end loses its cable too — clear its stale flag.
+        peer_end = (
+            cable.b_interface_id
+            if cable.a_interface_id == iface.id
+            else cable.a_interface_id
+        )
+        await cable_validation.clear_validation(session, [peer_end])
         await session.delete(cable)
     pair = await pair_of(session, iface)
     if pair is not None:

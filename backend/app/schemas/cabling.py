@@ -137,6 +137,9 @@ class DeviceInterfaceOut(BaseModel):
     oper_status: str | None
     admin_status: str | None
     snmp_seen_at: datetime | None
+    # Cable validation (V8.2) — the observed L1 blob; a
+    # validation["cable_mismatch"] key marks a flagged port.
+    validation: dict | None
     source: str
     created_at: datetime
     updated_at: datetime

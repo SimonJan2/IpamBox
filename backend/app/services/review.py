@@ -21,6 +21,8 @@ from app.models.device import Device
 from app.models.ip_address import IPAddress, IPStatus
 from app.models.review import ReviewDismissal
 from app.schemas.common import ip_display
+from app.services import cable_validation
+from app.services.cable_validation import REASON_LABELS
 from app.services.cabling import interface_stats
 from app.services.ipam import NotFoundError
 from app.services.runtime_settings import get_effective
@@ -407,6 +409,48 @@ async def _snmp_unmanaged_items(session: AsyncSession) -> list[dict]:
     return items
 
 
+async def _cable_mismatch_items(session: AsyncSession) -> list[dict]:
+    """SNMP-validated cabling flags — the physical-layer twin of
+    mac_mismatch (V8.2). Item = the flagged interface; the flag blob in
+    ``device_interfaces.validation`` carries reason + detail + identity.
+    Fingerprint = validate_device's own flag_fingerprint so a dismissal
+    keyed on it survives re-flags of the same link."""
+    rows = (
+        (
+            await session.execute(
+                select(DeviceInterface, Device)
+                .join(Device, DeviceInterface.device_id == Device.id)
+                .where(
+                    DeviceInterface.validation.has_key("cable_mismatch")  # noqa: W601
+                )
+                .order_by(Device.name, DeviceInterface.position, DeviceInterface.id)
+            )
+        )
+        .all()
+    )
+    items = []
+    for i, d in rows:
+        flag = (i.validation or {}).get("cable_mismatch") or {}
+        reason = flag.get("reason") or "unknown"
+        items.append(
+            _item(
+                "device_interface",
+                i.id,
+                f"{d.name} · {i.name}",
+                sub=REASON_LABELS.get(reason, reason),
+                detail={
+                    "reason": reason,
+                    "detail": flag.get("detail"),
+                    "device_id": d.id,
+                    "oper_status": i.oper_status,
+                },
+                flagged_at=flag.get("at") or _iso(i.updated_at),
+                fingerprint=cable_validation.flag_fingerprint(flag),
+            )
+        )
+    return items
+
+
 async def _uncabled_items(session: AsyncSession) -> list[dict]:
     """Devices that have interfaces but zero cables (wiring='uncabled')."""
     with_ifaces = [
@@ -488,6 +532,12 @@ async def build_review(session: AsyncSession) -> dict:
                 "mac_mismatch",
                 "MAC mismatches",
                 await _mac_mismatch_items(session),
+                dismissed,
+            ),
+            _emit(
+                "cable_mismatch",
+                "Cable mismatches",
+                await _cable_mismatch_items(session),
                 dismissed,
             ),
             _emit(

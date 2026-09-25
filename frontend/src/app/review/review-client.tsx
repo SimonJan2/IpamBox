@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   AlertTriangle,
   Antenna,
+  Cable,
   Check,
   ChevronDown,
   ClipboardCheck,
@@ -13,7 +14,9 @@ import {
   EyeOff,
   Inbox,
   Loader2,
+  Pencil,
   RotateCcw,
+  Route,
   ShieldAlert,
   Trash2,
   Unplug,
@@ -60,8 +63,16 @@ import {
 
 const ENC = encodeURIComponent;
 
+/** V8.2 cable_mismatch reasons → labels (mirrors backend REASON_LABELS). */
+const CABLE_REASON: Record<string, string> = {
+  documented_down: "cabled but port reports down",
+  far_end_absent: "peer MACs not learned on this port",
+  lldp_neighbor: "LLDP neighbor on uncabled port",
+};
+
 const SECTION_ICONS: Record<string, React.ElementType> = {
   mac_mismatch: AlertTriangle,
+  cable_mismatch: Cable,
   dup_mac: Copy,
   aging_discovery: Inbox,
   offline: WifiOff,
@@ -80,6 +91,9 @@ const DELETE_PATH: Record<ReviewEntityType, string | null> = {
   device: "/api/v1/devices",
   certificate: "/api/v1/certificates",
   mac_group: null,
+  // A flagged port isn't deleted from the queue — the finding means the
+  // cabling or the port needs a human's eyes, not a row delete.
+  device_interface: null,
 };
 
 function entityHref(item: ReviewItem): string | null {
@@ -93,6 +107,11 @@ function entityHref(item: ReviewItem): string | null {
       return `/devices/${item.entity_id}`;
     case "certificate":
       return `/certificates?q=${ENC(item.label)}`;
+    case "device_interface": {
+      // Flag lives on the port — land on its device page.
+      const devId = item.detail.device_id;
+      return typeof devId === "number" ? `/devices/${devId}` : null;
+    }
     case "mac_group":
       return null;
   }
@@ -154,6 +173,17 @@ function WhyCell({ kind, item }: { kind: string; item: ReviewItem }) {
           expires {String(d.expires_on ?? "?")}
           {days !== null &&
             (days < 0 ? ` (${-days}d ago)` : ` (in ${days}d)`)}
+        </span>
+      );
+    }
+    case "cable_mismatch": {
+      const reason =
+        CABLE_REASON[String(d.reason ?? "")] ?? String(d.reason ?? "flagged");
+      return (
+        <span className="text-muted-foreground">
+          {reason}
+          {d.detail ? ` — ${String(d.detail)}` : ""}
+          {d.oper_status ? ` · oper ${String(d.oper_status)}` : ""}
         </span>
       );
     }
@@ -367,6 +397,27 @@ export default function ReviewPage() {
                 >
                   <ShieldAlert className="text-amber-400" /> Keep stored
                 </Button>
+              </>
+            )}
+            {sec.key === "cable_mismatch" &&
+              typeof it.detail.device_id === "number" && (
+              <>
+                <Button size="sm" variant="ghost" asChild
+                  title="Open the L1 trace for this port">
+                  <Link
+                    href={`/devices/${it.detail.device_id}?trace=${it.entity_id}`}
+                  >
+                    <Route className="text-sky-400" /> Open trace
+                  </Link>
+                </Button>
+                {canWrite && (
+                  <Button size="sm" variant="ghost" asChild
+                    title="Edit cabling on the device page">
+                    <Link href={`/devices/${it.detail.device_id}`}>
+                      <Pencil className="text-emerald-400" /> Edit cabling
+                    </Link>
+                  </Button>
+                )}
               </>
             )}
             {canWrite && sec.key === "aging_discovery" && (

@@ -25,7 +25,7 @@ from app.core.db import SessionLocal
 from app.core.redis import get_arq_pool, get_redis
 from app.core.security import set_actor
 from app.models.device import Device
-from app.services import runtime_settings
+from app.services import cable_validation, runtime_settings
 from app.services import snmp as svc
 from app.services.secrets import SecretsNotConfigured
 
@@ -108,6 +108,12 @@ async def run_snmp_poll(ctx: dict, device_ids: list[int]) -> dict:
                         fills_connected=fills,
                     )
                     await session.commit()
+                    # New cable mismatches page once; cleared/recurrent
+                    # flags stay silent (fingerprint dedup lives in
+                    # validate_device's raised/new split).
+                    await cable_validation.emit_new_flags(
+                        did, dev.name, res.get("cable_flags_new") or []
+                    )
                     return res
             except SecretsNotConfigured:
                 # Platform fault, not a device fault — stamp it so the

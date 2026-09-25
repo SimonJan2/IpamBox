@@ -27,6 +27,7 @@ from app.schemas.cabling import (
     MatchFreeTextOut,
 )
 from app.schemas.common import Page
+from app.services.cable_validation import clear_validation
 from app.services.cabling import (
     cable_ends_for,
     cable_for,
@@ -149,6 +150,9 @@ async def create_cable(
     await _check_ends(session, body.a_interface_id, body.b_interface_id)
     cable = Cable(**body.model_dump())
     session.add(cable)
+    # A newly documented link may answer an open lldp_neighbor flag —
+    # drop stale validation on both ends; the next poll re-derives it.
+    await clear_validation(session, [body.a_interface_id, body.b_interface_id])
     try:
         await session.commit()
     except IntegrityError as e:
@@ -187,8 +191,16 @@ async def update_cable(
             patch.get("b_interface_id") or cable.b_interface_id,
             ignore_cable_id=cable.id,
         )
+    # Cable PATCH clears the interfaces' validation — old ends lost a
+    # cable, new ends gained one; stale flags must not survive either.
+    # Ends are captured BEFORE the setattr pass rewrites them.
+    old_ends = [cable.a_interface_id, cable.b_interface_id]
     for field, value in patch.items():
         setattr(cable, field, value)
+    await clear_validation(
+        session,
+        old_ends + [cable.a_interface_id, cable.b_interface_id],
+    )
     try:
         await session.commit()
     except IntegrityError as e:
@@ -208,6 +220,9 @@ async def delete_cable(
 ):
     cable = await _get_cable(session, cable_id)
     await session.delete(cable)
+    await clear_validation(
+        session, [cable.a_interface_id, cable.b_interface_id]
+    )
     await session.commit()
 
 

@@ -1,9 +1,10 @@
 # Review Center
 
 One queue for every flag the system raises. IpamBox already detects MAC
-mismatches, duplicate MACs, aging discoveries, offline hosts, expiring
-certificates, unresolved switch references, uncabled and unracked devices —
-they all land on **Operations → Review** (`g v`) as live, computed sections.
+mismatches, cable mismatches, duplicate MACs, aging discoveries, offline
+hosts, expiring certificates, unresolved switch references, unmanaged
+SNMP senders, uncabled and unracked devices — they all land on
+**Operations → Review** (`g v`) as live, computed sections.
 Nothing here is a stored finding: each section is a query run on read, so
 the queue is always current.
 
@@ -12,6 +13,7 @@ the queue is always current.
 | Section | What it catches |
 |---|---|
 | MAC mismatches | A scan saw a different MAC than inventory documented |
+| Cable mismatches | SNMP evidence contradicts documented cabling — cabled-but-down, far-end MACs absent, or an LLDP neighbor on an uncabled port |
 | Duplicate MACs | One MAC on multiple addresses — a multi-NIC host or bad data |
 | Aging discoveries | `discovered` rows older than `discovery_expire_days` |
 | Offline hosts | `offline` rows past the `scan_offline_grace_scans` hysteresis |
@@ -38,6 +40,10 @@ Every button goes through the normal endpoint, so the
   `scan_stored_mac_wins`). This is the answer for shared dock/NIC MACs.
 - **Run resolver** on the unmatched-switch section replays the legacy
   text matcher and reports matched / ambiguous / unmatched inline.
+- **Open trace** on a cable mismatch jumps to that port's L1 trace
+  drawer; **Edit cabling** lands on the device's interface panel. Cable
+  flags self-heal when the next poll disproves them — dismissal is only
+  for findings you accept as reality.
 
 ## Dismissal is data, not deletion
 

@@ -8,6 +8,7 @@ import {
   Plus,
   Route,
   Trash2,
+  TriangleAlert,
   Wand2,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -96,6 +97,14 @@ const OPER_CLASS: Record<string, string> = {
 const operBadgeClass = (s: string | null) =>
   s ? (OPER_CLASS[s] ?? "border-border bg-muted/40 text-muted-foreground") : "";
 
+/** V8.2 cable_mismatch reason → human label (mirrors the backend's
+ *  REASON_LABELS — the flag's `detail` rides in the tooltip). */
+const FLAG_REASON: Record<string, string> = {
+  documented_down: "cabled but port reports down",
+  far_end_absent: "peer MACs not learned on this port",
+  lldp_neighbor: "LLDP neighbor on uncabled port",
+};
+
 /** An SNMP-owned port goes dim when the device stopped reporting it — its
  *  snmp_seen_at falls behind ~2 poll intervals (the port may have been
  *  renamed/removed on the device; we never delete it, just dim). */
@@ -181,7 +190,20 @@ export function InterfacesPanel({ device }: { device: DeviceDetail }) {
 
   const rows = ifaces.data ?? [];
   const byId = new Map(rows.map((i) => [i.id, i]));
+  const flaggedCount = rows.filter((i) => i.validation?.cable_mismatch).length;
   const reload = () => void ifaces.reload();
+
+  // Review's "open trace" lands here as /devices/{id}?trace={iface_id} —
+  // read once (client-side URL, no Suspense needed) and honor once.
+  const traceParamSeen = useRef(false);
+  useEffect(() => {
+    if (traceParamSeen.current || ifaces.data == null) return;
+    const tid = new URLSearchParams(window.location.search).get("trace");
+    if (!tid) return;
+    traceParamSeen.current = true;
+    const hit = ifaces.data.find((i) => i.id === Number(tid));
+    if (hit) setTraceFor(hit);
+  }, [ifaces.data]);
 
   const del = async (i: DeviceInterface) => {
     setBusy(i.id);
@@ -204,6 +226,15 @@ export function InterfacesPanel({ device }: { device: DeviceDetail }) {
           <span className="ml-2 text-xs font-normal text-muted-foreground">
             {rows.length ? `${device.cabled_count}/${rows.length} cabled` : "no ports yet"}
           </span>
+          {flaggedCount > 0 && (
+            <span
+              className="ml-2 inline-flex items-center gap-0.5 text-xs font-normal text-amber-400"
+              title={`${flaggedCount} port(s) carrying a cable_mismatch flag`}
+            >
+              <TriangleAlert className="h-3 w-3" />
+              {flaggedCount} flagged
+            </span>
+          )}
         </span>
         {canWrite && (
           <div className="flex gap-1">
@@ -271,6 +302,21 @@ export function InterfacesPanel({ device }: { device: DeviceDetail }) {
                       {i.name}
                     </button>
                     <span className="flex shrink-0 items-center gap-0.5">
+                      {i.validation?.cable_mismatch && (
+                        <Badge
+                          variant="outline"
+                          className="border-amber-700/60 bg-amber-950/40 px-1 py-0 text-[10px] text-amber-300"
+                          title={
+                            (FLAG_REASON[i.validation.cable_mismatch.reason] ??
+                              i.validation.cable_mismatch.reason) +
+                            (i.validation.cable_mismatch.detail
+                              ? ` — ${i.validation.cable_mismatch.detail}`
+                              : "")
+                          }
+                        >
+                          <TriangleAlert className="h-2.5 w-2.5" />
+                        </Badge>
+                      )}
                       {i.oper_status && (
                         <Badge
                           variant="outline"

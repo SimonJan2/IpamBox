@@ -58,6 +58,13 @@ const ACTION_STYLES: Record<string, string> = {
   delete: "border-rose-500/30 bg-rose-500/10 text-rose-400",
 };
 
+/** V8.2 cable_mismatch reasons → labels (mirrors backend REASON_LABELS). */
+const CABLE_REASON: Record<string, string> = {
+  documented_down: "cabled but down",
+  far_end_absent: "peer MACs absent",
+  lldp_neighbor: "LLDP on uncabled port",
+};
+
 function StatCard({
   title,
   value,
@@ -395,14 +402,14 @@ export default function DashboardPage() {
           <CardHeader className="flex flex-row items-center justify-between space-y-0">
             <CardTitle className="flex items-center gap-2 text-base">
               <AlertTriangle className="h-4 w-4 text-amber-400" />
-              MAC mismatches
+              Mismatches
             </CardTitle>
             <Link
               href="/review"
               className="text-xs text-muted-foreground hover:underline"
             >
-              {stats && stats.mac_mismatches > 0
-                ? `${stats.mac_mismatches} flagged · triage`
+              {stats && stats.mac_mismatches + stats.cable_mismatches > 0
+                ? `${stats.mac_mismatches + stats.cable_mismatches} flagged · triage`
                 : "review queue"}
             </Link>
           </CardHeader>
@@ -411,12 +418,16 @@ export default function DashboardPage() {
               loading={statsQ.loading}
               error={statsQ.error}
               onRetry={statsQ.reload}
-              empty={stats?.mac_mismatch_items.length === 0}
+              empty={
+                (stats?.mac_mismatch_items.length ?? 0) +
+                  (stats?.cable_mismatch_items.length ?? 0) ===
+                0
+              }
               emptyMessage="No mismatches flagged."
             >
               {stats?.mac_mismatch_items.map((m) => (
                 <Link
-                  key={m.id}
+                  key={`mac-${m.id}`}
                   href={`/prefixes/${m.prefix_id}`}
                   className="flex items-center gap-3 rounded-md border p-2.5 transition-colors hover:bg-accent"
                 >
@@ -431,6 +442,29 @@ export default function DashboardPage() {
                   </span>
                   <span className="ml-auto whitespace-nowrap text-xs text-muted-foreground">
                     {timeAgo(m.flagged_at)}
+                  </span>
+                </Link>
+              ))}
+              {stats?.cable_mismatch_items.map((c) => (
+                <Link
+                  key={`cable-${c.id}`}
+                  href={`/devices/${c.device_id}`}
+                  className="flex items-center gap-3 rounded-md border p-2.5 transition-colors hover:bg-accent"
+                  title={c.detail ?? undefined}
+                >
+                  <span dir="auto" className="min-w-0 truncate text-sm">
+                    {c.device}
+                    <span className="font-mono text-muted-foreground">
+                      {" "}· {c.port}
+                    </span>
+                  </span>
+                  <span className="min-w-0 truncate text-xs text-amber-400">
+                    {c.reason
+                      ? (CABLE_REASON[c.reason] ?? c.reason)
+                      : "cable_mismatch"}
+                  </span>
+                  <span className="ml-auto whitespace-nowrap text-xs text-muted-foreground">
+                    {timeAgo(c.flagged_at)}
                   </span>
                 </Link>
               ))}

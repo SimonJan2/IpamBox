@@ -437,6 +437,42 @@ async def dashboard_stats(session: AsyncSession) -> dict:
         }
         for r in mismatch_rows
     ]
+    # Cable validation (V8.2) — flagged interfaces, same has_key pattern
+    # as mac_mismatch on ip_addresses.custom_fields.
+    from app.models.cabling import DeviceInterface
+
+    cable_mismatches = int(
+        (
+            await session.execute(
+                select(func.count(DeviceInterface.id)).where(
+                    DeviceInterface.validation.has_key("cable_mismatch")  # noqa: W601
+                )
+            )
+        ).scalar_one()
+    )
+    cable_rows = (
+        await session.execute(
+            select(DeviceInterface, Device.name)
+            .join(Device, DeviceInterface.device_id == Device.id)
+            .where(
+                DeviceInterface.validation.has_key("cable_mismatch")  # noqa: W601
+            )
+            .order_by(Device.name, DeviceInterface.position, DeviceInterface.id)
+            .limit(8)
+        )
+    ).all()
+    cable_mismatch_items = [
+        {
+            "id": i.id,
+            "device_id": i.device_id,
+            "device": dname,
+            "port": i.name,
+            "reason": (i.validation or {}).get("cable_mismatch", {}).get("reason"),
+            "detail": (i.validation or {}).get("cable_mismatch", {}).get("detail"),
+            "flagged_at": (i.validation or {}).get("cable_mismatch", {}).get("at"),
+        }
+        for i, dname in cable_rows
+    ]
 
     return {
         "sites_total": sites_total,
@@ -461,8 +497,10 @@ async def dashboard_stats(session: AsyncSession) -> dict:
         "rack_u_used": rack_u_used,
         "rack_u_total": rack_u_total,
         "mac_mismatches": mac_mismatches,
+        "cable_mismatches": cable_mismatches,
         "certs_expiring": certs_expiring,
         "mac_mismatch_items": mac_mismatch_items,
+        "cable_mismatch_items": cable_mismatch_items,
     }
 
 

@@ -236,6 +236,18 @@ export interface MacMismatchItem {
   flagged_at: string | null;
 }
 
+/** A cable_mismatch-flagged interface — V8.2's physical-layer twin. */
+export interface CableMismatchItem {
+  /** Interface id (the flagged port). */
+  id: number;
+  device_id: number;
+  device: string;
+  port: string;
+  reason: string | null;
+  detail: string | null;
+  flagged_at: string | null;
+}
+
 export interface DashboardStats {
   sites_total: number;
   vrfs_total: number;
@@ -259,17 +271,25 @@ export interface DashboardStats {
   rack_u_used: number;
   rack_u_total: number;
   mac_mismatches: number;
+  /** Cable validation (V8.2) — interfaces carrying cable_mismatch. */
+  cable_mismatches: number;
   /** Review center (V7.1): open findings across all sections. */
   review_open: number;
   /** Title of the highest-priority non-empty review section (or null). */
   review_worst: string | null;
   certs_expiring: Certificate[];
   mac_mismatch_items: MacMismatchItem[];
+  cable_mismatch_items: CableMismatchItem[];
 }
 
 // --- Review center (V7.1): one queue for every flag ----------------------
 
-export type ReviewEntityType = "ip_address" | "device" | "certificate" | "mac_group";
+export type ReviewEntityType =
+  | "ip_address"
+  | "device"
+  | "certificate"
+  | "mac_group"
+  | "device_interface";
 
 export interface ReviewItem {
   /** Together with the section key this is the dismissal tuple —
@@ -944,6 +964,8 @@ export interface Device {
   /** L1 coverage — how many ports the device has and how many are cabled. */
   interface_count: number;
   cabled_count: number;
+  /** V8.2 — ports carrying a cable_mismatch flag right now. */
+  flagged_count: number;
 }
 
 export type SnmpVersion = "v1" | "v2c" | "v3";
@@ -982,6 +1004,17 @@ export interface SnmpPollResult {
   links_applied: number;
   links_skipped: number;
   lldp_neighbors: number;
+  /** Cable validation (V8.2) — evaluated ports, open flags, deltas. */
+  cable_checked: number;
+  cable_flags: number;
+  cable_flags_raised: number;
+  cable_flags_cleared: number;
+  cable_flags_new: {
+    interface_id: number;
+    interface: string;
+    reason: string;
+    detail: string;
+  }[];
   error: string | null;
   errors: string[];
 }
@@ -1044,6 +1077,33 @@ export interface ConnectedIpRef {
   prefix_id: number;
 }
 
+/** One LLDP neighbor observed on a port (V8.2 evidence blob). */
+export interface LldpNeighbor {
+  remote_name: string | null;
+  remote_port: string | null;
+  remote_mac: string | null;
+  local_port_id: string | null;
+}
+
+/** A cable_mismatch flag — a finding, never a fix. */
+export interface CableMismatchFlag {
+  reason: "documented_down" | "far_end_absent" | "lldp_neighbor" | string;
+  detail: string | null;
+  at: string | null;
+  cable_id?: number | null;
+  remote_name?: string | null;
+  remote_port?: string | null;
+}
+
+/** The observed L1 evidence blob on an interface (V8.2). */
+export interface InterfaceValidation {
+  cable_mismatch?: CableMismatchFlag;
+  lldp?: LldpNeighbor[];
+  macs_seen?: string[];
+  notes?: string[];
+  checked_at?: string;
+}
+
 /** One named port/NIC on a device. `pair_interface_id` links a patch
  *  position's front and back ports on the same (panel) device. */
 export interface DeviceInterface {
@@ -1061,6 +1121,8 @@ export interface DeviceInterface {
   oper_status: string | null;
   admin_status: string | null;
   snmp_seen_at: string | null;
+  /** V8.2 — observed L1 evidence; cable_mismatch key = flagged port. */
+  validation: InterfaceValidation | null;
   /** Provenance — manual | snmp (poller-owned). */
   source: string;
   created_at: string;
