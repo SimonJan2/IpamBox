@@ -28,6 +28,12 @@ class ImportBatch(Base):
     filename: Mapped[str] = mapped_column(String(255))
     stored_path: Mapped[str] = mapped_column(String(512))
     sha256: Mapped[str] = mapped_column(String(64))
+    # Batch-kind vocabulary: 'workbook' (uploaded file) | 'snmp' (device
+    # inventory sync — stored_path is a snmp://device/<id> sentinel and
+    # stats['snapshot'] holds the raw walk the commit ran against).
+    kind: Mapped[str] = mapped_column(
+        String(16), default="workbook", server_default="workbook"
+    )
     status: Mapped[ImportBatchStatus] = mapped_column(
         Enum(
             ImportBatchStatus,

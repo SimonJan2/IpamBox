@@ -83,7 +83,11 @@ Scapy raw-socket scanning · Next.js 15 dark-mode UI
   LLDP neighbor on an uncabled port raises a `cable_mismatch` flag (⚠ on
   the port, count in the device header + dashboard, triage in
   `/review`); flags self-heal on the next contradictory-free poll and are
-  never auto-fixed.
+  never auto-fixed. The SNMP card also offers **Pull inventory**: the
+  device teaches IpamBox its VLAN database, SVI/L3 subnets and ARP
+  neighbors through a preview → one-transaction apply (a committed
+  `kind="snmp"` import batch for provenance), with honest conflict rows
+  wherever `manual`/`import` data outranks what the device reports.
 - **Rack elevations**: racks with per-U device placement on front/rear
   faces, a read-only SVG elevation view, and collision validation
   (front+rear share a U; same-face overlaps are rejected). Live scan-health

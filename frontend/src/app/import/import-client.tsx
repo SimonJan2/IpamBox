@@ -964,6 +964,14 @@ export default function ImportPage() {
                   <TableRow key={b.id}>
                     <TableCell dir="auto" className="font-medium">
                       {b.filename}
+                      {b.kind === "snmp" && (
+                        <Badge
+                          variant="secondary"
+                          className="ml-1.5 text-[10px]"
+                        >
+                          snmp
+                        </Badge>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Badge

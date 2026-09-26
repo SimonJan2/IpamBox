@@ -118,6 +118,65 @@ Never:
 - deletions — nothing is removed because a device stopped reporting it;
 - SNMP SET — the poller is physically incapable of writing to a device.
 
+## Inventory sync — the switch teaches you its truth
+
+Enrichment describes ports. **Pull inventory** (on the same SNMP card)
+goes further: the switch hands over its VLAN database, its L3 interface
+addresses, and its ARP cache — subnets and neighbors the scanner can't
+see because they live on VLANs with no routable SVI. Everything runs
+through a **preview → apply** flow, identical in spirit to the workbook
+importer: nothing writes until you approve a plan, and apply is one
+transaction.
+
+Pick a **target VRF** (and optionally a site) in the dialog, press
+**Preview**, and IpamBox walks three tables read-only:
+
+| Table | OIDs | Becomes |
+|---|---|---|
+| VLANs | Q-BRIDGE `dot1qVlanStaticName` + `dot1qVlanStaticEgressPorts`/`dot1qVlanCurrentEgressPorts` | `vlans` rows (name + member ports, resolved through `dot1dBasePortIfIndex`) |
+| L3 interfaces | IP-MIB `ipAddressIfIndex`/`ipAddressPrefix` (legacy `ipAdEnt*` fallback) | `prefixes` rows — the CIDR of each SVI/L3 port; the interface's own address fills `gateway` |
+| ARP cache | `ipNetToMediaPhysAddress` + `ipNetToPhysicalPhysAddress` | `ip_addresses` rows at `status: discovered`, `source: snmp` |
+
+The preview groups rows into **VLANs / subnets / addresses** with an
+action badge per row:
+
+- **create** — nothing like it exists; applying writes it;
+- **exists** — already recorded identically (a re-run is all `exists`);
+- **update** — exists, but the device knows more (e.g. an ARP-observed
+  MAC on an address that has none);
+- **conflict** — the device's truth disagrees with a row a *higher*
+  authority owns: a VID that exists under a different name, or an IP
+  whose stored MAC differs. Conflicts render red with the stored value —
+  they are **reported, never overwritten**.
+
+Precedence follows the shared `SOURCE_RANK`: `scan` < `snmp` <
+`integration` < `import` < `manual`. An address you imported or typed
+keeps its MAC; a scan-discovered one can be enriched. Prefix creation
+still honors `check_overlap`, so a subnet that would collide is a
+conflict row, not a silent write. Subnet matching is scoped to the VRF
+you picked — the same CIDR in a different VRF is a separate coexistence,
+not a match.
+
+Uncheck any row before **Apply**. Apply re-walks the device (the plan is
+always against fresh truth), applies your selection in **one
+transaction**, and records a committed `import_batches` row with
+`kind: snmp` — the same provenance trail file imports get, so the
+changelog and the import history both show where the data came from.
+Mid-apply failure rolls the whole thing back. Created addresses carry
+`source: snmp` and `import_batch_id` back to that batch.
+
+Honest-sync rules:
+
+- **Preview writes nothing** — it is a pure read; the only thing it
+  costs is a device walk.
+- **No deletions** — a VLAN or address the device stops reporting is
+  never removed; absence is evidence of nothing.
+- **Not a DHCP scope pull** — contiguous ARP spans are neighbors, not
+  pools. A device that genuinely exposes a DHCP scope table is a future
+  slice; today `ranges` is deliberately a no-op.
+- **Read-only, always** — inventory sync shares the poller's guarantee:
+  GET/WALK only.
+
 ## Runtime controls
 
 Settings → **Features → SNMP enrichment**:

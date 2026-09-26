@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Antenna, FlaskConical, RefreshCw } from "lucide-react";
+import { Antenna, FlaskConical, Network, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
@@ -27,6 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { SnmpInventoryDialog } from "@/components/snmp-inventory-dialog";
 
 const VERSIONS: SnmpVersion[] = ["v1", "v2c", "v3"];
 const AUTH_PROTOS = ["sha", "md5", "sha224", "sha256", "sha384", "sha512"];
@@ -62,6 +63,7 @@ export function SnmpCard({
   const [cred, setCred] = useState(EMPTY_CRED);
   const [busy, setBusy] = useState(false);
   const [test, setTest] = useState<SnmpTestResult | null>(null);
+  const [invOpen, setInvOpen] = useState(false);
 
   const credTyped = Boolean(
     cred.community || cred.user || cred.auth_key || cred.priv_key ||
@@ -408,6 +410,16 @@ export function SnmpCard({
                 >
                   <RefreshCw className="h-3.5 w-3.5" /> Poll now
                 </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7"
+                  onClick={() => setInvOpen(true)}
+                  disabled={busy || (!device.snmp_cred_set && !credTyped)}
+                  title="Pull VLANs, SVI subnets and ARP neighbors — preview, then apply"
+                >
+                  <Network className="h-3.5 w-3.5" /> Pull inventory
+                </Button>
               </>
             )}
           </div>
@@ -449,6 +461,12 @@ export function SnmpCard({
           )}
         </div>
       )}
+      <SnmpInventoryDialog
+        device={device}
+        open={invOpen}
+        onOpenChange={setInvOpen}
+        onCommitted={onChanged}
+      />
     </div>
   );
 }

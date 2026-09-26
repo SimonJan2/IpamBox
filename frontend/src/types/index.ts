@@ -544,6 +544,8 @@ export type SheetFamily =
 
 export interface ImportBatch {
   id: number;
+  /** 'workbook' (uploaded file) | 'snmp' (device inventory sync) */
+  kind: string;
   filename: string;
   sha256: string;
   status: ImportBatchStatus;
@@ -1017,6 +1019,48 @@ export interface SnmpPollResult {
   }[];
   error: string | null;
   errors: string[];
+}
+
+/** One classified observation from POST /devices/{id}/snmp/inventory-* —
+ * the workbook importer's dry-run grammar applied to a live switch read. */
+export interface SnmpInventoryRow {
+  /** vlans | subnets | addresses */
+  section: string;
+  /** 'vlan:10' | 'sub:10.0.0.0/24' | 'addr:10.0.0.5' — apply selector key */
+  key: string;
+  action: "create" | "update" | "exists" | "conflict" | "skip" | "error" | string;
+  detail: string;
+  ok: boolean;
+  /** field -> [stored, observed] — the honest-diff convention */
+  diff?: Record<string, [unknown, unknown]>;
+  /** matched existing row */
+  ref?: { kind: string; id: number; label: string };
+  /** post-apply: the created/updated row (address rows carry prefix_id
+   *  so the UI can link into the prefix grid) */
+  result?: {
+    kind: string;
+    id: number | null;
+    label: string;
+    prefix_id?: number;
+  };
+}
+
+/** inventory-preview / inventory-apply — unreachable is data, not HTTP error. */
+export interface SnmpInventoryResult {
+  device_id: number;
+  up: boolean;
+  host: string | null;
+  sys_name: string | null;
+  sys_descr: string | null;
+  vrf_id: number | null;
+  site_id: number | null;
+  counts: Record<string, number>;
+  rows: SnmpInventoryRow[];
+  errors: string[];
+  error: string | null;
+  committed: boolean;
+  /** the kind='snmp' import_batches row — provenance for the sync */
+  batch_id: number | null;
 }
 
 /** One of a device's IPs — link id/label plus scan status for the table. */
