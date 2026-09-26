@@ -1,11 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Download,
   FileUp,
   History,
+  LayoutTemplate,
   Pencil,
   Plus,
   SlidersHorizontal,
@@ -57,7 +59,15 @@ import {
   type DeviceTextParam,
 } from "@/components/device-filter-panel";
 import { FilterChip, chipSummary } from "@/components/filter-ui";
-import type { Device, Page, Rack, RackGroup, Site } from "@/types";
+import type {
+  Device,
+  DeviceTemplate,
+  Page,
+  Rack,
+  RackGroup,
+  Site,
+  TemplateInstantiateResult,
+} from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -202,7 +212,16 @@ export default function DevicesPage() {
   const [deleting, setDeleting] = useState<Device | null>(null);
   const [historyFor, setHistoryFor] = useState<Device | null>(null);
   const [form, setForm] = useState(EMPTY);
+  const [tplId, setTplId] = useState("none");
   const [busy, setBusy] = useState(false);
+  const templatesQ = useAsyncData(
+    () =>
+      api
+        .get<Page<DeviceTemplate>>("/api/v1/device-templates?limit=500")
+        .then((p) => p.items)
+        .catch(() => []),
+    [dialogOpen]
+  );
 
   const items = itemsQ.data ?? [];
   const racks = racksQ.data ?? [];
@@ -227,8 +246,24 @@ export default function DevicesPage() {
             }
           : EMPTY
       );
+      setTplId("none");
     }
   }, [dialogOpen, editing]);
+
+  // Picking a template prefills the catalog fields; instantiate stamps the
+  // port layout on the new device in the same server transaction.
+  const pickTemplate = (v: string) => {
+    setTplId(v);
+    const t = (templatesQ.data ?? []).find((x) => String(x.id) === v);
+    if (!t) return;
+    setForm((f) => ({
+      ...f,
+      device_type: t.device_type ?? f.device_type,
+      manufacturer: t.manufacturer ?? f.manufacturer,
+      model: t.model ?? f.model,
+      category: t.category ?? f.category,
+    }));
+  };
 
   const submit = async () => {
     setBusy(true);
@@ -243,6 +278,14 @@ export default function DevicesPage() {
       if (editing) {
         await api.patch(`/api/v1/devices/${editing.id}`, body);
         toast.success("Device updated");
+      } else if (tplId !== "none") {
+        const r = await api.post<TemplateInstantiateResult>(
+          `/api/v1/device-templates/${tplId}/instantiate`,
+          body
+        );
+        toast.success(
+          `Device added — ${r.created} port${r.created === 1 ? "" : "s"} stamped`
+        );
       } else {
         await api.post("/api/v1/devices", body);
         toast.success("Device added");
@@ -632,6 +675,16 @@ export default function DevicesPage() {
           Devices <DocsLink slug="devices" />
         </h1>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            asChild
+            aria-label="Device templates"
+          >
+            <Link href="/devices/templates">
+              <LayoutTemplate /> Templates
+            </Link>
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" aria-label="Export devices">
@@ -791,6 +844,33 @@ export default function DevicesPage() {
             <DialogTitle>{editing ? "Edit device" : "New device"}</DialogTitle>
           </DialogHeader>
           <div className="grid gap-3">
+            {!editing && (templatesQ.data ?? []).length > 0 && (
+              <div className="grid gap-1.5">
+                <Label htmlFor={`${uid}-tpl`}>Device template</Label>
+                <Select value={tplId} onValueChange={pickTemplate}>
+                  <SelectTrigger id={`${uid}-tpl`}>
+                    <SelectValue placeholder="None — blank device" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None — blank device</SelectItem>
+                    {(templatesQ.data ?? []).map((t) => (
+                      <SelectItem key={t.id} value={String(t.id)}>
+                        {t.name}
+                        {t.manufacturer || t.model
+                          ? ` — ${[t.manufacturer, t.model].filter(Boolean).join(" ")}`
+                          : ""}
+                        {` · ${(t.interfaces?.length ?? 0) + (t.power_ports?.length ?? 0)} ports`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {tplId !== "none" && (
+                  <p className="text-xs text-muted-foreground">
+                    Its port layout stamps onto the new device on save.
+                  </p>
+                )}
+              </div>
+            )}
             <div className="grid gap-1.5">
               <Label htmlFor={`${uid}-name`}>Name</Label>
               <Input

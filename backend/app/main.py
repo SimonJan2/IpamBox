@@ -26,6 +26,7 @@ from app.models.tag import Tag
 from app.models.user import User
 from app.models.vlan import VLAN
 from app.models.vrf import VRF
+from app.services.device_templates import seed_device_templates
 from app.services.secrets import SecretsNotConfigured
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,16 @@ async def lifespan(_app: FastAPI):
     else:
         async with SessionLocal() as s:
             await auth.ensure_env_password_user(s)
+    # Builtin device templates seed once per name (app_settings tombstone —
+    # deleted builtins stay deleted); cheap no-op on later boots.
+    async with SessionLocal() as s:
+        try:
+            created = await seed_device_templates(s)
+            await s.commit()
+            if created:
+                logger.info("seeded %d builtin device template(s)", created)
+        except Exception:
+            logger.exception("device template seeding failed")
     get_redis()  # create the shared client up front; closed at shutdown
     try:
         yield

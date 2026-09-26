@@ -71,7 +71,15 @@ Scapy raw-socket scanning · Next.js 15 dark-mode UI
   rows.
 - **Cabling**: devices own **interfaces** (rj45/sfp/qsfp/console/patch/
   power) with one-click port generation — including patch-panel front+back
-  pairs in a single call. **Cables** connect ports with one-cable-per-
+  pairs in a single call. **Device templates** (Devices → Templates) take
+  that further: a reusable typed port layout (e.g. `switch-48` = 48×1G +
+  4×SFP28 uplinks, `patch-panel-24` = paired front/rear) that stamps a
+  device's whole interface set in one apply — merge reports skipped names
+  honestly, replace refuses while any port is cabled, and both create
+  dialogs can instantiate the device + its ports in one transaction.
+  ~10 builtins seed at startup; user templates edit in a port-grid editor
+  with a range expander (`Gi1/0/1..48 sfp28 25000`). **Cables** connect
+  ports with one-cable-per-
   interface enforcement, and an **L1 trace** walks the chain end to end —
   `host → panel-front → panel-back → switch` — hopping panel pass-throughs.
   IPs gain a structured `connected_interface` link alongside the legacy

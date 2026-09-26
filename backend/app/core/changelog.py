@@ -22,6 +22,7 @@ from app.models.circuit import Circuit
 from app.models.color_rule import ColorRule
 from app.models.custom_list import CustomList, CustomListRow
 from app.models.device import Device
+from app.models.device_template import DeviceTemplate
 from app.models.import_batch import ImportBatch
 from app.models.ip_address import IPAddress
 from app.models.ip_range import IPRange
@@ -60,6 +61,7 @@ AUDITED_MODELS: tuple = (
     RackGroup,
     Device,
     DeviceInterface,
+    DeviceTemplate,
     Cable,
     MonitorTarget,
     NotificationChannel,

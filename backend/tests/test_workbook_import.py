@@ -449,6 +449,9 @@ class TestPlanSiteResolution:
         assert any("Tarkumia" in r["detail"] for r in conflicts)
 
     def test_inactive_site_warning(self):
+        """A sheet over an inactive site's block does NOT resolve to it —
+        the retired-anchor rule spawns a title-named site with a warning
+        naming the closed site (blocks get reused after closure)."""
         sheets = [
             _matrix("רשימת אתרים", [
                 _MASTER_HEAD,
@@ -461,9 +464,8 @@ class TestPlanSiteResolution:
         ]
         result = _plan(sheets)
         p = _preview_of(result, "TRANSIT+ROTANDA")
-        assert p["site_name"] == "Tarkumia"
-        assert any("inactive" in w for w in p["warnings"])
-        assert any("doesn't resemble" in w for w in p["warnings"])
+        assert p["site_name"] == "TRANSIT+ROTANDA"
+        assert any("inactive site 'Tarkumia'" in w for w in p["warnings"])
 
     def test_anonymous_site_takes_sheet_title(self):
         """A sheet octet-matching a synthesized 'Site 35' claims its title —

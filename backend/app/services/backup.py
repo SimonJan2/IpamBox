@@ -50,6 +50,7 @@ from app.models.change_log import ChangeLog
 from app.models.circuit import Circuit
 from app.models.color_rule import ColorRule
 from app.models.custom_list import CustomList, CustomListRow
+from app.models.device_template import DeviceTemplate
 from app.models.diagram_layout import DiagramLayout
 from app.models.import_batch import ImportBatch
 from app.models.device import Device
@@ -128,6 +129,8 @@ BACKUP_TABLES: tuple[BackupTable, ...] = (
     # carrier_id is a self-FK — deferred so children restore before/after
     # their carrier regardless of row order.
     BackupTable("devices", Device, deferred_fks=("carrier_id",)),
+    # device_templates -> nothing: standalone catalog rows, no FKs.
+    BackupTable("device_templates", DeviceTemplate),
     # device_interfaces -> devices. connected_ip_id points forward at
     # ip_addresses (restored below) and pair_interface_id is a self-FK —
     # both deferred to pass 2, breaking the interface↔ip FK cycle.

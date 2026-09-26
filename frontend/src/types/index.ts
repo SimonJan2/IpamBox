@@ -1176,6 +1176,58 @@ export interface DeviceInterface {
   connected_ip: ConnectedIpRef | null;
 }
 
+// --- Device templates (V10.1): typed port layouts -------------------------
+
+/** One stamped port spec — `pair` names a sibling entry that gets a
+ *  reciprocal pair_interface_id link (patch front↔back). */
+export interface TemplateInterfaceEntry {
+  name: string;
+  kind: InterfaceKind;
+  speed_mbps?: number | null;
+  position?: number | null;
+  pair?: string | null;
+}
+
+export interface TemplatePowerPort {
+  name: string;
+}
+
+export type DeviceTemplateSource = "builtin" | "manual" | "import";
+
+export interface DeviceTemplate {
+  id: number;
+  name: string;
+  manufacturer: string | null;
+  model: string | null;
+  /** rack-library slug when one maps — the form prefill hook. */
+  device_type: string | null;
+  u_height: number;
+  face_default: RackFace;
+  colour: string | null;
+  category: string | null;
+  watts: number | null;
+  weight_kg: number | null;
+  interfaces: TemplateInterfaceEntry[];
+  power_ports: TemplatePowerPort[] | null;
+  source: DeviceTemplateSource;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** POST /devices/{id}/apply-template result. */
+export interface TemplateApplyResult {
+  created: number;
+  skipped: string[];
+  blocked: string[];
+}
+
+/** POST /device-templates/{id}/instantiate result — the device row plus
+ *  the apply counts. */
+export interface TemplateInstantiateResult extends TemplateApplyResult {
+  device: DeviceDetail;
+}
+
 /** One cable termination resolved for display. */
 export interface CableEnd {
   interface_id: number;

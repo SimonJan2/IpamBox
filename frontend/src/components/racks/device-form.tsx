@@ -14,11 +14,13 @@ import { slotCount, slotLabel } from "@/lib/rack-collision";
 import { foldHebrew } from "@/lib/utils";
 import type {
   Asset,
+  DeviceTemplate,
   IpAddress,
   Page,
   RackDevice,
   RackFace,
   SlotLayout,
+  TemplateInstantiateResult,
 } from "@/types";
 import { Button } from "@/components/ui/button";
 import {
@@ -89,6 +91,7 @@ export function DeviceFormDialog({
 }) {
   const [form, setForm] = useState(EMPTY);
   const [libFilter, setLibFilter] = useState("");
+  const [tplId, setTplId] = useState("none");
   const [busy, setBusy] = useState(false);
   const uid = useId();
 
@@ -103,6 +106,14 @@ export function DeviceFormDialog({
   // Bundled manifest (falls back to the tiny inline set while it loads).
   const libQ = useAsyncData(loadRackLibrary, [open]);
   const library = libQ.data ?? RACK_LIBRARY;
+  const templatesQ = useAsyncData(
+    () =>
+      api
+        .get<Page<DeviceTemplate>>("/api/v1/device-templates?limit=500")
+        .then((p) => p.items)
+        .catch(() => []),
+    [open]
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -139,6 +150,7 @@ export function DeviceFormDialog({
             face: prefill?.face ?? EMPTY.face,
           }
     );
+    setTplId("none");
   }, [open, editing, prefill]);
 
   /** Carriers in this rack (excludes the device being edited). */
@@ -179,6 +191,26 @@ export function DeviceFormDialog({
       weight_kg: d.weight_kg != null ? String(d.weight_kg) : f.weight_kg,
     }));
 
+  // Template pick prefills the catalog fields; on save the instantiate
+  // endpoint creates the device + stamps its port layout in one tx.
+  const pickTemplate = (v: string) => {
+    setTplId(v);
+    const t = (templatesQ.data ?? []).find((x) => String(x.id) === v);
+    if (!t) return;
+    setForm((f) => ({
+      ...f,
+      device_type: t.device_type ?? f.device_type,
+      u_height: String(t.u_height ?? 1),
+      face: t.face_default ?? f.face,
+      colour: t.colour ?? f.colour,
+      category: t.category ?? f.category,
+      manufacturer: t.manufacturer ?? f.manufacturer,
+      model: t.model ?? f.model,
+      watts: t.watts != null ? String(t.watts) : f.watts,
+      weight_kg: t.weight_kg != null ? String(t.weight_kg) : f.weight_kg,
+    }));
+  };
+
   const submit = async () => {
     setBusy(true);
     try {
@@ -210,6 +242,14 @@ export function DeviceFormDialog({
       if (editing) {
         await api.patch(`/api/v1/racks/${rackId}/devices/${editing.id}`, body);
         toast.success("Device updated");
+      } else if (tplId !== "none") {
+        const r = await api.post<TemplateInstantiateResult>(
+          `/api/v1/device-templates/${tplId}/instantiate`,
+          { ...body, rack_id: rackId }
+        );
+        toast.success(
+          `Device added — ${r.created} port${r.created === 1 ? "" : "s"} stamped`
+        );
       } else {
         await api.post(`/api/v1/racks/${rackId}/devices`, body);
         toast.success("Device added");
@@ -306,6 +346,30 @@ export function DeviceFormDialog({
                     </p>
                   )}
                 </div>
+              )}
+            </div>
+          )}
+          {!editing && (templatesQ.data ?? []).length > 0 && (
+            <div className="col-span-2 grid gap-1.5">
+              <Label htmlFor={`${uid}-tpl`}>Device template</Label>
+              <Select value={tplId} onValueChange={pickTemplate}>
+                <SelectTrigger id={`${uid}-tpl`}>
+                  <SelectValue placeholder="None — blank device" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None — blank device</SelectItem>
+                  {(templatesQ.data ?? []).map((t) => (
+                    <SelectItem key={t.id} value={String(t.id)}>
+                      {t.name}
+                      {` · ${(t.interfaces?.length ?? 0) + (t.power_ports?.length ?? 0)} ports`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {tplId !== "none" && (
+                <p className="text-xs text-muted-foreground">
+                  Its port layout stamps onto the new device on save.
+                </p>
               )}
             </div>
           )}
