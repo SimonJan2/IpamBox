@@ -230,3 +230,48 @@ class SnmpPollOut(BaseModel):
     cable_flags_new: list[dict] = []
     error: str | None = None
     errors: list[str] = []
+
+
+class SnmpInventoryRow(BaseModel):
+    """One classified observation — the workbook-importer dry-run grammar."""
+
+    section: str  # vlans | subnets | addresses
+    key: str      # 'vlan:10' | 'sub:10.0.0.0/24' | 'addr:10.0.0.5'
+    action: str   # create | update | exists | conflict | skip | error
+    detail: str
+    ok: bool = True
+    diff: dict | None = None     # field -> [stored, observed]
+    ref: dict | None = None      # matched existing {kind,id,label}
+    result: dict | None = None   # post-apply: the created/updated row
+
+
+class SnmpInventoryIn(BaseModel):
+    """Preview/apply body — the target VRF the pulled truth lands in."""
+
+    vrf_id: int
+    site_id: int | None = None
+
+
+class SnmpInventoryApplyIn(SnmpInventoryIn):
+    # section -> selected row keys; None applies everything applicable.
+    # An absent section applies nothing from it (the section was
+    # unchecked in the dialog).
+    selections: dict[str, list[str]] | None = None
+
+
+class SnmpInventoryOut(BaseModel):
+    """inventory-preview / inventory-apply — unreachable is data."""
+
+    device_id: int
+    up: bool
+    host: str | None = None
+    sys_name: str | None = None
+    sys_descr: str | None = None
+    vrf_id: int | None = None
+    site_id: int | None = None
+    counts: dict[str, int] = {}
+    rows: list[SnmpInventoryRow] = []
+    errors: list[str] = []
+    error: str | None = None
+    committed: bool = False
+    batch_id: int | None = None

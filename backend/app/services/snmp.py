@@ -100,6 +100,24 @@ OID_DOT1D_BASE_IF = "1.3.6.1.2.1.17.1.4.1.2"
 OID_DOT1D_FDB_PORT = "1.3.6.1.2.1.17.4.3.1.2"  # index = 6 MAC arcs
 OID_DOT1Q_FDB_PORT = "1.3.6.1.2.1.17.7.1.2.2.1.2"  # index = vlan + 6 MAC arcs
 OID_DOT1Q_VLAN_NAME = "1.3.6.1.2.1.17.7.1.4.3.1.1"  # index = VLAN id
+OID_DOT1Q_VLAN_EGRESS = "1.3.6.1.2.1.17.7.1.4.3.1.2"  # PortList, index = VID
+# dot1qVlanCurrentEgressPorts — dynamic membership incl. learned ports;
+# the index is timeMark.VID so the VID is the LAST arc.
+OID_DOT1Q_VLAN_CUR_EGRESS = "1.3.6.1.2.1.17.7.1.4.2.1.4"
+
+# IP-MIB (RFC 4293) — the device's own L3 config + its neighbor table.
+# ipAddressPrefixLength: index = ifIndex.atype.prefix-addr.
+OID_IP_PREFIX_LEN = "1.3.6.1.2.1.4.32.1.4"
+# ipAddressIfIndex: index = atype.addr -> the ifIndex owning the address.
+OID_IP_ADDR_IFINDEX = "1.3.6.1.2.1.4.34.1.3"
+# ipNetToPhysicalPhysAddress: index = ifIndex.atype.addr -> MAC.
+OID_N2P_PHYS = "1.3.6.1.2.1.4.35.1.4"
+# Legacy RFC 1213 tables — v4-only agents that never grew RFC 4293.
+# ipAddrTable rows index themselves by their own v4 address.
+OID_IPADENT_IFINDEX = "1.3.6.1.2.1.4.20.1.2"
+OID_IPADENT_NETMASK = "1.3.6.1.2.1.4.20.1.3"
+# ipNetToMediaPhysAddress: index = ifIndex.addr -> MAC (the classic ARP).
+OID_N2M_PHYS = "1.3.6.1.2.1.4.22.1.2"
 
 # LLDP-MIB — lldpRemTable columns (index = timeMark.localPort.remIndex).
 OID_LLDP_REM_CHASSIS = "1.0.8802.1.1.2.1.4.1.1.5"
@@ -448,6 +466,85 @@ def _macval(v) -> str | None:
     return ":".join(f"{b:02X}" for b in raw)
 
 
+_INET_ADDR_LEN = {1: 4, 2: 16, 3: 4, 4: 16}  # InetAddressType -> addr arcs
+
+
+def _idx_inet(
+    oid: str, prefix: str, head: int = 0
+) -> tuple[tuple[int, ...], str] | None:
+    """InetAddress-indexed row -> ((head arcs…), 'x.x.x.x'/'::1') or None.
+
+    Index shape: ``[head arcs][InetAddressType][len][address][zone…]`` —
+    RFC 4001's InetAddress is a variable OCTET STRING, so the address
+    carries a length arc in the INDEX (``1.4.10.0.0.1`` = ipv4, 4 octets,
+    10.0.0.1). ipAddressTable's atype.addr has head=0,
+    ipNetToPhysicalTable's ifIndex.atype.addr has head=1. Trailing zone
+    arcs (v6 site-local) are ignored — we only sync plain unicast."""
+    suffix = _index_suffix(oid, prefix)
+    if suffix is None:
+        return None
+    try:
+        arcs = [int(a) for a in suffix.split(".")]
+    except ValueError:
+        return None
+    if len(arcs) < head + 2:
+        return None
+    alen = _INET_ADDR_LEN.get(arcs[head])
+    # The length arc must agree with the address family — a mismatch means
+    # a non-canonical agent (or a zone/other index part); skip rather than
+    # guess where the address starts.
+    if alen is None or arcs[head + 1] != alen:
+        return None
+    if len(arcs) < head + 2 + alen:
+        return None
+    addr_arcs = arcs[head + 2 : head + 2 + alen]
+    if alen == 4:
+        addr = ".".join(str(a) for a in addr_arcs)
+    else:
+        try:
+            addr = str(ipaddress.ip_address(bytes(addr_arcs)))
+        except ValueError:
+            return None
+    return tuple(arcs[:head]), addr
+
+
+def _ipv4val(v) -> str | None:
+    """An IpAddress OCTET STRING -> 'x.x.x.x' (ipAdEnt* legacy values)."""
+    if v is None or _is_exc(v):
+        return None
+    try:
+        raw = bytes(v.asOctets())
+        if len(raw) == 4:
+            return ".".join(str(b) for b in raw)
+    except (AttributeError, TypeError):
+        pass
+    s = str(v).strip()
+    try:
+        return str(ipaddress.IPv4Address(s))
+    except ValueError:
+        return None
+
+
+def _port_bitmap(v) -> list[int] | None:
+    """Q-BRIDGE PortList OCTET STRING -> [port numbers].
+
+    Port N is bit (N-1), MSB-first in each octet — the same bit order
+    every PortList column uses (dot1dStpPortTable, dot1qVlan*)."""
+    if v is None or _is_exc(v):
+        return None
+    try:
+        raw = bytes(v.asOctets())
+    except (AttributeError, TypeError):
+        if isinstance(v, (bytes, bytearray)):
+            raw = bytes(v)
+        else:
+            return None
+    ports = []
+    for i, b in enumerate(raw):
+        ports.extend(i * 8 + bit + 1 for bit in range(8) if b & (0x80 >> bit))
+    return ports
+
+
 # --- the four poll primitives -------------------------------------------------
 
 
@@ -670,6 +767,246 @@ async def walk_lldp(
             }
         )
     return out
+
+
+# --- inventory sync walks (V8.3) -------------------------------------------------
+
+
+async def walk_vlans(
+    dev: Device, host: str, *, timeout: float = DEFAULT_TIMEOUT
+) -> list[dict]:
+    """Q-BRIDGE VLAN table -> [{vid, name, ports:[ifIndex…]}].
+
+    dot1qVlanStaticName gives vid -> admin name. Membership comes from
+    dot1qVlanStaticEgressPorts (index = vid) merged with
+    dot1qVlanCurrentEgressPorts (index = timeMark.vid — last arc is the
+    VID) so agents that only fill the current table still report ports.
+    PortList bits resolve through dot1dBasePortIfIndex into the same
+    ifIndex numbers the rest of the model uses. A VID with no name is
+    still reported — the planner decides what to do with it.
+    """
+    t = _target(dev, host, timeout=timeout)
+    names: dict[int, str] = {}
+    for oid, v in await _walk(t, OID_DOT1Q_VLAN_NAME):
+        vid = _idx_int(oid, OID_DOT1Q_VLAN_NAME)
+        name = _sval(v)
+        if vid is not None and name:
+            names[vid] = name
+
+    try:
+        static_rows = await _walk(t, OID_DOT1Q_VLAN_EGRESS)
+    except SnmpError:
+        static_rows = []
+    try:
+        cur_rows = await _walk(t, OID_DOT1Q_VLAN_CUR_EGRESS)
+    except SnmpError:
+        cur_rows = []
+
+    def collect(rows, prefix) -> dict[int, set[int]]:
+        out: dict[int, set[int]] = {}
+        for oid, v in rows:
+            suffix = _index_suffix(oid, prefix)
+            if suffix is None:
+                continue
+            try:
+                arcs = [int(a) for a in suffix.split(".")]
+            except ValueError:
+                continue
+            if not arcs:
+                continue
+            ports = _port_bitmap(v)
+            if ports:
+                out.setdefault(arcs[-1], set()).update(ports)
+        return out
+
+    base_ports = collect(static_rows, OID_DOT1Q_VLAN_EGRESS)
+    for vid, ports in collect(cur_rows, OID_DOT1Q_VLAN_CUR_EGRESS).items():
+        base_ports.setdefault(vid, set()).update(ports)
+
+    if_map: dict[int, int] = {}
+    if base_ports:
+        try:
+            for oid, v in await _walk(t, OID_DOT1D_BASE_IF):
+                port = _idx_int(oid, OID_DOT1D_BASE_IF)
+                ifidx = _ival(v)
+                if port is not None and ifidx is not None:
+                    if_map[port] = ifidx
+        except SnmpError:
+            if_map = {}
+
+    out = []
+    for vid in sorted(set(names) | set(base_ports)):
+        ports = sorted(
+            if_map[p] for p in base_ports.get(vid, ()) if p in if_map
+        )
+        out.append({"vid": vid, "name": names.get(vid), "ports": ports})
+    return out
+
+
+async def walk_ip_interfaces(
+    dev: Device, host: str, *, timeout: float = DEFAULT_TIMEOUT
+) -> list[dict]:
+    """IP-MIB -> the device's own L3 interfaces:
+    [{if_index, address, prefix_len, mac, name}].
+
+    RFC 4293: ipAddressIfIndex is indexed by atype.addr; the prefix
+    length is resolved by containment against ipAddressPrefixTable rows
+    on the same ifIndex (index = ifIndex.atype.prefix). Agents stuck on
+    RFC 1213 fall back to ipAddrTable (ipAdEntIfIndex + ipAdEntNetMask —
+    index = the v4 address itself). ifName/ifPhysAddress ride along for
+    SVI names and MACs; missing columns degrade to None.
+    """
+    t = _target(dev, host, timeout=timeout)
+    addr_rows = await _walk(t, OID_IP_ADDR_IFINDEX)
+    out: list[dict] = []
+    if addr_rows:
+        try:
+            plen_rows = await _walk(t, OID_IP_PREFIX_LEN)
+        except SnmpError:
+            plen_rows = []
+        nets_by_if: dict[int, list[ipaddress.IPv4Network]] = {}
+        for oid, v in plen_rows:
+            parsed = _idx_inet(oid, OID_IP_PREFIX_LEN, head=1)
+            plen = _ival(v)
+            if parsed is None or plen is None or not parsed[0]:
+                continue
+            ifidx = parsed[0][0]
+            try:
+                net = ipaddress.ip_network(
+                    f"{parsed[1]}/{plen}", strict=False
+                )
+            except ValueError:
+                continue
+            nets_by_if.setdefault(ifidx, []).append(net)
+        for oid, v in addr_rows:
+            parsed = _idx_inet(oid, OID_IP_ADDR_IFINDEX)
+            ifidx = _ival(v)
+            if parsed is None or ifidx is None:
+                continue
+            try:
+                ip = ipaddress.ip_address(parsed[1])
+            except ValueError:
+                continue
+            plen = None
+            for net in sorted(
+                nets_by_if.get(ifidx, []), key=lambda n: -n.prefixlen
+            ):
+                if ip in net:
+                    plen = net.prefixlen
+                    break
+            out.append(
+                {"if_index": ifidx, "address": str(ip), "prefix_len": plen}
+            )
+    else:
+        masks: dict[str, str] = {}
+        for oid, v in await _walk(t, OID_IPADENT_NETMASK):
+            addr = _index_suffix(oid, OID_IPADENT_NETMASK)
+            mask = _ipv4val(v)
+            if addr is not None and mask:
+                masks[addr] = mask
+        for oid, v in await _walk(t, OID_IPADENT_IFINDEX):
+            addr = _index_suffix(oid, OID_IPADENT_IFINDEX)
+            ifidx = _ival(v)
+            if addr is None or ifidx is None:
+                continue
+            try:
+                ip = ipaddress.IPv4Address(addr)
+            except ValueError:
+                continue
+            plen = None
+            mask = masks.get(addr)
+            if mask:
+                try:
+                    plen = ipaddress.ip_network(
+                        f"{ip}/{mask}", strict=False
+                    ).prefixlen
+                except ValueError:
+                    plen = None
+            out.append(
+                {"if_index": ifidx, "address": str(ip), "prefix_len": plen}
+            )
+
+    try:
+        name_rows = await _walk(t, OID_IF_NAME)
+    except SnmpError:
+        name_rows = []
+    try:
+        phys_rows = await _walk(t, OID_IF_PHYS)
+    except SnmpError:
+        phys_rows = []
+    name_by: dict[int, str] = {}
+    for oid, v in name_rows:
+        idx = _idx_int(oid, OID_IF_NAME)
+        s = _sval(v)
+        if idx is not None and s:
+            name_by[idx] = s
+    mac_by: dict[int, str] = {}
+    for oid, v in phys_rows:
+        idx = _idx_int(oid, OID_IF_PHYS)
+        mac = _macval(v)
+        if idx is not None and mac:
+            mac_by[idx] = mac
+
+    for row in out:
+        row["name"] = name_by.get(row["if_index"])
+        row["mac"] = mac_by.get(row["if_index"])
+    return out
+
+
+async def walk_arp(
+    dev: Device, host: str, *, timeout: float = DEFAULT_TIMEOUT
+) -> list[dict]:
+    """IP-MIB neighbor table -> [{ip, mac, if_index}].
+
+    Modern agents answer ipNetToPhysicalTable (index =
+    ifIndex.atype.addr); the legacy ipNetToMediaTable covers v4-only
+    agents (index = ifIndex.addr). Entries in both dedupe by address —
+    the modern table wins.
+    """
+    t = _target(dev, host, timeout=timeout)
+    by_ip: dict[str, dict] = {}
+    try:
+        n2p_rows = await _walk(t, OID_N2P_PHYS)
+    except SnmpError:
+        n2p_rows = []
+    for oid, v in n2p_rows:
+        parsed = _idx_inet(oid, OID_N2P_PHYS, head=1)
+        mac = _macval(v)
+        if parsed is None or mac is None or not parsed[0]:
+            continue
+        try:
+            ip = str(ipaddress.ip_address(parsed[1]))
+        except ValueError:
+            continue
+        by_ip[ip] = {"ip": ip, "mac": mac, "if_index": parsed[0][0]}
+    try:
+        n2m_rows = await _walk(t, OID_N2M_PHYS)
+    except SnmpError:
+        n2m_rows = []
+    for oid, v in n2m_rows:
+        suffix = _index_suffix(oid, OID_N2M_PHYS)
+        mac = _macval(v)
+        if suffix is None or mac is None:
+            continue
+        try:
+            arcs = [int(a) for a in suffix.split(".")]
+        except ValueError:
+            continue
+        if len(arcs) < 5:
+            continue
+        try:
+            ip = str(ipaddress.IPv4Address(bytes(arcs[1:5])))
+        except ValueError:
+            continue
+        by_ip.setdefault(ip, {"ip": ip, "mac": mac, "if_index": arcs[0]})
+
+    def sort_key(ip: str):
+        try:
+            return ipaddress.ip_address(ip)
+        except ValueError:
+            return ipaddress.ip_address("255.255.255.255")
+
+    return [by_ip[k] for k in sorted(by_ip, key=sort_key)]
 
 
 # --- the enrichment poll ------------------------------------------------------

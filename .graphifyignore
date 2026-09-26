@@ -1,0 +1,3 @@
+# Vendored rack-device image library (NetBox devicetype-library renders).
+# Bulk static assets - not part of the knowledge graph.
+frontend/public/rack-library/*.webp

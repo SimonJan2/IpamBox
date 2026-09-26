@@ -9,6 +9,8 @@ re-homes (validated), PATCH rack_id=null unracks, DELETE removes the row
 for real (IPs unlink via SET NULL, carrier children unmount).
 """
 import json
+from collections import Counter
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_, select
@@ -24,12 +26,15 @@ from app.api.v1.list_params import (
 )
 from app.core.db import get_session
 from app.core.deps import DATA_DELETE, DATA_WRITE, require_perm
+from app.core.security import get_actor
 from app.models.asset import Asset
 from app.models.cabling import DeviceInterface
 from app.models.device import Device
+from app.models.import_batch import ImportBatch, ImportBatchStatus
 from app.models.ip_address import IPAddress
 from app.models.rack import Rack, RackFace
 from app.models.site import Site
+from app.models.vrf import VRF
 from app.schemas.cabling import (
     DeviceInterfaceCreate,
     DeviceInterfaceOut,
@@ -43,6 +48,9 @@ from app.schemas.device import (
     DeviceIpRef,
     DeviceOut,
     DeviceUpdate,
+    SnmpInventoryApplyIn,
+    SnmpInventoryIn,
+    SnmpInventoryOut,
     SnmpPollOut,
     SnmpTestOut,
 )
@@ -69,6 +77,7 @@ from app.services.device_io import (
 )
 from app.services import cable_validation, runtime_settings
 from app.services import snmp as snmp_svc
+from app.services import snmp_inventory
 from app.services.devices import device_health, ips_by_device
 from app.services.ipam import IPAMError, get_or_404
 from app.services.monitors import device_check_ip
@@ -831,6 +840,171 @@ async def poll_snmp(
         device.id, device.name, res.get("cable_flags_new") or []
     )
     return SnmpPollOut(**res)
+
+
+async def _inventory_plan(
+    session: AsyncSession,
+    device: Device,
+    body: SnmpInventoryIn,
+):
+    """Shared preview/apply front half: validate targets, run the
+    read-only walks, build the classified plan. Returns (inv, plan) —
+    inv['up'] False means the caller returns early with the error data."""
+    try:
+        await get_or_404(session, VRF, body.vrf_id)
+        if body.site_id is not None:
+            await get_or_404(session, Site, body.site_id)
+    except IPAMError as e:
+        raise HTTPException(e.status_code, str(e))
+    eff = await runtime_settings.get_effective(session)
+    inv = await snmp_inventory.collect_inventory(
+        session, device, timeout=float(eff.values["snmp_timeout"])
+    )
+    if not inv["up"]:
+        return inv, None
+    plan = await snmp_inventory.build_plan(
+        session,
+        device,
+        vrf_id=body.vrf_id,
+        site_id=body.site_id,
+        vlans=inv["vlans"],
+        ip_ifs=inv["ip_ifs"],
+        arp=inv["arp"],
+        walk_errors=inv["walk_errors"],
+    )
+    return inv, plan
+
+
+def _inventory_out(
+    device: Device,
+    inv: dict,
+    body: SnmpInventoryIn,
+    plan=None,
+    *,
+    counts: dict | None = None,
+    rows: list | None = None,
+    **kw,
+) -> SnmpInventoryOut:
+    return SnmpInventoryOut(
+        device_id=device.id,
+        up=inv["up"],
+        host=inv["host"],
+        sys_name=inv["sys_name"],
+        sys_descr=inv["sys_descr"],
+        vrf_id=body.vrf_id,
+        site_id=body.site_id,
+        error=inv["error"],
+        counts=counts if counts is not None else (plan.counts() if plan else {}),
+        rows=rows if rows is not None else (
+            [r.out() for r in plan.rows] if plan else []
+        ),
+        errors=plan.errors if plan else inv["walk_errors"],
+        **kw,
+    )
+
+
+@router.post(
+    "/{device_id}/snmp/inventory-preview",
+    response_model=SnmpInventoryOut,
+    dependencies=[Depends(require_perm(DATA_WRITE))],
+)
+async def snmp_inventory_preview(
+    device_id: int,
+    body: SnmpInventoryIn,
+    session: AsyncSession = Depends(get_session),
+):
+    """Pull the device's VLAN/SVI/ARP tables and classify them against
+    the chosen VRF/site — the same dry-run grammar as the workbook
+    importer. Read-only: walks only, writes nothing."""
+    device = await _get_device(session, device_id)
+    inv, plan = await _inventory_plan(session, device, body)
+    return _inventory_out(device, inv, body, plan)
+
+
+@router.post(
+    "/{device_id}/snmp/inventory-apply",
+    response_model=SnmpInventoryOut,
+    dependencies=[Depends(require_perm(DATA_WRITE))],
+)
+async def snmp_inventory_apply(
+    device_id: int,
+    body: SnmpInventoryApplyIn,
+    session: AsyncSession = Depends(get_session),
+):
+    """Re-walk, rebuild the plan, and apply the selected rows in ONE
+    transaction — provenance is a kind='snmp' import_batches row plus
+    source='snmp' stamps on created addresses.
+
+    The apply re-reads the device rather than replaying the preview: ARP
+    caches churn, and committing stale rows would write data the switch
+    no longer reports. Selection keys that no longer match a fresh row
+    simply don't apply — the response rows say what actually happened."""
+    device = await _get_device(session, device_id)
+    inv, plan = await _inventory_plan(session, device, body)
+    if plan is None:
+        return _inventory_out(device, inv, body)
+
+    selections = (
+        {k: set(v) for k, v in body.selections.items()}
+        if body.selections is not None
+        else None
+    )
+    batch = snmp_inventory.new_batch(
+        device,
+        plan,
+        inv,
+        actor=get_actor(),
+        selections=body.selections,
+    )
+    session.add(batch)
+    await session.flush()
+    try:
+        rows = await snmp_inventory.apply_plan(
+            session, device, plan, selections=selections, batch=batch
+        )
+        batch.status = ImportBatchStatus.COMMITTED
+        batch.committed_at = datetime.now(timezone.utc)
+        counts = Counter(r["action"] for r in rows)
+        batch.stats = {
+            **(batch.stats or {}),
+            "commit_counts": {a: counts.get(a, 0) for a in (
+                "create", "update", "exists", "conflict", "skip", "error")},
+            "commit_rows": rows[:5000],
+        }
+        await session.commit()
+    except Exception as e:
+        await session.rollback()
+        # rollback() expired every ORM object — reading device.name would
+        # lazy-load on the async session and raise MissingGreenlet. Re-fetch
+        # (same trick imports.py's commit error path uses for the batch).
+        device = await session.get(Device, device_id)
+        # The rolled-back batch is gone — record the failed sync on a
+        # fresh row, same fingerprint + snapshot, status=failed.
+        failed = snmp_inventory.new_batch(
+            device, plan, inv, actor=get_actor(),
+            selections=body.selections,
+        )
+        failed.status = ImportBatchStatus.FAILED
+        failed.stats = {
+            **(failed.stats or {}),
+            "commit_error": f"{e.__class__.__name__}: {e}",
+        }
+        session.add(failed)
+        await session.commit()
+        if isinstance(e, IPAMError):
+            raise HTTPException(e.status_code, str(e))
+        if isinstance(e, IntegrityError):
+            raise HTTPException(
+                409, "apply hit a constraint — the plan raced the database"
+            )
+        raise HTTPException(
+            500, f"snmp inventory apply failed: {e.__class__.__name__}"
+        )
+    return _inventory_out(
+        device, inv, body, plan,
+        committed=True, batch_id=batch.id,
+        counts=counts, rows=rows,
+    )
 
 
 # ---------------------------------------------------------------------------

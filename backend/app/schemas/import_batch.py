@@ -11,6 +11,7 @@ class ImportBatchOut(BaseModel):
     id: int
     filename: str
     sha256: str
+    kind: str = "workbook"
     status: ImportBatchStatus
     stats: dict | None
     actor: str | None
