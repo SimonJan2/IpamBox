@@ -1,5 +1,6 @@
 from app.models.app_setting import AppSetting
 from app.models.asset import Asset, AssetKind
+from app.models.attachment import Attachment
 from app.models.base import Base
 from app.models.cabling import Cable, CableKind, DeviceInterface, InterfaceKind
 from app.models.certificate import Certificate
@@ -10,6 +11,7 @@ from app.models.custom_list import CustomList, CustomListRow
 from app.models.device import Device
 from app.models.device_template import DeviceTemplate
 from app.models.diagram_layout import DiagramLayout
+from app.models.docs_page import DocsPage
 from app.models.import_batch import ImportBatch, ImportBatchStatus
 from app.models.ip_address import IPAddress, IPRole, IPStatus
 from app.models.ip_range import IPRange, IPRangeRole
@@ -32,6 +34,7 @@ __all__ = [
     "AppSetting",
     "Asset",
     "AssetKind",
+    "Attachment",
     "Cable",
     "CableKind",
     "Certificate",
@@ -43,6 +46,7 @@ __all__ = [
     "DeviceInterface",
     "DeviceTemplate",
     "DiagramLayout",
+    "DocsPage",
     "ImportBatch",
     "ImportBatchStatus",
     "Service",

@@ -5,6 +5,7 @@ import {
   Columns3,
   History,
   Layers,
+  Paperclip,
   Pencil,
   Plus,
   Trash2,
@@ -40,6 +41,7 @@ import {
 } from "@/components/row-order";
 import { SortHeader, columnAriaSort } from "@/components/sort-header";
 import { AsyncPanel } from "@/components/async-panel";
+import { AttachmentsDialog } from "@/components/attachments";
 import { DocsLink } from "@/components/docs/docs-link";
 import { HistoryDialog } from "@/components/history-panel";
 import { InlineText } from "@/components/inline-edit";
@@ -124,6 +126,7 @@ export default function InventoryPage() {
   const [editing, setEditing] = useState<Asset | null>(null);
   const [deleting, setDeleting] = useState<Asset | null>(null);
   const [historyFor, setHistoryFor] = useState<Asset | null>(null);
+  const [attachFor, setAttachFor] = useState<Asset | null>(null);
   const [form, setForm] = useState(EMPTY);
   const [busy, setBusy] = useState(false);
 
@@ -461,6 +464,14 @@ export default function InventoryPage() {
                 onPick={(color) => setRowColor(c.row.original.id, color)}
               />
             )}
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={`Attachments for asset ${c.row.original.model ?? c.row.original.serial_number ?? c.row.original.id}`}
+              onClick={() => setAttachFor(c.row.original)}
+            >
+              <Paperclip className="h-4 w-4" />
+            </Button>
             <Button
               variant="ghost"
               size="icon"
@@ -953,6 +964,13 @@ export default function InventoryPage() {
         objectType="Asset"
         objectId={historyFor?.id ?? null}
         title={historyFor?.model ?? historyFor?.serial_number}
+      />
+      <AttachmentsDialog
+        open={attachFor !== null}
+        onOpenChange={() => setAttachFor(null)}
+        entityType="asset"
+        entityId={attachFor?.id ?? null}
+        title={attachFor?.model ?? attachFor?.serial_number}
       />
     </div>
   );

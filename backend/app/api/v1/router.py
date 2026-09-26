@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.v1 import (
     addresses,
+    attachments,
     backup,
     cables,
     changelog,
@@ -11,6 +12,7 @@ from app.api.v1 import (
     device_templates,
     devices,
     discovery,
+    docs_pages,
     entities,
     imports,
     lists,
@@ -71,3 +73,5 @@ api_router.include_router(channels.log_router)
 api_router.include_router(review.router)
 api_router.include_router(topology.router)
 api_router.include_router(reports.router)
+api_router.include_router(docs_pages.router)
+api_router.include_router(attachments.router)

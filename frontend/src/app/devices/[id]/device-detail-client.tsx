@@ -25,6 +25,7 @@ import { fmtTs } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import type { DeviceDetail, IpAddress, RackFace } from "@/types";
 import { AsyncPanel } from "@/components/async-panel";
+import { AttachmentStrip } from "@/components/attachments";
 import { DocsLink } from "@/components/docs/docs-link";
 import { HistoryDialog, HistoryPanel } from "@/components/history-panel";
 import { InlineText } from "@/components/inline-edit";
@@ -362,6 +363,7 @@ export default function DeviceDetailClient({ id }: { id: string }) {
                 />
               </div>
 
+              <AttachmentStrip entityType="device" entityId={d.id} />
               <MonitorSection deviceId={d.id} anchorLabel={d.name} />
               <SnmpCard device={d} onChanged={refresh} />
             </div>

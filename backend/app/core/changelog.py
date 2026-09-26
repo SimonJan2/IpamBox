@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session as SyncSession
 from app.core.security import get_actor
 from app.models.app_setting import AppSetting
 from app.models.asset import Asset
+from app.models.attachment import Attachment
 from app.models.cabling import Cable, DeviceInterface
 from app.models.certificate import Certificate
 from app.models.change_log import ChangeLog
@@ -23,6 +24,7 @@ from app.models.color_rule import ColorRule
 from app.models.custom_list import CustomList, CustomListRow
 from app.models.device import Device
 from app.models.device_template import DeviceTemplate
+from app.models.docs_page import DocsPage
 from app.models.import_batch import ImportBatch
 from app.models.ip_address import IPAddress
 from app.models.ip_range import IPRange
@@ -66,17 +68,21 @@ AUDITED_MODELS: tuple = (
     MonitorTarget,
     NotificationChannel,
     ReviewDismissal,
+    DocsPage,
+    Attachment,
 )
 # churn-only columns that produce noise, never signal — sort_order/pinned/
 # group_position change on every drag/drop and would spam the audit log
 # per gesture. Monitor state/last_* flip every check, channel secrets and
 # the SNMP cred are encrypted blobs, and the SNMP observed columns
 # (oper_status, sys_*, last_*) move every poll — events, not audit diffs.
+# `blob` is the attachment file itself — megabytes of binary must never
+# land in a JSONB diff.
 SKIP_FIELDS = {"updated_at", "last_seen", "password_hash", "sort_order", "pinned", "group_position", "missed_scans",
                "state", "consecutive_failures", "last_checked_at", "last_change_at", "last_error", "secret_enc",
                "snmp_cred_enc", "snmp_sys_name", "snmp_sys_descr", "snmp_last_ok_at", "snmp_last_error",
                "snmp_last_trap_at",
-               "oper_status", "admin_status", "snmp_seen_at", "validation"}
+               "oper_status", "admin_status", "snmp_seen_at", "validation", "blob"}
 _SPECS_KEY = "_changelog_specs"
 _REPR_ATTRS = ("name", "prefix", "address", "cidr", "username")
 

@@ -32,6 +32,7 @@ import { DeviceFormDialog } from "@/components/racks/device-form";
 import { RackulaImportDialog } from "@/components/racks/rackula-import";
 import { RackQrDialog } from "@/components/racks/rack-qr";
 import { AsyncPanel } from "@/components/async-panel";
+import { AttachmentStrip } from "@/components/attachments";
 import { DocsLink } from "@/components/docs/docs-link";
 import { HistoryDialog } from "@/components/history-panel";
 import { IpStatusBadge } from "@/components/status-badge";
@@ -368,6 +369,7 @@ export default function RackDetailPage({ id }: { id: string }) {
                   </div>
                 </div>
               )}
+              <AttachmentStrip entityType="rack" entityId={rack.id} />
             </div>
 
             <div className="min-w-0 rounded-lg border">

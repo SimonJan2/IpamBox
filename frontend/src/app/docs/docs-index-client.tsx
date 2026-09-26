@@ -11,6 +11,7 @@ import {
   searchDocs,
 } from "@/lib/docs";
 import { Input } from "@/components/ui/input";
+import { PagesSection } from "@/components/docs/pages-section";
 
 export default function DocsIndexClient() {
   const [q, setQ] = useState("");
@@ -74,6 +75,8 @@ export default function DocsIndexClient() {
           );
         })
       )}
+
+      <PagesSection filter={q} />
     </div>
   );
 }

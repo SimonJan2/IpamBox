@@ -1446,3 +1446,43 @@ export interface ReportSummary {
   metrics: ReportMetric[];
   sections: ReportSection[];
 }
+
+// --- Docs pages + attachments (V13) -----------------------------------------
+
+/** User-authored markdown page (backend DocsPage). Renders under
+ *  /docs/pages/<slug> — builtin help keeps /docs/<slug>. */
+export interface DocsPage {
+  id: number;
+  title: string;
+  slug: string;
+  category: string;
+  body: string;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The polymorphic attachable-entity vocabulary (backend
+ *  core.attachment_refs.ATTACHABLE_MODELS). */
+export type AttachmentEntityType =
+  | "device"
+  | "rack"
+  | "site"
+  | "ip_address"
+  | "certificate"
+  | "circuit"
+  | "asset";
+
+/** Attachment metadata — blob bytes are never in API responses; download
+ *  streams them from /api/v1/attachments/<id>/download. */
+export interface Attachment {
+  id: number;
+  entity_type: string;
+  entity_id: number;
+  label: string | null;
+  filename: string;
+  content_type: string;
+  size: number;
+  uploaded_by: string | null;
+  created_at: string;
+}

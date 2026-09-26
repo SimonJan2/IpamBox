@@ -19,6 +19,7 @@ import type {
   Page,
   Tag,
 } from "@/types";
+import { AttachmentStrip } from "@/components/attachments";
 import { HistoryPanel } from "@/components/history-panel";
 import { MonitorSection } from "@/components/monitor-section";
 import { IpStatusBadge } from "@/components/status-badge";
@@ -693,6 +694,10 @@ export function IpDrawer({
             <div className="border-t pt-3">
               <MonitorSection addressId={addr.id} anchorLabel={ip} />
             </div>
+          )}
+
+          {addr && open && (
+            <AttachmentStrip entityType="ip_address" entityId={addr.id} />
           )}
 
           {addr && open && (

@@ -18,6 +18,7 @@ import {
   ListOrdered,
   Network,
   Palette,
+  Paperclip,
   ScanLine,
   Search,
   Server,
@@ -261,6 +262,14 @@ export const DOC_ARTICLES: DocArticle[] = [
     keywords: ["audit", "history", "diff", "log", "changes"],
   },
   {
+    slug: "attachments",
+    title: "Pages & Attachments",
+    description: "User-authored markdown pages plus file attachments on every entity.",
+    category: "operations",
+    icon: Paperclip,
+    keywords: ["docs", "pages", "runbook", "attachment", "file", "upload", "photo", "markdown"],
+  },
+  {
     slug: "reports",
     title: "Reports",
     description: "The estate on one page — print view, per-section CSV, multi-sheet XLSX.",
@@ -315,6 +324,12 @@ export function docCategoryLabel(category: DocCategory): string {
 
 export function docHref(slug: string): string {
   return `/docs/${slug}`;
+}
+
+// User-authored Pages live under /docs/pages/<slug> — a separate namespace
+// from builtin help so the two never blur (/docs/[slug] is static-only).
+export function pageHref(slug: string): string {
+  return `/docs/pages/${slug}`;
 }
 
 /** Ranked match over title > description > keywords > slug. Empty q → []. */
