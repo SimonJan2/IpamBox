@@ -67,3 +67,7 @@ export const api = {
 };
 
 export const scanStreamUrl = (id: number) => `${API}/api/v1/scans/${id}/stream`;
+// Download href for attachment chips/lightboxes — same-origin by default,
+// NEXT_PUBLIC_API_URL when the browser talks to the API directly.
+export const attachmentUrl = (id: number) =>
+  `${API}/api/v1/attachments/${id}/download`;

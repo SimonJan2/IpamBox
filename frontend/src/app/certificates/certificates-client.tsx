@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
-import { History, Pencil, Plus, Trash2 } from "lucide-react";
+import { History, Paperclip, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   flexRender,
@@ -29,6 +29,7 @@ import {
 } from "@/components/row-order";
 import { ExpiryBadge } from "@/components/expiry-badge";
 import { AsyncPanel } from "@/components/async-panel";
+import { AttachmentsDialog } from "@/components/attachments";
 import { DocsLink } from "@/components/docs/docs-link";
 import { HistoryDialog } from "@/components/history-panel";
 import { InlineText } from "@/components/inline-edit";
@@ -80,6 +81,7 @@ export default function CertificatesPage() {
   const [editing, setEditing] = useState<Certificate | null>(null);
   const [deleting, setDeleting] = useState<Certificate | null>(null);
   const [historyFor, setHistoryFor] = useState<Certificate | null>(null);
+  const [attachFor, setAttachFor] = useState<Certificate | null>(null);
   const [form, setForm] = useState(EMPTY);
   const [busy, setBusy] = useState(false);
 
@@ -303,6 +305,14 @@ export default function CertificatesPage() {
                 onPick={(color) => setRowColor(c.row.original.id, color)}
               />
             )}
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={`Attachments for certificate ${c.row.original.cert_name ?? c.row.original.server_name ?? c.row.original.id}`}
+              onClick={() => setAttachFor(c.row.original)}
+            >
+              <Paperclip className="h-4 w-4" />
+            </Button>
             <Button
               variant="ghost"
               size="icon"
@@ -585,6 +595,13 @@ export default function CertificatesPage() {
         objectType="Certificate"
         objectId={historyFor?.id ?? null}
         title={historyFor?.cert_name}
+      />
+      <AttachmentsDialog
+        open={attachFor !== null}
+        onOpenChange={() => setAttachFor(null)}
+        entityType="certificate"
+        entityId={attachFor?.id ?? null}
+        title={attachFor?.cert_name ?? attachFor?.server_name}
       />
     </div>
   );

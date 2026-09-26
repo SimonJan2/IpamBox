@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
-import { History, Pencil, Plus, Trash2 } from "lucide-react";
+import { History, Paperclip, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   flexRender,
@@ -32,6 +32,7 @@ import {
 import { SortHeader, columnAriaSort } from "@/components/sort-header";
 import { AsyncPanel } from "@/components/async-panel";
 import { DocsLink } from "@/components/docs/docs-link";
+import { AttachmentsDialog } from "@/components/attachments";
 import { HistoryDialog } from "@/components/history-panel";
 import { InlineText } from "@/components/inline-edit";
 import { RowColorLegend, RowColorPicker } from "@/components/row-color";
@@ -351,6 +352,7 @@ export default function CircuitsPage() {
   const [editing, setEditing] = useState<Circuit | null>(null);
   const [deleting, setDeleting] = useState<Circuit | null>(null);
   const [historyFor, setHistoryFor] = useState<Circuit | null>(null);
+  const [attachFor, setAttachFor] = useState<Circuit | null>(null);
 
   const items = itemsQ.data ?? [];
   const sites = sitesQ.data ?? [];
@@ -594,6 +596,14 @@ export default function CircuitsPage() {
                 onPick={(color) => setRowColor(c.row.original.id, color)}
               />
             )}
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={`Attachments for circuit ${c.row.original.bezeq_circuit_id ?? c.row.original.site_name ?? c.row.original.id}`}
+              onClick={() => setAttachFor(c.row.original)}
+            >
+              <Paperclip className="h-4 w-4" />
+            </Button>
             <Button
               variant="ghost"
               size="icon"
@@ -909,6 +919,13 @@ export default function CircuitsPage() {
         objectType="Circuit"
         objectId={historyFor?.id ?? null}
         title={historyFor?.bezeq_circuit_id ?? historyFor?.site_name}
+      />
+      <AttachmentsDialog
+        open={attachFor !== null}
+        onOpenChange={() => setAttachFor(null)}
+        entityType="circuit"
+        entityId={attachFor?.id ?? null}
+        title={attachFor?.bezeq_circuit_id ?? attachFor?.site_name}
       />
     </div>
   );

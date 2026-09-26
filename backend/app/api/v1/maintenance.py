@@ -11,6 +11,7 @@ from app.core.db import get_session
 from app.core.deps import BACKUP_ACCESS, SYSTEM_ADMIN, require_perm
 from app.core.redis import get_arq_pool
 from app.core.security import get_actor
+from app.models.attachment import Attachment
 from app.models.change_log import ChangeLog
 from app.models.ip_address import IPAddress, IPStatus
 from app.models.scan_job import ScanJob, ScanStatus
@@ -94,9 +95,23 @@ async def clear_discovery(
     _user=Depends(require_perm(SYSTEM_ADMIN)),
 ):
     """Delete every host still in the discovery inbox (status=discovered)."""
+    # Core DELETE bypasses the ORM flush hooks that cascade to attachments —
+    # collect the doomed ids first and sweep their rows in this transaction.
+    doomed = (
+        await session.execute(
+            select(IPAddress.id).where(IPAddress.status == IPStatus.DISCOVERED)
+        )
+    ).scalars().all()
     result = await session.execute(
         delete(IPAddress).where(IPAddress.status == IPStatus.DISCOVERED)
     )
+    if doomed:
+        await session.execute(
+            delete(Attachment).where(
+                Attachment.entity_type == "ip_address",
+                Attachment.entity_id.in_(doomed),
+            )
+        )
     deleted = result.rowcount or 0
     await _audit(session, get_actor(), "clear-discovery", {"deleted": deleted})
     await session.commit()

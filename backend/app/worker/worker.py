@@ -17,6 +17,7 @@ from app.core.redis import (
     redis_settings_from_url,
 )
 from app.core.security import set_actor
+from app.models.attachment import Attachment
 from app.models.certificate import Certificate
 from app.models.change_log import ChangeLog
 from app.models.ip_address import IPAddress, IPStatus
@@ -530,7 +531,17 @@ async def _retention_sweeps(session, values: dict, now: datetime) -> dict:
     days = int(values.get("discovery_expire_days") or 0)
     if days > 0:
         # last_seen wins over created_at: a discovered host that keeps
-        # answering scans isn't stale, it's just unreviewed.
+        # answering scans isn't stale, it's just unreviewed. Core DELETE
+        # bypasses the ORM flush hooks — sweep attachments in the same tx.
+        doomed = (
+            await session.execute(
+                select(IPAddress.id).where(
+                    IPAddress.status == IPStatus.DISCOVERED,
+                    func.coalesce(IPAddress.last_seen, IPAddress.created_at)
+                    < now - timedelta(days=days),
+                )
+            )
+        ).scalars().all()
         res = await session.execute(
             delete(IPAddress).where(
                 IPAddress.status == IPStatus.DISCOVERED,
@@ -538,6 +549,13 @@ async def _retention_sweeps(session, values: dict, now: datetime) -> dict:
                 < now - timedelta(days=days),
             )
         )
+        if doomed:
+            await session.execute(
+                delete(Attachment).where(
+                    Attachment.entity_type == "ip_address",
+                    Attachment.entity_id.in_(doomed),
+                )
+            )
         detail["discovery"] = res.rowcount or 0
 
     days = int(values.get("notify_retention_days") or 0)

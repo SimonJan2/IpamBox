@@ -238,6 +238,12 @@ Scapy raw-socket scanning · Next.js 15 dark-mode UI
   **Roles & permissions** below.
 - **Ops endpoints**: `GET /healthz`, `GET /readyz` (checks DB + Redis),
   `GET /metrics` (Prometheus text format with object counts).
+- **Docs workspace**: built-in guides plus user-authored **Pages**
+  (markdown runbooks/notes with a side-by-side editor at
+  `/docs/pages/new`) and **attachments** on devices, racks, sites, IPs,
+  certificates, circuits and assets — files ≤6 MB (images, PDF, text,
+  ZIP) stored in Postgres, so backups and the changelog cover them and
+  deleting an entity sweeps its files in the same transaction.
 - **Backup & restore**: download a full snapshot as a single `.json.gz`
   from **Settings** — user accounts are excluded by default (admins always
   are), with an admin-only opt-in for non-admin accounts — and restore it
@@ -364,6 +370,8 @@ apply without a restart, and can be reset back to the env value per key.
 | `/monitoring` | Live monitor board — up/down states, check kind, last error, check-now |
 | `/reports` `/reports/print` | Estate-wide report workspace — all sections on one page, print view, per-section CSV + multi-sheet XLSX, optional email digest |
 | `/changelog` | Global audit trail |
+| `/docs` `/docs/[slug]` | Built-in guides — every feature documented |
+| `/docs/pages` `/docs/pages/new` `/docs/pages/[slug]` `/docs/pages/[slug]/edit` | User-authored markdown pages — runbooks/notes beside the builtin help |
 | `/tree` | Site → VRF → prefix hierarchy view |
 | `/topology` | Device-adjacency canvas — documented cables as edges, site/rack grouping, health + mismatch overlays, saved layout |
 | `/settings` | System overview, runtime config, backups, accounts, preferences, maintenance |

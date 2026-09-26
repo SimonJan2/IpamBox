@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
-import { History, Pencil, Plus, Trash2 } from "lucide-react";
+import { History, Paperclip, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   flexRender,
@@ -21,6 +21,7 @@ import { useUrlSorting, useUrlText } from "@/lib/url-state";
 import { useRowNav } from "@/lib/row-nav";
 import { useRowColor, rowTintStyle } from "@/lib/row-color";
 import { useRowOrder } from "@/lib/row-order";
+import { AttachmentsDialog } from "@/components/attachments";
 import {
   DragHandle,
   PinToggle,
@@ -293,6 +294,7 @@ export default function SitesPage() {
   const [editing, setEditing] = useState<Site | null>(null);
   const [deleting, setDeleting] = useState<Site | null>(null);
   const [historyFor, setHistoryFor] = useState<Site | null>(null);
+  const [attachFor, setAttachFor] = useState<Site | null>(null);
 
   const sites = sitesQ.data ?? [];
   const refresh = () => void sitesQ.reload();
@@ -467,6 +469,14 @@ export default function SitesPage() {
                 onPick={(color) => setRowColor(c.row.original.id, color)}
               />
             )}
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={`Attachments for ${c.row.original.name}`}
+              onClick={() => setAttachFor(c.row.original)}
+            >
+              <Paperclip className="h-4 w-4" />
+            </Button>
             <Button
               variant="ghost"
               size="icon"
@@ -649,6 +659,13 @@ export default function SitesPage() {
         objectType="Site"
         objectId={historyFor?.id ?? null}
         title={historyFor?.name}
+      />
+      <AttachmentsDialog
+        open={attachFor !== null}
+        onOpenChange={() => setAttachFor(null)}
+        entityType="site"
+        entityId={attachFor?.id ?? null}
+        title={attachFor?.name}
       />
     </div>
   );

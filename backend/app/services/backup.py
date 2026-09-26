@@ -23,6 +23,7 @@ Extensibility contract
 - `alembic_revision` in the envelope prevents restoring backups produced by
   a newer schema into older code.
 """
+import base64
 import enum
 import gzip
 import ipaddress
@@ -35,14 +36,25 @@ from pathlib import Path
 from typing import Any, Callable
 
 from alembic.script import ScriptDirectory
-from sqlalchemy import Date, DateTime, Enum, Numeric, inspect, select, text, update
+from sqlalchemy import (
+    Date,
+    DateTime,
+    Enum,
+    LargeBinary,
+    Numeric,
+    inspect,
+    select,
+    text,
+    update,
+)
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core import tag_refs
+from app.core import attachment_refs, tag_refs
 from app.core.config import get_settings
 from app.models.app_setting import AppSetting
 from app.models.asset import Asset
+from app.models.attachment import Attachment
 from app.models.base import Base
 from app.models.cabling import Cable, DeviceInterface
 from app.models.certificate import Certificate
@@ -52,6 +64,7 @@ from app.models.color_rule import ColorRule
 from app.models.custom_list import CustomList, CustomListRow
 from app.models.device_template import DeviceTemplate
 from app.models.diagram_layout import DiagramLayout
+from app.models.docs_page import DocsPage
 from app.models.import_batch import ImportBatch
 from app.models.device import Device
 from app.models.ip_address import IPAddress
@@ -166,6 +179,12 @@ BACKUP_TABLES: tuple[BackupTable, ...] = (
     # just get ignored by the canvas. Not audited on purpose (layout
     # churn is UI state, not data — see the model docstring).
     BackupTable("diagram_layouts", DiagramLayout),
+    # docs_pages / attachments -> nothing: both are self-contained
+    # (attachments' entity refs are polymorphic values, not FKs; orphans
+    # are swept post-restore like tag_assignments). Attachment blobs ride
+    # the envelope as base64 — see _to_json/_from_json LargeBinary arms.
+    BackupTable("docs_pages", DocsPage),
+    BackupTable("attachments", Attachment),
 )
 
 
@@ -177,6 +196,10 @@ BACKUP_TABLES: tuple[BackupTable, ...] = (
 def _to_json(v: Any) -> Any:
     if v is None or isinstance(v, (str, int, float, bool, list, dict)):
         return v
+    if isinstance(v, (bytes, bytearray, memoryview)):
+        # BYTEA/LargeBinary (attachment blobs) ride the JSON envelope as
+        # base64 text; _from_json decodes by column type on restore.
+        return base64.b64encode(bytes(v)).decode("ascii")
     if isinstance(v, enum.Enum):
         return v.value
     if isinstance(v, datetime):
@@ -213,6 +236,8 @@ def _from_json(col, v: Any) -> Any:
             return Decimal(str(v))
         if isinstance(t, Enum) and t.enum_class is not None:
             return t.enum_class(v)
+        if isinstance(t, LargeBinary):
+            return base64.b64decode(str(v), validate=True)
     except (ValueError, KeyError) as e:
         raise BackupError(f"bad value for column {col.key!r}: {e}") from e
     return v  # JSONB, ARRAY, str, int, float, bool — as-is
@@ -524,6 +549,13 @@ async def restore_backup(
         if orphans:
             warnings.append(
                 f"{orphans} orphaned tag assignment(s) dropped on restore"
+            )
+        # attachments are the same shape — polymorphic (entity_type,
+        # entity_id) with no real FK, swept identically post-restore.
+        orphans = await attachment_refs.sweep_orphans(session)
+        if orphans:
+            warnings.append(
+                f"{orphans} orphaned attachment(s) dropped on restore"
             )
 
         for spec in BACKUP_TABLES:

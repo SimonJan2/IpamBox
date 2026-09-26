@@ -520,15 +520,15 @@ def vrf_name_for(site_name: str, code: str | None, number: int | None) -> str:
     return slugify(site_name)[:60]
 
 
-def slugify(name: str) -> str:
+def slugify(name: str, fallback: str = "site") -> str:
     import re
     import unicodedata
 
     # \w keeps non-ASCII letters (Hebrew site names) instead of collapsing
-    # them all to the same "site" fallback; NFKC folds compatibility chars.
+    # them all to the same fallback; NFKC folds compatibility chars.
     norm = unicodedata.normalize("NFKC", name).lower()
     slug = re.sub(r"[^\w]+", "-", norm).strip("-")
-    return slug or "site"
+    return slug or fallback
 
 
 async def slugify_unique(session: AsyncSession, name: str) -> str:
