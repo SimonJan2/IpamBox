@@ -66,6 +66,9 @@ class Settings(BaseSettings):
     monitor_concurrency: int = 64          # parallel probes inside one sweep
     monitor_http_timeout: float = 5.0      # http check request timeout (s)
     notify_retention_days: int = 0         # auto-purge notification_log rows
+    # Reports workspace (V11) — opt-in weekly digest through the same
+    # channels; manual "Email this report" on /reports needs no setting.
+    report_email_weekly: bool = False      # weekly estate digest via scheduler
     # SNMP enrichment lane (V8) — read-only IF-MIB/BRIDGE-MIB/LLDP polls of
     # per-device-enabled hosts on the worker's minute cron. Off by default:
     # new feature, opt-in lane (per-device snmp_enabled still required).

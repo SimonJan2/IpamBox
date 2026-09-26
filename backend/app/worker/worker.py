@@ -628,6 +628,18 @@ async def _cert_warnings(now: datetime) -> int:
     return sent
 
 
+async def _report_digest() -> int:
+    """Weekly estate digest through the enabled notification channels
+    (report_email_weekly — opt-in). Same emit path as the /reports
+    "Email" button; text + link, no attachment."""
+    from app.services import reports
+
+    async with SessionLocal() as session:
+        return await reports.emit_report(
+            session, None, event="report.scheduled"
+        )
+
+
 async def scheduler_tick(ctx: dict) -> dict:
     """Runs every minute: fires scheduled scans/backups whose configured
     interval has elapsed. DB-backed intervals apply without a worker restart.
@@ -686,6 +698,18 @@ async def scheduler_tick(ctx: dict) -> dict:
             ran.append("cert_warnings")
     except Exception:
         log.warning("cert warning sweep failed", exc_info=True)
+
+    # Weekly report digest (V11): opt-in via report_email_weekly; stamp
+    # lives in Redis alongside the other sched marks, never app_settings.
+    if eff.values.get("report_email_weekly") and _due(
+        await r.get("ipam:sched:last_report_at"), 7 * 24 * 60, now
+    ):
+        await r.set("ipam:sched:last_report_at", now.isoformat())
+        try:
+            if await _report_digest():
+                ran.append("report_digest")
+        except Exception:
+            log.warning("scheduled report digest failed", exc_info=True)
 
     if "scans" in ran:
         await run_scheduled_scans(ctx)

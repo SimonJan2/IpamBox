@@ -158,6 +158,7 @@ EDITABLE: dict[str, SettingSpec] = {
     "notify_retention_days": SettingSpec(
         "notify_retention_days", _v_int(0, 3650)
     ),
+    "report_email_weekly": SettingSpec("report_email_weekly", _v_bool),
     "snmp_enabled": SettingSpec("snmp_enabled", _v_bool),
     "snmp_interval_minutes": SettingSpec(
         "snmp_interval_minutes", _v_int(5, 1440)

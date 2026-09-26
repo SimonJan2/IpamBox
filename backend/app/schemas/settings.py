@@ -40,6 +40,8 @@ class SettingsPatch(BaseModel):
     monitor_concurrency: int | None = None
     monitor_http_timeout: float | None = None
     notify_retention_days: int | None = None
+    # Reports workspace (V11)
+    report_email_weekly: bool | None = None
     rackula_base_url: str | None = None
     # SNMP enrichment lane (V8)
     snmp_enabled: bool | None = None

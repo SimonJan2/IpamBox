@@ -207,6 +207,24 @@ Scapy raw-socket scanning · Next.js 15 dark-mode UI
   with danger styling on down, per-device/IP monitor sections, and
   channel admin + delivery log under **Settings → Monitoring**.
 
+### Reports
+
+- **The estate on one page** — `/reports` assembles every aggregate the
+  other pages already compute: per-site fill, address status,
+  utilization outliers, rack capacity, certificate expiry, scan history,
+  open flags, device health and monitor state. Nothing is persisted; a
+  report that disagrees with the dashboard is a bug, not a viewpoint.
+- **Site scoping** — the whole report narrows to one site via
+  `?site_id=` (the per-site report is the common case).
+- **Every way out** — a print view (`/reports/print`, browser print with
+  the detail tables expanded), a multi-sheet XLSX workbook
+  (`/api/v1/reports/export.xlsx`, one sheet per section), and a CSV per
+  section (`/api/v1/reports/{section}.csv`, UTF-8 BOM). Large sections
+  are capped at 500 rows and marked `truncated`.
+- **Email this report** — sends the text digest through the enabled
+  notification channels (no attachments); an optional weekly digest rides
+  the same path via *Settings → Monitoring → Weekly report digest*.
+
 ### Platform
 
 - **First-run auth**: the UI asks you to create the admin account on
@@ -344,6 +362,7 @@ apply without a restart, and can be reset back to the env value per key.
 | `/vlans` `/tags` | VLAN groups + VLANs, tag management |
 | `/scans` | Trigger/schedule/cancel scans, live progress |
 | `/monitoring` | Live monitor board — up/down states, check kind, last error, check-now |
+| `/reports` `/reports/print` | Estate-wide report workspace — all sections on one page, print view, per-section CSV + multi-sheet XLSX, optional email digest |
 | `/changelog` | Global audit trail |
 | `/tree` | Site → VRF → prefix hierarchy view |
 | `/topology` | Device-adjacency canvas — documented cables as edges, site/rack grouping, health + mismatch overlays, saved layout |
@@ -396,6 +415,10 @@ mode) — every request gets full permissions.
 | `GET/PATCH /api/v1/settings` | read/patch runtime settings — patch `{"key": null}` resets a key to its env value (PATCH: admin only) |
 | `GET/POST /api/v1/users` | list/create user accounts (admin only) |
 | `PATCH/DELETE /api/v1/users/{id}` | update/delete users; sessions die with the user (admin only) |
+| `GET /api/v1/reports/summary` | estate report — every section in one bounded payload (`?site_id=` scopes) |
+| `GET /api/v1/reports/export.xlsx` | the same report as a multi-sheet workbook |
+| `GET /api/v1/reports/{section}.csv` | one section as CSV (UTF-8 BOM) |
+| `POST /api/v1/reports/email` | send the digest to enabled notification channels |
 | `POST /api/v1/auth/change-password` | change the current account's password |
 | `GET/DELETE /api/v1/auth/sessions` | list/revoke your active sessions |
 | `POST /api/v1/maintenance/*` | purge scans/changelog/discovery, factory reset (admin only) |

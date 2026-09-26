@@ -7,6 +7,7 @@ import {
   ClipboardCheck,
   Container,
   Cpu,
+  FileBarChart,
   FolderTree,
   Globe,
   HardDrive,
@@ -258,6 +259,14 @@ export const DOC_ARTICLES: DocArticle[] = [
     category: "operations",
     icon: History,
     keywords: ["audit", "history", "diff", "log", "changes"],
+  },
+  {
+    slug: "reports",
+    title: "Reports",
+    description: "The estate on one page — print view, per-section CSV, multi-sheet XLSX.",
+    category: "operations",
+    icon: FileBarChart,
+    keywords: ["report", "print", "xlsx", "csv", "export", "estate", "weekly", "email"],
   },
   // System
   {

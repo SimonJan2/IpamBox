@@ -484,6 +484,8 @@ export interface SettingsValues {
   monitor_concurrency: number;
   monitor_http_timeout: number;
   notify_retention_days: number;
+  // Reports (V11) — weekly digest through the notification channels
+  report_email_weekly: boolean;
   // SNMP enrichment (V8)
   snmp_enabled: boolean;
   snmp_interval_minutes: number;
@@ -1413,4 +1415,34 @@ export interface TopologyLayout {
   /** {node_id: {x, y}} — canvas positions relative to each node's parent. */
   positions: Record<string, { x: number; y: number }>;
   updated_at: string | null;
+}
+
+// --- Reports workspace (V11) ------------------------------------------------
+// One generic section shape feeds the /reports cards, the per-section CSVs
+// and the XLSX workbook — columns + rows stay tabular end to end.
+
+export type ReportCell = string | number | null;
+
+export interface ReportMetric {
+  label: string;
+  value: string | number | null;
+}
+
+export interface ReportSection {
+  key: string;
+  title: string;
+  href: string | null;
+  note: string | null;
+  metrics: ReportMetric[];
+  columns: string[];
+  rows: ReportCell[][];
+  total_rows: number;
+  truncated: boolean;
+}
+
+export interface ReportSummary {
+  generated_at: string;
+  site: { id: number; name: string; slug: string | null } | null;
+  metrics: ReportMetric[];
+  sections: ReportSection[];
 }
