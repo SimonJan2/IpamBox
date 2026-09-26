@@ -21,6 +21,7 @@ import {
   Search,
   Server,
   Settings,
+  Share2,
   ShieldCheck,
   Tags,
   Upload,
@@ -119,6 +120,14 @@ export const DOC_ARTICLES: DocArticle[] = [
     category: "ipam",
     icon: FolderTree,
     keywords: ["tree", "nesting", "utilization"],
+  },
+  {
+    slug: "topology",
+    title: "Topology Map",
+    description: "The device-adjacency canvas — documented cables drawn as edges.",
+    category: "ipam",
+    icon: Share2,
+    keywords: ["map", "canvas", "cables", "adjacency", "graph", "elk", "layout"],
   },
   {
     slug: "addresses",

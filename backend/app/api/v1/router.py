@@ -26,6 +26,7 @@ from app.api.v1 import (
     settings,
     sites,
     tags,
+    topology,
     users,
     vlans,
     vrfs,
@@ -65,3 +66,4 @@ api_router.include_router(monitors.router)
 api_router.include_router(channels.router)
 api_router.include_router(channels.log_router)
 api_router.include_router(review.router)
+api_router.include_router(topology.router)

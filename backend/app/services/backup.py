@@ -50,6 +50,7 @@ from app.models.change_log import ChangeLog
 from app.models.circuit import Circuit
 from app.models.color_rule import ColorRule
 from app.models.custom_list import CustomList, CustomListRow
+from app.models.diagram_layout import DiagramLayout
 from app.models.import_batch import ImportBatch
 from app.models.device import Device
 from app.models.ip_address import IPAddress
@@ -157,6 +158,11 @@ BACKUP_TABLES: tuple[BackupTable, ...] = (
     # FKs); last so a restore can't resurrect a dismissal for an entity the
     # backup predates — harmless either way, the queue just hides it.
     BackupTable("review_dismissals", ReviewDismissal),
+    # diagram_layouts -> nothing: node ids in the positions blob are
+    # strings, not FKs, so a restore can't violate anything — stale ids
+    # just get ignored by the canvas. Not audited on purpose (layout
+    # churn is UI state, not data — see the model docstring).
+    BackupTable("diagram_layouts", DiagramLayout),
 )
 
 

@@ -18,6 +18,7 @@ import {
   Network,
   Search,
   Server,
+  Share2,
   ShieldCheck,
   Waypoints,
   Zap,
@@ -135,6 +136,13 @@ const PAGES: Item[] = [
     label: "Review",
     sub: "flag triage queue",
     href: "/review",
+  },
+  {
+    group: "Pages",
+    icon: Share2,
+    label: "Topology",
+    sub: "device-adjacency map",
+    href: "/topology",
   },
 ];
 

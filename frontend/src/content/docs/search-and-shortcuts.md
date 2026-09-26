@@ -26,10 +26,15 @@ Press `g`, then one of:
 | Keys | Destination |
 |---|---|
 | `g d` | Dashboard |
+| `g v` | Review |
 | `g p` | Subnets |
 | `g s` | Scans |
 | `g i` | Discovery inbox |
 | `g c` | Changelog |
+| `g r` | Racks |
+| `g e` | Devices |
+| `g m` | Monitoring |
+| `g t` | Topology |
 | `g h` | Docs (this section) |
 
 ## Table navigation

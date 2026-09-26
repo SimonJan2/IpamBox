@@ -88,6 +88,17 @@ Scapy raw-socket scanning · Next.js 15 dark-mode UI
   neighbors through a preview → one-transaction apply (a committed
   `kind="snmp"` import batch for provenance), with honest conflict rows
   wherever `manual`/`import` data outranks what the device reports.
+- **Topology map**: `/topology` draws the network as a canvas — devices
+  are nodes, *documented cables* are edges (parallel runs collapse into
+  one edge with a count + kind labels; panel chains stay honest — two
+  edges via the panel, never a synthesized hop). Nodes nest inside
+  site → rack group → rack containers (unracked devices get a "No rack"
+  lane, undiscovered-but-seen IPs an "Unlinked hosts" lane), laid out by
+  a bundled elk layerer. A health overlay dots each node with its worst
+  linked-IP status, `cable_mismatch` edges draw red with ⚠, and dragging
+  rearranges freely — positions persist only via **Save layout**
+  (`diagram_layouts`, backed up, deliberately not changelog-audited).
+  Read-only by design: it's a lens on L1 truth, not an editor.
 - **Rack elevations**: racks with per-U device placement on front/rear
   faces, a read-only SVG elevation view, and collision validation
   (front+rear share a U; same-face overlaps are rejected). Live scan-health
@@ -327,6 +338,7 @@ apply without a restart, and can be reset back to the env value per key.
 | `/monitoring` | Live monitor board — up/down states, check kind, last error, check-now |
 | `/changelog` | Global audit trail |
 | `/tree` | Site → VRF → prefix hierarchy view |
+| `/topology` | Device-adjacency canvas — documented cables as edges, site/rack grouping, health + mismatch overlays, saved layout |
 | `/settings` | System overview, runtime config, backups, accounts, preferences, maintenance |
 
 The Settings area has its own sub-navigation:

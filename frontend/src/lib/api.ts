@@ -61,6 +61,8 @@ export const api = {
     }),
   patch: <T>(path: string, body: unknown) =>
     req<T>(path, { method: "PATCH", body: JSON.stringify(body) }),
+  put: <T>(path: string, body: unknown) =>
+    req<T>(path, { method: "PUT", body: JSON.stringify(body) }),
   del: (path: string) => req<void>(path, { method: "DELETE" }),
 };
 
