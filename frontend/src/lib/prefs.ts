@@ -70,6 +70,8 @@ export interface Prefs {
   sidebarCollapsed: boolean;
   /** Sidebar group label -> expanded; missing key means expanded. */
   sidebarGroups: Record<string, boolean>;
+  /** /topology: health overlay on device nodes (default on). */
+  topoHealth: boolean;
   /** Recent command-palette picks, newest first (max 5). */
   searchRecent: { label: string; href: string }[];
   /** Per-page named saved views (page key -> presets). */
@@ -93,6 +95,7 @@ export const DEFAULT_PREFS: Prefs = {
   showSlugs: false,
   sidebarCollapsed: false,
   sidebarGroups: {},
+  topoHealth: true,
   searchRecent: [],
   savedViews: {},
 };

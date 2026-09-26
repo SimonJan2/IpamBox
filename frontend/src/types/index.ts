@@ -1288,3 +1288,77 @@ export interface NotificationLogEntry {
   created_at: string;
   channel_name: string | null;
 }
+
+// --- Topology map (V10) — /topology/graph + /topology/layout --------------
+
+/** Health vocabulary: the five IpStatus values plus the no-linked-IPs
+ *  bucket (mirrors backend HEALTH_CLASSES). */
+export type TopoHealth = IpStatus | "unmonitored";
+
+export interface TopologyNode {
+  /** Namespaced string id — "dev-12" or "unlinked-55". */
+  id: string;
+  kind: "device" | "ip";
+  label: string;
+  health: TopoHealth;
+  /** Effective site (device.site_id else rack's site; prefix's site for IPs). */
+  site_id: number | null;
+  rack_id: number | null;
+  rack_group_id: number | null;
+  device_type: string | null;
+  interface_count: number | null;
+  cabled_count: number | null;
+  hostname: string | null;
+  prefix_id: number | null;
+  href: string;
+}
+
+export interface TopologyEdgeCable {
+  id: number;
+  kind: string;
+  label: string | null;
+  /** "device · port" on each end. */
+  a_label: string;
+  b_label: string;
+  /** Raw ids for popover links (/devices/{id}, ?trace={interface_id}). */
+  a_device_id: number;
+  b_device_id: number;
+  a_interface_id: number;
+  b_interface_id: number;
+}
+
+export interface TopologyEdge {
+  /** Node ids — the device pair this edge joins (a === b on self-loops). */
+  a: string;
+  b: string;
+  /** Parallel cables collapsed into this edge. */
+  count: number;
+  kinds: string[];
+  /** v8.2: any member interface carries a cable_mismatch flag. */
+  mismatched: boolean;
+  cables: TopologyEdgeCable[];
+}
+
+export interface TopologyGroups {
+  sites: { id: number; name: string }[];
+  rack_groups: { id: number; name: string; site_id: number | null }[];
+  racks: {
+    id: number;
+    name: string;
+    site_id: number | null;
+    group_id: number | null;
+  }[];
+}
+
+export interface TopologyGraph {
+  nodes: TopologyNode[];
+  edges: TopologyEdge[];
+  groups: TopologyGroups;
+}
+
+export interface TopologyLayout {
+  key: string;
+  /** {node_id: {x, y}} — canvas positions relative to each node's parent. */
+  positions: Record<string, { x: number; y: number }>;
+  updated_at: string | null;
+}

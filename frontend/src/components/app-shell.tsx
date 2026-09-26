@@ -29,6 +29,7 @@ import {
   Search,
   Server,
   Settings,
+  Share2,
   ShieldCheck,
   Tags,
   Upload,
@@ -82,6 +83,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/vlans", label: "VLANs", icon: Zap },
       { href: "/prefixes", label: "Subnets", icon: Network },
       { href: "/tree", label: "Hierarchy", icon: FolderTree },
+      { href: "/topology", label: "Topology", icon: Share2 },
     ],
   },
   {
