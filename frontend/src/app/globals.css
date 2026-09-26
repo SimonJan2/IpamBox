@@ -1493,10 +1493,28 @@
   [role="tooltip"] {
     display: none !important;
   }
+  /* Theme FX overlays (scanlines, film grain, HUD brackets) live on fixed
+     full-viewport body pseudos — on paper they repeat per page and blank
+     the output. Strip them in print. */
+  body::before,
+  body::after {
+    display: none !important;
+    content: none !important;
+  }
   tr,
   td,
   th {
     break-inside: avoid;
+  }
+  /* Scroll containers are monolithic in paged media — a table taller than
+     one page would clip or blank out. Paper has no scrollports. */
+  .overflow-auto,
+  .overflow-hidden,
+  .overflow-x-auto,
+  .overflow-y-auto,
+  .overflow-x-hidden,
+  .overflow-y-hidden {
+    overflow: visible !important;
   }
   thead {
     display: table-header-group; /* repeat table headers on each page */

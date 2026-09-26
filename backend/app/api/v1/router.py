@@ -21,6 +21,7 @@ from app.api.v1 import (
     rack_groups,
     racks,
     ranges,
+    reports,
     review,
     scans,
     search,
@@ -69,3 +70,4 @@ api_router.include_router(channels.router)
 api_router.include_router(channels.log_router)
 api_router.include_router(review.router)
 api_router.include_router(topology.router)
+api_router.include_router(reports.router)

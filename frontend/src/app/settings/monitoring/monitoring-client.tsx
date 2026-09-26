@@ -141,6 +141,7 @@ export default function MonitoringSettingsPage() {
     "monitor_concurrency",
     "monitor_http_timeout",
     "notify_retention_days",
+    "report_email_weekly",
   ];
   if (s && draft) {
     for (const k of KEYS) {
@@ -397,6 +398,18 @@ export default function MonitoringSettingsPage() {
                 onChange={(e) =>
                   set("notify_retention_days", Number(e.target.value) || 0)
                 }
+              />
+            </SettingField>
+            <SettingField
+              label="Weekly report digest"
+              hint="Off by default. Sends the /reports estate summary to every enabled channel once a week (text + link, no attachment)."
+              source={src("report_email_weekly")}
+              onReset={() => resetKey("report_email_weekly")}
+              error={errors.report_email_weekly}
+            >
+              <Switch
+                checked={draft.report_email_weekly}
+                onCheckedChange={(v) => set("report_email_weekly", v)}
               />
             </SettingField>
           </CardContent>

@@ -289,6 +289,20 @@ async def build_tree(session: AsyncSession) -> list[dict]:
     return nodes
 
 
+def v4_usable_expr():
+    """Usable-IPv4-capacity SQL expression — the dashboard's accounting rule.
+
+    IPv4 only: usable_count() on v6 returns 2^prefixlen (a /64 ≈ 1.8e19,
+    beyond Number.MAX_SAFE_INTEGER), so a single documented v6 prefix
+    would corrupt any summed total. masklen>=31 mirrors usable_bounds:
+    /31 p2p links and /32 hosts use every address. reports.py reuses this
+    verbatim so its numbers match the dashboard."""
+    return case(
+        (func.masklen(Prefix.prefix) >= 31, func.pow(2, 32 - func.masklen(Prefix.prefix))),
+        else_=func.pow(2, 32 - func.masklen(Prefix.prefix)) - 2,
+    )
+
+
 async def dashboard_stats(session: AsyncSession) -> dict:
     from app.models.scan_job import ScanJob
 
@@ -299,14 +313,7 @@ async def dashboard_stats(session: AsyncSession) -> dict:
     )
 
     # Aggregated in SQL — the old per-prefix Python loop loaded every row.
-    # IPv4 only: usable_count() on v6 returns 2^prefixlen (a /64 ≈ 1.8e19,
-    # beyond Number.MAX_SAFE_INTEGER), so a single documented v6 prefix
-    # would corrupt ips_total/utilization for the whole install. masklen>=31
-    # mirrors usable_bounds: /31 p2p links and /32 hosts use every address.
-    v4_usable = case(
-        (func.masklen(Prefix.prefix) >= 31, func.pow(2, 32 - func.masklen(Prefix.prefix))),
-        else_=func.pow(2, 32 - func.masklen(Prefix.prefix)) - 2,
-    )
+    v4_usable = v4_usable_expr()
     ips_total = int(
         (
             await session.execute(
