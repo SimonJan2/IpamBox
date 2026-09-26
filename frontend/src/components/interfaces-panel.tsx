@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Cable as CableIcon,
+  LayoutTemplate,
   Pencil,
   Plus,
   Route,
@@ -30,6 +31,7 @@ import type {
   Page,
 } from "@/types";
 import { AsyncPanel } from "@/components/async-panel";
+import { ApplyTemplateDialog } from "@/components/apply-template-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -181,6 +183,7 @@ export function InterfacesPanel({ device }: { device: DeviceDetail }) {
     [device.id]
   );
   const [genOpen, setGenOpen] = useState(false);
+  const [tplOpen, setTplOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<DeviceInterface | null>(null);
   const [cableFor, setCableFor] = useState<DeviceInterface | null>(null);
@@ -238,6 +241,14 @@ export function InterfacesPanel({ device }: { device: DeviceDetail }) {
         </span>
         {canWrite && (
           <div className="flex gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setTplOpen(true)}
+              aria-label="Apply template"
+            >
+              <LayoutTemplate className="h-3.5 w-3.5" /> Template
+            </Button>
             <Button
               variant="ghost"
               size="sm"
@@ -427,6 +438,12 @@ export function InterfacesPanel({ device }: { device: DeviceDetail }) {
         </TooltipProvider>
       </AsyncPanel>
 
+      <ApplyTemplateDialog
+        deviceId={device.id}
+        open={tplOpen}
+        onOpenChange={setTplOpen}
+        onDone={reload}
+      />
       <GenerateDialog
         deviceId={device.id}
         open={genOpen}

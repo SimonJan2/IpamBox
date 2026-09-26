@@ -49,7 +49,8 @@ view is bookmarkable, survives reload, and can be named via **Saved views**
   one IP belongs to at most one device.
 - **Interfaces** — the device's port grid: generate a whole set in one
   click (`Gi1/0/` × 48, or a patch panel's front+back via a pair prefix),
-  cable ports to other devices, and trace the L1 path. Ports flagged by
+  **apply a template** to stamp a whole catalog layout, cable ports to
+  other devices, and trace the L1 path. Ports flagged by
   [cable validation](/docs/snmp) carry an amber ⚠ (tooltip = the
   mismatch reason + peer detail) and the header shows a *N cable flags*
   badge. See
@@ -57,6 +58,45 @@ view is bookmarkable, survives reload, and can be named via **Saved views**
 - **Notes** — inline-editable.
 - **History** — every create/update/delete, including placement moves
   (rack → unrack → rack changes are audited as updates).
+
+## Device templates
+
+A **device template** is a reusable, typed port layout — "a 48-port
+switch is the same 48 ports every time". Templates live under
+**Devices → Templates** and stamp a device's whole interface set in one
+apply instead of clicking `/interfaces/generate` per range.
+
+- A template carries the catalog fields (manufacturer, model,
+  `device_type` slug, U height, default face, colour, category, watts,
+  weight) plus its `interfaces` list — `{name, kind, speed_mbps,
+  position, pair}` — and optional `power_ports` (PSU inlets / PDU
+  outlets, stamped as `kind=power` ports).
+- **Paired ports**: an entry's `pair` names a sibling entry — the two
+  stamp with reciprocal `pair_interface_id` links, the same convention
+  the generate dialog's *pair prefix* uses (patch-panel `p1..24` ↔
+  `b1..24`). Pairs must be declared on both entries and share their
+  position index.
+- **Apply** (device detail → Interfaces → *Template*): *merge* adds the
+  ports the device is missing and reports existing names as skipped;
+  *replace* wipes the device's ports first — and is refused with a 409
+  naming the offenders when any of them is cabled. Cabling is never
+  silently dropped.
+- **Create with a template**: both the /devices *New device* dialog and
+  the rack's *Add device* form have a template picker. Choosing one
+  prefills the fields and the save calls `instantiate` — device +
+  interfaces land in a single transaction, rack placement included (a
+  placement conflict refuses before anything writes).
+- **Builtins**: the app seeds ~10 generic templates (`switch-48`,
+  `patch-panel-24`, `generic-1u-server`, `pdu-8`, …) once at startup.
+  Editing a builtin converts the row into your manual copy (the seed
+  tombstone keeps it from re-appearing); the duplicate button forks one
+  while leaving the builtin intact.
+- The **editor** is a port grid — name / kind / speed / pairs-with per
+  row — with a range expander (`Gi1/0/1..48 sfp28 25000`, optional rear
+  range for paired patch ports). When `device_type` matches a
+  rack-library slug the *prefill from library* button fills the catalog
+  fields (the bundled library carries no port data, so the grid stays
+  hand-authored).
 
 ## Health rollup
 
@@ -158,6 +198,16 @@ POST   /api/v1/devices/import       # raw file + filename=; dry_run=1 (default),
                                     # on_match=skip|update, unracked_on_missing,
                                     # mapping={header:field}, force, detect
 PATCH  /api/v1/addresses/{id}       # device_id link/unlink lives here too
+
+GET    /api/v1/device-templates?q=            # template catalog
+POST   /api/v1/device-templates               # JSONB layout validated on write
+GET/PATCH/DELETE /api/v1/device-templates/{id}
+POST   /api/v1/devices/{id}/apply-template    # {template_id, mode merge|replace}
+                                            #   → {created, skipped, blocked};
+                                            #   replace 409s naming cabled ports
+POST   /api/v1/device-templates/{id}/instantiate
+                                            # device + ports in one tx, through
+                                            # the normal placement checks
 ```
 
 The rack routes (`/racks/{id}/devices…`) are unchanged — they manipulate the

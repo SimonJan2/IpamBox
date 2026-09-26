@@ -8,6 +8,7 @@ from app.models.circuit import Circuit
 from app.models.color_rule import ColorRule
 from app.models.custom_list import CustomList, CustomListRow
 from app.models.device import Device
+from app.models.device_template import DeviceTemplate
 from app.models.diagram_layout import DiagramLayout
 from app.models.import_batch import ImportBatch, ImportBatchStatus
 from app.models.ip_address import IPAddress, IPRole, IPStatus
@@ -40,6 +41,7 @@ __all__ = [
     "CustomListRow",
     "Device",
     "DeviceInterface",
+    "DeviceTemplate",
     "DiagramLayout",
     "ImportBatch",
     "ImportBatchStatus",

@@ -8,6 +8,7 @@ from app.api.v1 import (
     channels,
     color_rules,
     dashboard,
+    device_templates,
     devices,
     discovery,
     entities,
@@ -60,6 +61,7 @@ api_router.include_router(lists.router)
 api_router.include_router(racks.router)
 api_router.include_router(rack_groups.router)
 api_router.include_router(devices.router)
+api_router.include_router(device_templates.router)
 api_router.include_router(cables.router)
 api_router.include_router(cables.interfaces_router)
 api_router.include_router(monitors.router)

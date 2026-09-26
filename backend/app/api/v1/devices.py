@@ -30,6 +30,7 @@ from app.core.security import get_actor
 from app.models.asset import Asset
 from app.models.cabling import DeviceInterface
 from app.models.device import Device
+from app.models.device_template import DeviceTemplate
 from app.models.import_batch import ImportBatch, ImportBatchStatus
 from app.models.ip_address import IPAddress
 from app.models.rack import Rack, RackFace
@@ -54,6 +55,7 @@ from app.schemas.device import (
     SnmpPollOut,
     SnmpTestOut,
 )
+from app.schemas.device_template import TemplateApplyIn, TemplateApplyOut
 from app.schemas.rack import LinkedRef
 from app.services.cabling import (
     cable_for,
@@ -62,6 +64,7 @@ from app.services.cabling import (
     peers_for,
     stamp_connected_ips,
 )
+from app.services.device_templates import apply_template
 from app.services.colors import stamp_colors
 from app.services.csv_export import csv_response
 from app.services.device_io import (
@@ -1261,6 +1264,41 @@ async def generate_interfaces(
     )
     by_id = {i.id: i for i in fresh}
     return await _iface_outs(session, [by_id[i] for i in ids])
+
+
+@router.post(
+    "/{device_id}/apply-template",
+    response_model=TemplateApplyOut,
+    dependencies=[Depends(require_perm(DATA_WRITE))],
+)
+async def apply_device_template(
+    device_id: int,
+    body: TemplateApplyIn,
+    session: AsyncSession = Depends(get_session),
+):
+    """Stamp a device template's port layout onto this device (V10.1).
+
+    merge (default) creates what isn't there and reports existing names in
+    `skipped` — it never deletes. replace wipes first, but refuses 409 with
+    the cabled ports' names when any interface terminates a cable — the
+    documented cabling set is never silently dropped.
+    """
+    device = await _get_device(session, device_id)
+    try:
+        template = await get_or_404(session, DeviceTemplate, body.template_id)
+        result = await apply_template(
+            session, device, template, mode=body.mode
+        )
+        await session.commit()
+    except IPAMError as e:
+        await session.rollback()
+        raise HTTPException(e.status_code, str(e))
+    except IntegrityError as e:
+        await session.rollback()
+        raise HTTPException(
+            409, "apply hit a name conflict — the device raced the template"
+        ) from e
+    return TemplateApplyOut(**result)
 
 
 @router.patch(
